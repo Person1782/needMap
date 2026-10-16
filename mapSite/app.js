@@ -14,6 +14,7 @@ import { firebaseConfig } from "./firebase-config.js";
 import { buildRecommendations, MIN_CLUSTER_SIZE } from "./analysis.js";
 import { analyzeWithGemini } from "./gemini-analysis.js";
 import { enrichSignalsWithRegions } from "./regions.js";
+import { createDecisionWorkspace } from "./decision-workspace.js";
 
 const firebaseApp = initializeApp(firebaseConfig);
 
@@ -43,6 +44,7 @@ const analysisProgressLabel = document.querySelector("#analysis-progress-label")
 const generationPanel = document.querySelector("#generation-panel");
 const generationText = document.querySelector("#generation-text");
 const mapView = document.querySelector("#map-view");
+const decisionsView = document.querySelector("#decisions-view");
 const dataView = document.querySelector("#data-view");
 const viewTabs = [...document.querySelectorAll("[data-view]")];
 const returnToMapButton = document.querySelector("#return-to-map");
@@ -63,6 +65,8 @@ const dataAnalysisOverview = document.querySelector("#data-analysis-overview");
 const dataAnalysisSummary = document.querySelector("#data-analysis-summary");
 const dataAnalysisResults = document.querySelector("#data-analysis-results");
 const regionList = document.querySelector("#region-list");
+const layerReports = document.querySelector("#layer-reports");
+const layerRecommendations = document.querySelector("#layer-recommendations");
 const worldBounds = L.latLngBounds([[-85, -180], [85, 180]]);
 const REGION_SIZE_DEGREES = 0.05;
 
@@ -83,6 +87,8 @@ L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
 const markerLayer = L.layerGroup().addTo(map);
 const recommendationLayer = L.layerGroup().addTo(map);
 const regionBoundaryLayer = L.layerGroup().addTo(map);
+let moderationRecords = {};
+let moderationEligibilitySignature = "";
 let hasSetInitialView = false;
 let allSignals = [];
 let visibleSignals = [];
@@ -104,6 +110,15 @@ const severityColors = {
   medium: "#d28b27",
   high: "#c34e42",
 };
+
+const decisionWorkspace = createDecisionWorkspace({
+  firebaseApp,
+  db,
+  map,
+  onShowRecommendation: (recommendation) => showAutomaticPlacementOnMap(recommendation),
+  onModerationChanged: applyModerationRecords,
+});
+moderationRecords = decisionWorkspace.getModeration();
 
 function isValidCoordinate(latitude, longitude) {
   return Number.isFinite(latitude) && Number.isFinite(longitude) &&
@@ -153,6 +168,48 @@ function formatCoordinate(value, positiveDirection, negativeDirection, decimals 
 
 function categoryLabel(category) {
   return safeText(category, "other").replaceAll("_", " ");
+}
+
+function moderationStatusFor(signal) {
+  return safeText(
+    moderationRecords[String(signal.id)]?.status,
+    "unreviewed",
+  ).toLowerCase();
+}
+
+function decorateSignalsWithModeration(signals) {
+  return signals.map((signal) => ({
+    ...signal,
+    moderationStatus: moderationStatusFor(signal),
+  }));
+}
+
+function isAnalysisEligibleSignal(signal) {
+  return !["hidden", "duplicate"].includes(moderationStatusFor(signal));
+}
+
+function analysisEligibleSignals(signals = allSignals) {
+  return signals.filter(isAnalysisEligibleSignal);
+}
+
+function eligibilitySignature(signals = allSignals) {
+  return analysisEligibleSignals(signals)
+    .map((signal) => String(signal.id))
+    .sort()
+    .join("|");
+}
+
+function applyModerationRecords(records = {}) {
+  const previousSignature = moderationEligibilitySignature || eligibilitySignature();
+  moderationRecords = records && typeof records === "object" ? records : {};
+  allSignals = decorateSignalsWithModeration(allSignals);
+  moderationEligibilitySignature = eligibilitySignature();
+  decisionWorkspace.updateSignals(allSignals);
+  refreshViewportState({ invalidateCurrentAnalysis: true });
+
+  if (!regionsResolving && previousSignature !== moderationEligibilitySignature) {
+    runAutomaticDataAnalysis(analysisEligibleSignals());
+  }
 }
 
 function getRegion(signal) {
@@ -242,23 +299,31 @@ function createSignalMarker(signal) {
 }
 
 function setActiveView(viewName) {
-  const showMap = viewName === "map";
+  const activeView = ["map", "decisions", "data"].includes(viewName)
+    ? viewName
+    : "map";
+  const showMap = activeView === "map";
+  const showDecisions = activeView === "decisions";
+  const showData = activeView === "data";
   mapView.hidden = !showMap;
-  dataView.hidden = showMap;
-  const nextHash = showMap ? "#map" : "#data";
+  decisionsView.hidden = !showDecisions;
+  dataView.hidden = !showData;
+  decisionWorkspace.setVisible(showDecisions);
+  const nextHash = `#${activeView}`;
   if (window.location.hash !== nextHash) {
     window.history.replaceState(null, "", nextHash);
   }
 
   viewTabs.forEach((tab) => {
-    const isActive = tab.dataset.view === viewName;
+    const isActive = tab.dataset.view === activeView;
     tab.classList.toggle("active", isActive);
     tab.setAttribute("aria-selected", String(isActive));
+    tab.tabIndex = isActive ? 0 : -1;
   });
 
   if (showMap) {
     requestAnimationFrame(() => map.invalidateSize());
-  } else {
+  } else if (showData) {
     renderDataView();
     renderDataAnalysis();
   }
@@ -618,6 +683,13 @@ function createReportDataCard(signal) {
   const submitted = document.createElement("span");
   submitted.textContent = formatSubmittedAt(signal.submittedAt) || "Submission time unavailable";
   metadata.append(urgency, submitted);
+  const moderationStatus = moderationStatusFor(signal);
+  if (moderationStatus !== "unreviewed") {
+    const moderation = document.createElement("span");
+    moderation.className = `data-chip moderation-${moderationStatus}`;
+    moderation.textContent = `Review: ${moderationStatus.replaceAll("_", " ")}`;
+    metadata.append(moderation);
+  }
 
   const summary = document.createElement("p");
   summary.textContent = safeText(signal.summary, "No description provided");
@@ -1104,11 +1176,12 @@ function resetAutomaticDataAnalysis(message) {
   dataAnalysisProgress.hidden = true;
   dataAnalysisProgressBar.style.width = "0%";
   setDataAnalysisStatus(message);
+  decisionWorkspace.updateRecommendations([]);
   renderDataAnalysis();
 }
 
 async function runAutomaticDataAnalysis(signals) {
-  const recommendations = buildRecommendations(signals);
+  const recommendations = buildRecommendations(analysisEligibleSignals(signals));
   const key = automaticDataAnalysisKey(recommendations);
   const requestId = dataAnalysisRequestId + 1;
   dataAnalysisRequestId = requestId;
@@ -1118,6 +1191,7 @@ async function runAutomaticDataAnalysis(signals) {
   dataAnalysisSummaries = [];
   dataAnalysisCompletedCount = 0;
   dataAnalysisFailedCount = 0;
+  decisionWorkspace.updateRecommendations(recommendations);
 
   if (!recommendations.length) {
     dataAnalysisProgress.hidden = true;
@@ -1172,6 +1246,7 @@ async function runAutomaticDataAnalysis(signals) {
         dataAnalysisRecommendations,
         result.recommendations,
       );
+      decisionWorkspace.updateRecommendations(dataAnalysisRecommendations);
       if (result.summary) dataAnalysisSummaries.push(result.summary);
       dataAnalysisCompletedCount += batch.length;
     } catch (error) {
@@ -1195,6 +1270,7 @@ async function runAutomaticDataAnalysis(signals) {
       ? `Detailed Gemini analysis completed for ${dataAnalysisCompletedCount} of ${recommendations.length} placements. Evidence-backed local analysis is shown for the rest.`
       : `Detailed evidence analysis is ready for all ${recommendations.length} candidate placement${recommendations.length === 1 ? "" : "s"}.`,
   );
+  decisionWorkspace.updateRecommendations(dataAnalysisRecommendations);
   renderDataAnalysis();
 }
 
@@ -1256,7 +1332,7 @@ function invalidateAnalysis(message = analysisAvailabilityMessage()) {
 
 function refreshViewportState({ invalidateCurrentAnalysis = false } = {}) {
   const bounds = map.getBounds();
-  visibleSignals = allSignals.filter((signal) =>
+  visibleSignals = analysisEligibleSignals().filter((signal) =>
     bounds.contains([signal.latitude, signal.longitude]));
 
   markerLayer.clearLayers();
@@ -1443,15 +1519,25 @@ viewTabs.forEach((tab) => {
 });
 returnToMapButton.addEventListener("click", () => setActiveView("map"));
 window.addEventListener("hashchange", () => {
-  setActiveView(window.location.hash === "#data" ? "data" : "map");
+  setActiveView(window.location.hash.slice(1));
 });
 [dataSearch, dataCategoryFilter, dataSeverityFilter].forEach((control) => {
   control.addEventListener("input", renderDataView);
   control.addEventListener("change", renderDataView);
 });
+layerReports.addEventListener("change", () => {
+  if (layerReports.checked) markerLayer.addTo(map);
+  else markerLayer.removeFrom(map);
+});
+layerRecommendations.addEventListener("change", () => {
+  [recommendationLayer, regionBoundaryLayer].forEach((layer) => {
+    if (layerRecommendations.checked) layer.addTo(map);
+    else layer.removeFrom(map);
+  });
+});
 
 map.on("moveend zoomend", () => refreshViewportState());
-setActiveView(window.location.hash === "#data" ? "data" : "map");
+setActiveView(window.location.hash.slice(1));
 
 onSnapshot(
   collection(db, "incomingSignals"),
@@ -1475,7 +1561,9 @@ onSnapshot(
       });
     });
 
-    allSignals = signals;
+    allSignals = decorateSignalsWithModeration(signals);
+    moderationEligibilitySignature = eligibilitySignature();
+    decisionWorkspace.updateSignals(allSignals);
     const currentResolutionId = regionResolutionId + 1;
     regionResolutionId = currentResolutionId;
     regionsResolving = signals.length > 0;
@@ -1503,25 +1591,28 @@ onSnapshot(
 
     if (!signals.length) return;
 
-    enrichSignalsWithRegions(signals, {
+    enrichSignalsWithRegions(allSignals, {
       onProgress: (completed, total) => {
         if (currentResolutionId !== regionResolutionId) return;
         status.textContent = `Resolving regions ${completed}/${total}…`;
       },
     }).then((enrichedSignals) => {
       if (currentResolutionId !== regionResolutionId) return;
-      allSignals = enrichedSignals;
+      allSignals = decorateSignalsWithModeration(enrichedSignals);
+      moderationEligibilitySignature = eligibilitySignature();
+      decisionWorkspace.updateSignals(allSignals);
       regionsResolving = false;
       status.textContent = "Live from Firebase";
       refreshViewportState({ invalidateCurrentAnalysis: true });
-      runAutomaticDataAnalysis(enrichedSignals);
+      runAutomaticDataAnalysis(analysisEligibleSignals());
     }).catch((error) => {
       if (currentResolutionId !== regionResolutionId) return;
       console.error("NeedMap region enrichment error:", error);
       regionsResolving = false;
       status.textContent = "Live from Firebase · some region names unavailable";
+      decisionWorkspace.updateSignals(allSignals);
       refreshViewportState({ invalidateCurrentAnalysis: true });
-      runAutomaticDataAnalysis(allSignals);
+      runAutomaticDataAnalysis(analysisEligibleSignals());
     });
   },
   (error) => {

@@ -13,17 +13,26 @@
         <p class="eyebrow">NeedMap dashboard</p>
         <h1>Community signals</h1>
       </div>
-      <nav class="view-switcher" aria-label="Dashboard sections">
-        <button class="view-tab active" type="button" data-view="map" aria-selected="true">Map</button>
-        <button class="view-tab" type="button" data-view="data" aria-selected="false">Data</button>
+      <nav class="view-switcher" aria-label="Dashboard sections" role="tablist">
+        <button class="view-tab active" type="button" data-view="map" role="tab" aria-controls="map-view" aria-selected="true">Map</button>
+        <button class="view-tab" type="button" data-view="decisions" role="tab" aria-controls="decisions-view" aria-selected="false">Decisions</button>
+        <button class="view-tab" type="button" data-view="data" role="tab" aria-controls="data-view" aria-selected="false">Data</button>
       </nav>
-      <div class="status-wrap">
-        <span id="live-dot" class="live-dot" aria-hidden="true"></span>
-        <span id="status" role="status" aria-live="polite">Connecting…</span>
+      <div class="header-actions">
+        <button id="alerts-button" class="header-icon-button" type="button" aria-haspopup="dialog">
+          Alerts <span id="alerts-count" class="header-count" hidden>0</span>
+        </button>
+        <button id="staff-button" class="header-account-button" type="button" aria-haspopup="dialog">
+          <span id="staff-role">Read only</span>
+        </button>
+        <div class="status-wrap">
+          <span id="live-dot" class="live-dot" aria-hidden="true"></span>
+          <span id="status" role="status" aria-live="polite">Connecting…</span>
+        </div>
       </div>
     </header>
 
-    <main id="map-view" class="site-view">
+    <main id="map-view" class="site-view" role="tabpanel">
       <div id="map" aria-label="Map of community reports"></div>
       <aside class="analysis-panel" aria-labelledby="analysis-title">
         <p class="eyebrow">Placement analysis</p>
@@ -72,9 +81,97 @@
         <strong id="signal-count">0</strong>
         <span>reports in view</span>
       </aside>
+      <aside id="map-layer-control" class="map-layer-control" aria-label="Map layers">
+        <strong>Layers</strong>
+        <label><input id="layer-reports" type="checkbox" checked /> Reports</label>
+        <label><input id="layer-recommendations" type="checkbox" checked /> Recommendations</label>
+        <label><input id="layer-services" type="checkbox" checked /> Existing services</label>
+        <label><input id="layer-coverage" type="checkbox" checked /> Coverage</label>
+      </aside>
     </main>
 
-    <section id="data-view" class="data-view site-view" aria-labelledby="data-title" hidden>
+    <section id="decisions-view" class="decisions-view site-view" role="tabpanel" aria-labelledby="decisions-title" hidden>
+      <div class="decision-shell">
+        <header class="decision-header">
+          <div>
+            <p class="eyebrow">Planning workspace</p>
+            <h2 id="decisions-title">Turn signals into decisions</h2>
+            <p id="decision-updated-at">Waiting for placement analysis…</p>
+          </div>
+          <div class="decision-header-actions">
+            <button id="export-csv-button" class="secondary-button" type="button">Export CSV</button>
+            <button id="export-brief-button" class="primary-button" type="button">Print / save PDF</button>
+          </div>
+        </header>
+
+        <div id="decision-access-banner" class="decision-access-banner" role="status">
+          Planning controls are read only. Sign in as staff or enable device-local demo mode to save decisions.
+        </div>
+
+        <section id="decision-alert-strip" class="decision-alert-strip" aria-label="Active alerts" hidden></section>
+        <div id="decision-metrics" class="decision-metrics" aria-label="Decision summary"></div>
+
+        <div class="decision-insight-grid">
+          <section class="decision-panel" aria-labelledby="trend-title">
+            <header class="panel-heading">
+              <div><p class="eyebrow">Demand over time</p><h3 id="trend-title">Signal trend</h3></div>
+              <select id="trend-range" aria-label="Trend period">
+                <option value="6">6 months</option>
+                <option value="12" selected>12 months</option>
+              </select>
+            </header>
+            <div id="trend-chart" class="trend-chart"></div>
+            <p id="trend-summary" class="panel-note">Waiting for dated reports…</p>
+          </section>
+
+          <section class="decision-panel" aria-labelledby="scenario-title">
+            <header class="panel-heading">
+              <div><p class="eyebrow">Compare options</p><h3 id="scenario-title">Scenario comparison</h3></div>
+            </header>
+            <div class="scenario-controls">
+              <label>Option A<select id="scenario-a"></select></label>
+              <label>Option B<select id="scenario-b"></select></label>
+              <label>Travel mode<select id="scenario-mode"><option value="walk">Walk</option><option value="transit" selected>Transit</option><option value="drive">Drive</option></select></label>
+            </div>
+            <div id="scenario-comparison" class="scenario-comparison"></div>
+          </section>
+        </div>
+
+        <div class="decision-layout">
+          <aside class="decision-master" aria-labelledby="decision-list-title">
+            <div class="decision-list-heading">
+              <div><p class="eyebrow">Ranked queue</p><h3 id="decision-list-title">Recommendations</h3></div>
+              <span id="decision-filter-summary">0 items</span>
+            </div>
+            <label class="decision-search">
+              <span>Search decisions</span>
+              <input id="decision-search" type="search" placeholder="Facility, region, or category…" />
+            </label>
+            <div id="decision-list" class="decision-list"></div>
+          </aside>
+
+          <article id="decision-detail" class="decision-detail" aria-live="polite">
+            <div class="decision-empty">Select a recommendation to inspect its coverage, evidence, workflow, and outcomes.</div>
+          </article>
+        </div>
+
+        <section class="decision-panel quality-panel" aria-labelledby="quality-title">
+          <header class="panel-heading">
+            <div><p class="eyebrow">Data integrity</p><h3 id="quality-title">Report quality review</h3></div>
+            <select id="quality-filter" aria-label="Quality review filter">
+              <option value="all">All flagged reports</option>
+              <option value="duplicate">Possible duplicates</option>
+              <option value="low_quality">Low quality</option>
+              <option value="moderated">Reviewed</option>
+            </select>
+          </header>
+          <p class="panel-note">Potential duplicates are suggestions for staff review and are never removed automatically.</p>
+          <div id="quality-queue" class="quality-queue"></div>
+        </section>
+      </div>
+    </section>
+
+    <section id="data-view" class="data-view site-view" role="tabpanel" aria-labelledby="data-title" hidden>
       <div class="data-shell">
         <header class="data-header">
           <div>
@@ -159,6 +256,43 @@
         <div id="region-list" class="region-list"></div>
       </div>
     </section>
+
+    <dialog id="staff-dialog" class="dashboard-dialog" aria-labelledby="staff-dialog-title">
+      <form id="staff-login-form" class="dialog-card">
+        <header>
+          <div><p class="eyebrow">Protected controls</p><h2 id="staff-dialog-title">Staff access</h2></div>
+          <button class="dialog-close" type="button" data-close-dialog="staff-dialog" aria-label="Close staff access">×</button>
+        </header>
+        <p id="staff-dialog-status" class="dialog-status" role="status" aria-live="polite">
+          Sign in with a Firebase staff account. Access is verified against the staff profile stored for that user.
+        </p>
+        <div id="staff-login-fields" class="staff-login-fields">
+          <label><span>Email</span><input id="staff-email" name="email" type="email" autocomplete="username" required /></label>
+          <label><span>Password</span><input id="staff-password" name="password" type="password" autocomplete="current-password" required /></label>
+          <button class="primary-button" type="submit">Sign in</button>
+        </div>
+        <button id="staff-sign-out" class="secondary-button" type="button" hidden>Sign out</button>
+        <div class="dialog-divider"><span>Local demo</span></div>
+        <p class="dialog-help">Device-local mode lets you demo workflow, moderation, outcomes, and alert settings without changing Firebase. Its data stays in this browser and is not shared or secure.</p>
+        <button id="local-demo-button" class="secondary-button" type="button">Enable device-local planner</button>
+      </form>
+    </dialog>
+
+    <dialog id="alerts-dialog" class="dashboard-dialog" aria-labelledby="alerts-dialog-title">
+      <form class="dialog-card" method="dialog">
+        <header>
+          <div><p class="eyebrow">Monitoring</p><h2 id="alerts-dialog-title">Signal alerts</h2></div>
+          <button class="dialog-close" type="submit" aria-label="Close alerts">×</button>
+        </header>
+        <div class="alert-settings">
+          <label><span>High-urgency reports</span><input id="alert-high-threshold" type="number" min="1" max="100" value="3" /></label>
+          <label><span>Trend increase</span><select id="alert-trend-threshold"><option value="1.25">25%</option><option value="1.5" selected>50%</option><option value="2">100%</option></select></label>
+          <button id="notification-button" class="secondary-button" type="button">Enable browser notifications</button>
+        </div>
+        <p class="dialog-help">Alerts are calculated from the currently loaded report data. Browser notifications only appear while this dashboard is open.</p>
+        <div id="alerts-list" class="alerts-list"></div>
+      </form>
+    </dialog>
 
     <noscript>This map needs JavaScript to load Firebase reports.</noscript>
 

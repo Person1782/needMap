@@ -423,3 +423,718 @@
 ├───────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼─────────────────────────────┤
 │ NeedMap localhost │ projects/385002157682/apps/1:385002157682:web:3296ba12f9bd711ae0f4eb/debugTokens/NDQwMGQwNTMtYjg3Ni00MzVhLWE5NTMtMWIxOWI4MzJmYjcz │ 2026-10-06T17:01:15.462591Z │
 └───────────────────┴───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴─────────────────────────────┘
+[debug] [2026-10-10T01:54:53.547Z] ----------------------------------------------------------------------
+[debug] [2026-10-10T01:54:53.549Z] Command:       /usr/local/bin/node /opt/homebrew/bin/firebase emulators:exec --only auth,firestore --project demo-needmap --config /private/tmp/needmap-firebase.json --log-verbosity QUIET node /private/tmp/needmap-rules-test.mjs
+[debug] [2026-10-10T01:54:53.549Z] CLI Version:   15.32.1
+[debug] [2026-10-10T01:54:53.549Z] Platform:      darwin
+[debug] [2026-10-10T01:54:53.549Z] Node Version:  v24.21.0
+[debug] [2026-10-10T01:54:53.549Z] Detected Agent: codex_cli
+[debug] [2026-10-10T01:54:53.549Z] Time:          Fri Oct 09 2026 18:54:53 GMT-0700 (Pacific Daylight Time)
+[debug] [2026-10-10T01:54:53.549Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2026-10-10T01:54:54.370Z] openjdk version "25.0.2" 2026-01-20 LTS
+
+[debug] [2026-10-10T01:54:54.370Z] OpenJDK Runtime Environment Temurin-25.0.2+10 (build 25.0.2+10-LTS)
+OpenJDK 64-Bit Server VM Temurin-25.0.2+10 (build 25.0.2+10-LTS, mixed mode, sharing)
+
+[debug] [2026-10-10T01:54:54.377Z] Parsed Java major version: 25
+[debug] [2026-10-10T01:54:54.377Z] [emulators] Starting emulators: auth, firestore
+[debug] [2026-10-10T01:54:54.377Z] [emulators] Detected demo project ID "demo-needmap", emulated services will use a demo configuration and attempts to access non-emulated services for this project will fail.
+[debug] [2026-10-10T01:54:54.818Z] [logging] Logging Emulator only supports listening on one address (127.0.0.1). Not listening on ::1
+[debug] [2026-10-10T01:54:54.818Z] [firestore] Firestore Emulator only supports listening on one address (127.0.0.1). Not listening on ::1
+[debug] [2026-10-10T01:54:54.818Z] [firestore.websocket] websocket server for firestore only supports listening on one address (127.0.0.1). Not listening on ::1
+[debug] [2026-10-10T01:54:54.818Z] DEBUG: assigned listening specs for emulators
+[debug] [2026-10-10T01:54:54.823Z] Write emulator hub locator at /var/folders/ws/9b02z_5d7559b370yr5196mm0000gp/T/hub-demo-needmap.json
+[debug] [2026-10-10T01:54:54.826Z] DEBUG: Ignoring unsupported arg: auto_download
+[debug] [2026-10-10T01:54:54.827Z] DEBUG: Ignoring unsupported arg: single_project_mode_error
+[debug] [2026-10-10T01:54:54.827Z] DEBUG: Starting Firestore Emulator with command {"binary":"java","args":["-Dgoogle.cloud_firestore.debug_log_level=FINE","-Duser.language=en","-jar","/private/tmp/needmap-firebase-emulators/cloud-firestore-emulator-v1.22.0.jar","--host","127.0.0.1","--port",8080,"--websocket_port",9150,"--database-edition","standard","--project_id","demo-needmap","--rules","/private/tmp/firestore.rules","--single_project_mode",true],"optionalArgs":["port","webchannel_port","host","rules","websocket_port","database-edition","functions_emulator","seed_from_export","project_id","single_project_mode"],"joinArgs":false,"shell":false,"port":8080}
+[debug] [2026-10-10T01:54:54.829Z] [firestore] Firestore Emulator logging to firestore-debug.log
+[debug] [2026-10-10T01:54:55.402Z] DEBUG: WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::allocateMemory has been called by io.netty.util.internal.PlatformDependent0$2 (file:/private/tmp/needmap-firebase-emulators/cloud-firestore-emulator-v1.22.0.jar)
+WARNING: Please consider reporting this to the maintainers of class io.netty.util.internal.PlatformDependent0$2
+WARNING: sun.misc.Unsafe::allocateMemory will be removed in a future release
+
+[debug] [2026-10-10T01:54:57.009Z] DEBUG: Oct 09, 2026 6:54:56 PM com.google.cloud.datastore.emulator.firestore.websocket.WebSocketServer start
+INFO: Started WebSocket server on ws://127.0.0.1:9150
+
+[debug] [2026-10-10T01:54:57.061Z] DEBUG: 
+API endpoint: http://127.0.0.1:8080
+[debug] [2026-10-10T01:54:57.069Z] DEBUG: 
+Database Edition: STANDARD
+Database Mode: CLOUD_FIRESTORE
+
+If you are using a library that supports the FIRESTORE_EMULATOR_HOST environment variable, run:
+
+   export FIRESTORE_EMULATOR_HOST=127.0.0.1:8080
+
+If you are running a Firestore in Datastore Mode project, run:
+
+   export DATASTORE_EMULATOR_HOST=127.0.0.1:8080
+
+Note: Support for Datastore Mode is in preview. If you encounter any bugs please file at https://github.com/firebase/firebase-tools/issues.
+Dev App Server is now running.
+
+
+[debug] [2026-10-10T01:54:57.133Z] [firestore] Firestore Emulator was started in standard edition.
+[debug] [2026-10-10T01:54:57.133Z] [firestore] Firestore Emulator UI websocket is running on 9150.
+[debug] [2026-10-10T01:55:01.054Z] Could not find VSCode notification endpoint: TypeError: fetch failed. If you are not running the Firebase SQL Connect VSCode extension, this is expected and not an issue.
+[info] i  Running script: node /private/tmp/needmap-rules-test.mjs 
+[debug] [2026-10-10T01:55:01.056Z] Running node /private/tmp/needmap-rules-test.mjs with environment {"CODEX_CI":"1","CODEX_INTERNAL_ORIGINATOR_OVERRIDE":"codex_vscode","CODEX_PERMISSION_PROFILE":":workspace","CODEX_SANDBOX_NETWORK_DISABLED":"1","CODEX_SESSION_ID":"01a10cf4-7cce-76a0-985d-d0dce87a322c","CODEX_THREAD_ID":"01a10cf4-7cce-76a0-985d-d0dce87a322c","CODEX_VERSION":"0.162.0-alpha.2","COLORTERM":"","COMMAND_MODE":"unix2003","DEBUG":"release","ELECTRON_RUN_AS_NODE":"1","GH_PAGER":"cat","GIT_PAGER":"cat","HOME":"/Users/rishabmanas","LANG":"C.UTF-8","LC_ALL":"C.UTF-8","LC_CTYPE":"C.UTF-8","LOGNAME":"rishabmanas","MACH_PORT_RENDEZVOUS_PEER_VALDATION":"1","MallocNanoZone":"0","NO_COLOR":"1","OLDPWD":"/Users/rishabmanas/Desktop/needmap","OSLogRateLimit":"64","PAGER":"cat","PATH":"/Library/Frameworks/Python.framework/Versions/3.14/bin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/pkg/env/global/bin:/opt/homebrew/bin:/Users/rishabmanas/.codex/tmp/arg0/codex-arg0Knr4IR:/Library/Frameworks/Python.framework/Versions/3.14/bin:/Users/rishabmanas/.vscode/extensions/openai.chatgpt-26.1002.51308-darwin-arm64/bin/macos-aarch64","PWD":"/Users/rishabmanas/Desktop/needmap","RUST_LOG":"warn","SHELL":"/bin/zsh","SHLVL":"0","SSH_AUTH_SOCK":"/var/run/com.apple.launchd.pP36e4F6fo/Listeners","TERM":"dumb","TMPDIR":"/var/folders/ws/9b02z_5d7559b370yr5196mm0000gp/T/","USER":"rishabmanas","VSCODE_CODE_CACHE_PATH":"/Users/rishabmanas/Library/Application Support/Code/CachedData/2a59476c9bfcb90b3ddc372c36762471b7dfad1c","VSCODE_CRASH_REPORTER_PROCESS_TYPE":"extensionHost","VSCODE_CWD":"/","VSCODE_ESM_ENTRYPOINT":"vs/workbench/api/node/extensionHostProcess","VSCODE_HANDLES_UNCAUGHT_ERRORS":"true","VSCODE_IPC_HOOK":"/Users/rishabmanas/Library/Application Support/Code/1.14-main.sock","VSCODE_NLS_CONFIG":"{\"userLocale\":\"en-us\",\"osLocale\":\"en-us\",\"resolvedLanguage\":\"en\",\"defaultMessagesFile\":\"/Applications/Visual Studio Code.app/Contents/Resources/app/out/nls.messages.json\",\"locale\":\"en-us\",\"availableLanguages\":{}}","VSCODE_NODE_COMPILE_CACHE_ROOT":"/Applications/Visual Studio Code.app/Contents/Resources/app/node-compile-cache","VSCODE_PID":"42711","XPC_FLAGS":"0x0","XPC_SERVICE_NAME":"application.com.microsoft.VSCode.40066800.40066806","__CFBundleIdentifier":"com.microsoft.VSCode","__CF_USER_TEXT_ENCODING":"0x1F6:0x0:0x0","_":"/usr/bin/env","XDG_CONFIG_HOME":"/private/tmp/needmap-firebase-config","FIREBASE_EMULATORS_PATH":"/private/tmp/needmap-firebase-emulators","CI":"1","IS_FIREBASE_CLI":"true","GCLOUD_PROJECT":"demo-needmap","FIREBASE_CONFIG":"{\"projectId\":\"demo-needmap\",\"storageBucket\":\"demo-needmap.appspot.com\",\"databaseURL\":\"https://demo-needmap.firebaseio.com\"}","FIREBASE_EMULATOR_HUB":"127.0.0.1:4400","FIREBASE_AUTH_EMULATOR_HOST":"127.0.0.1:9099","FIRESTORE_EMULATOR_HOST":"127.0.0.1:8080","FIREBASE_FIRESTORE_EMULATOR_ADDRESS":"127.0.0.1:8080"}
+[debug] [2026-10-10T01:55:01.170Z] DEBUG: Oct 09, 2026 6:55:01 PM io.gapi.emulators.netty.HttpVersionRoutingHandler channelRead
+INFO: Detected non-HTTP/2 connection.
+
+[debug] [2026-10-10T01:55:01.417Z] DEBUG: Oct 09, 2026 6:55:01 PM io.gapi.emulators.netty.HttpVersionRoutingHandler channelRead
+INFO: Detected HTTP/2 connection.
+
+[debug] [2026-10-10T01:55:02.365Z] DEBUG: Oct 09, 2026 6:55:02 PM com.google.cloud.datastore.emulator.impl.util.WrappedStreamObserver onError
+WARNING: Operation failed: 
+evaluation error at L182:24 for 'create' @ L182, false for 'update' @ L183, Property submittedBy is undefined on object. for 'create' @ L182
+com.google.cloud.datastore.core.exception.DatastoreException: 
+evaluation error at L182:24 for 'create' @ L182, false for 'update' @ L183, Property submittedBy is undefined on object. for 'create' @ L182
+	at com.google.cloud.datastore.core.exception.DatastoreException$Builder.build(DatastoreException.java:152)
+	at com.google.cloud.datastore.emulator.impl.rules.DefaultEmulatorRulesAuthorizer.verboseError(DefaultEmulatorRulesAuthorizer.java:349)
+	at com.google.cloud.datastore.emulator.impl.rules.DefaultEmulatorRulesAuthorizer.withVerboseErrors(DefaultEmulatorRulesAuthorizer.java:326)
+	at com.google.cloud.datastore.emulator.impl.rules.DefaultEmulatorRulesAuthorizer.checkCommit(DefaultEmulatorRulesAuthorizer.java:113)
+	at com.google.cloud.datastore.emulator.impl.firestore.FirestoreEmulatorHelper.commitHelper(FirestoreEmulatorHelper.java:407)
+	at com.google.cloud.datastore.emulator.impl.firestore.FirestoreEmulatorHelper.internalCommit(FirestoreEmulatorHelper.java:348)
+	at com.google.cloud.datastore.emulator.impl.firestore.CloudFirestoreV1.commit(CloudFirestoreV1.java:541)
+	at com.google.cloud.datastore.emulator.impl.firestore.CloudFirestoreV1Router.commit(CloudFirestoreV1Router.java:177)
+	at com.google.cloud.datastore.emulator.firestore.v1.FirestoreV1GrpcAdapter$1.lambda$commit$0(FirestoreV1GrpcAdapter.java:162)
+	at com.google.cloud.datastore.emulator.firestore.v1.FirestoreV1GrpcAdapter.unary(FirestoreV1GrpcAdapter.java:72)
+	at com.google.cloud.datastore.emulator.firestore.v1.FirestoreV1GrpcAdapter$1.commit(FirestoreV1GrpcAdapter.java:162)
+	at com.google.firestore.v1.FirestoreGrpc$MethodHandlers.invoke(FirestoreGrpc.java:1404)
+	at io.grpc.stub.ServerCalls$UnaryServerCallHandler$UnaryServerCallListener.onHalfClose(ServerCalls.java:182)
+	at io.grpc.PartialForwardingServerCallListener.onHalfClose(PartialForwardingServerCallListener.java:35)
+	at io.grpc.ForwardingServerCallListener.onHalfClose(ForwardingServerCallListener.java:23)
+	at io.grpc.ForwardingServerCallListener$SimpleForwardingServerCallListener.onHalfClose(ForwardingServerCallListener.java:40)
+	at io.grpc.Contexts$ContextualizedServerCallListener.onHalfClose(Contexts.java:86)
+	at io.grpc.PartialForwardingServerCallListener.onHalfClose(PartialForwardingServerCallListener.java:35)
+	at io.grpc.ForwardingServerCallListener.onHalfClose(ForwardingServerCallListener.java:23)
+	at io.grpc.ForwardingServerCallListener$SimpleForwardingServerCallListener.onHalfClose(ForwardingServerCallListener.java:40)
+	at io.grpc.Contexts$ContextualizedServerCallListener.onHalfClose(Contexts.java:86)
+	at io.grpc.internal.ServerCallImpl$ServerStreamListenerImpl.halfClosed(ServerCallImpl.java:356)
+	at io.grpc.internal.ServerImpl$JumpToApplicationThreadServerStreamListener$1HalfClosed.runInContext(ServerImpl.java:879)
+	at io.grpc.internal.ContextRunnable.run(ContextRunnable.java:37)
+	at io.grpc.internal.SerializingExecutor.run(SerializingExecutor.java:133)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1090)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:614)
+	at java.base/java.lang.Thread.run(Thread.java:1474)
+Caused by: com.google.firebase.rules.runtime.common.EvaluationException: Error: /private/tmp/firestore.rules line [78], column [12]. Property submittedBy is undefined on object.
+	at com.google.firebase.rules.runtime.impl.DefaultEvaluator$TransformEvaluationException.apply(DefaultEvaluator.java:275)
+	at com.google.firebase.rules.runtime.impl.DefaultEvaluator$TransformEvaluationException.apply(DefaultEvaluator.java:261)
+	at com.google.common.util.concurrent.AbstractCatchingFuture$AsyncCatchingFuture.doFallback(AbstractCatchingFuture.java:207)
+	at com.google.common.util.concurrent.AbstractCatchingFuture$AsyncCatchingFuture.doFallback(AbstractCatchingFuture.java:194)
+	at com.google.common.util.concurrent.AbstractCatchingFuture.run(AbstractCatchingFuture.java:136)
+	at com.google.common.util.concurrent.DirectExecutor.execute(DirectExecutor.java:30)
+	at com.google.common.util.concurrent.AbstractFuture.executeListener(AbstractFuture.java:1045)
+	at com.google.common.util.concurrent.AbstractFuture.addListener(AbstractFuture.java:492)
+	at com.google.common.util.concurrent.FluentFuture$TrustedFuture.addListener(FluentFuture.java:122)
+	at com.google.common.util.concurrent.AbstractCatchingFuture.createAsync(AbstractCatchingFuture.java:58)
+	at com.google.common.util.concurrent.Futures.catchingAsync(Futures.java:411)
+	at com.google.firebase.rules.runtime.impl.DefaultEvaluator.evaluate(DefaultEvaluator.java:177)
+	at com.google.cloud.datastore.emulator.impl.rules.EmulatorRuleClient$EmulatorRuleEvaluator.evaluate(EmulatorRuleClient.java:88)
+	at com.google.cloud.datastore.core.auth.rules.AsyncTwoPhaseRulesAuthorizer.lambda$fullEvaluate$0(AsyncTwoPhaseRulesAuthorizer.java:993)
+	at com.google.cloud.datastore.computation.Computation.tryCatch(Computation.java:472)
+	at com.google.cloud.datastore.core.auth.rules.AsyncTwoPhaseRulesAuthorizer.fullEvaluate(AsyncTwoPhaseRulesAuthorizer.java:992)
+	at com.google.cloud.datastore.core.auth.rules.AsyncTwoPhaseRulesAuthorizer$WriteAuthorizerImpl.lambda$checkWrite$0(AsyncTwoPhaseRulesAuthorizer.java:1227)
+	at com.google.cloud.datastore.computation.Computation.lambda$tryClose$1(Computation.java:741)
+	at com.google.cloud.datastore.computation.Computation.tryCatch(Computation.java:472)
+	at com.google.cloud.datastore.computation.Computation.tryFinally(Computation.java:708)
+	at com.google.cloud.datastore.computation.Computation.tryFinally(Computation.java:714)
+	at com.google.cloud.datastore.computation.Computation.tryClose(Computation.java:741)
+	at com.google.cloud.datastore.core.auth.rules.AsyncTwoPhaseRulesAuthorizer$WriteAuthorizerImpl.checkWrite(AsyncTwoPhaseRulesAuthorizer.java:1199)
+	at com.google.cloud.datastore.emulator.impl.rules.DefaultEmulatorRulesAuthorizer.lambda$checkCommit$2(DefaultEmulatorRulesAuthorizer.java:124)
+	at com.google.cloud.datastore.computation.Computation.run(Computation.java:82)
+	at com.google.cloud.datastore.computation.Computation$Terminated.toFuture(Computation.java:950)
+	at com.google.cloud.datastore.computation.Computation.toFuture(Computation.java:93)
+	at com.google.cloud.datastore.emulator.impl.rules.DefaultEmulatorRulesAuthorizer.finish(DefaultEmulatorRulesAuthorizer.java:308)
+	at com.google.cloud.datastore.emulator.impl.rules.DefaultEmulatorRulesAuthorizer.lambda$checkCommit$0(DefaultEmulatorRulesAuthorizer.java:122)
+	at com.google.cloud.datastore.emulator.impl.rules.DefaultEmulatorRulesAuthorizer.withVerboseErrors(DefaultEmulatorRulesAuthorizer.java:321)
+	... 25 more
+
+
+[debug] [2026-10-10T01:55:02.371Z] DEBUG: Oct 09, 2026 6:55:02 PM io.gapi.emulators.netty.HttpHandler$1 onError
+INFO: Exception when handling request: PERMISSION_DENIED: 
+evaluation error at L182:24 for 'create' @ L182, false for 'update' @ L183, Property submittedBy is undefined on object. for 'create' @ L182
+
+[warn] ⚠  Script exited unsuccessfully (code 1) 
+[debug] [2026-10-10T01:55:02.916Z] [emulators] Shutting down emulators.
+[debug] [2026-10-10T01:55:02.916Z] [firestore] Stopping Firestore Emulator
+[debug] [2026-10-10T01:55:02.918Z] DEBUG: *** shutting down gRPC server since JVM is shutting down
+
+[debug] [2026-10-10T01:55:02.922Z] DEBUG: *** server shut down
+
+[debug] [2026-10-10T01:55:03.239Z] [auth] Stopping Authentication Emulator
+[debug] [2026-10-10T01:55:03.240Z] [hub] Stopping emulator hub
+[debug] [2026-10-10T01:55:03.240Z] [logging] Stopping Logging Emulator
+[debug] [2026-10-10T01:55:03.248Z] Could not find VSCode notification endpoint: TypeError: fetch failed. If you are not running the Firebase SQL Connect VSCode extension, this is expected and not an issue.
+[error] 
+[error] Error: Script "node /private/tmp/needmap-rules-test.mjs" exited with code 1
+[debug] [2026-10-10T01:55:03.546Z] Found emulator hub locator: {"version":"15.32.1","origins":["http://127.0.0.1:4400","http://[::1]:4400"],"pid":1612}
+[debug] [2026-10-10T01:55:54.315Z] ----------------------------------------------------------------------
+[debug] [2026-10-10T01:55:54.317Z] Command:       /usr/local/bin/node /opt/homebrew/bin/firebase emulators:exec --only auth,firestore --project demo-needmap --config /private/tmp/needmap-firebase.json --log-verbosity QUIET node /private/tmp/needmap-rules-test.mjs
+[debug] [2026-10-10T01:55:54.317Z] CLI Version:   15.32.1
+[debug] [2026-10-10T01:55:54.317Z] Platform:      darwin
+[debug] [2026-10-10T01:55:54.317Z] Node Version:  v24.21.0
+[debug] [2026-10-10T01:55:54.318Z] Detected Agent: codex_cli
+[debug] [2026-10-10T01:55:54.318Z] Time:          Fri Oct 09 2026 18:55:54 GMT-0700 (Pacific Daylight Time)
+[debug] [2026-10-10T01:55:54.319Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2026-10-10T01:55:55.072Z] openjdk version "25.0.2" 2026-01-20 LTS
+
+[debug] [2026-10-10T01:55:55.072Z] OpenJDK Runtime Environment Temurin-25.0.2+10 (build 25.0.2+10-LTS)
+OpenJDK 64-Bit Server VM Temurin-25.0.2+10 (build 25.0.2+10-LTS, mixed mode, sharing)
+
+[debug] [2026-10-10T01:55:55.076Z] Parsed Java major version: 25
+[debug] [2026-10-10T01:55:55.077Z] [emulators] Starting emulators: auth, firestore
+[debug] [2026-10-10T01:55:55.077Z] [emulators] Detected demo project ID "demo-needmap", emulated services will use a demo configuration and attempts to access non-emulated services for this project will fail.
+[debug] [2026-10-10T01:55:55.447Z] [logging] Logging Emulator only supports listening on one address (127.0.0.1). Not listening on ::1
+[debug] [2026-10-10T01:55:55.447Z] [firestore] Firestore Emulator only supports listening on one address (127.0.0.1). Not listening on ::1
+[debug] [2026-10-10T01:55:55.447Z] [firestore.websocket] websocket server for firestore only supports listening on one address (127.0.0.1). Not listening on ::1
+[debug] [2026-10-10T01:55:55.447Z] DEBUG: assigned listening specs for emulators
+[debug] [2026-10-10T01:55:55.449Z] Write emulator hub locator at /var/folders/ws/9b02z_5d7559b370yr5196mm0000gp/T/hub-demo-needmap.json
+[debug] [2026-10-10T01:55:55.453Z] DEBUG: Ignoring unsupported arg: auto_download
+[debug] [2026-10-10T01:55:55.454Z] DEBUG: Ignoring unsupported arg: single_project_mode_error
+[debug] [2026-10-10T01:55:55.454Z] DEBUG: Starting Firestore Emulator with command {"binary":"java","args":["-Dgoogle.cloud_firestore.debug_log_level=FINE","-Duser.language=en","-jar","/private/tmp/needmap-firebase-emulators/cloud-firestore-emulator-v1.22.0.jar","--host","127.0.0.1","--port",8080,"--websocket_port",9150,"--database-edition","standard","--project_id","demo-needmap","--rules","/private/tmp/firestore.rules","--single_project_mode",true],"optionalArgs":["port","webchannel_port","host","rules","websocket_port","database-edition","functions_emulator","seed_from_export","project_id","single_project_mode"],"joinArgs":false,"shell":false,"port":8080}
+[debug] [2026-10-10T01:55:55.455Z] [firestore] Firestore Emulator logging to firestore-debug.log
+[debug] [2026-10-10T01:55:55.695Z] DEBUG: WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::allocateMemory has been called by io.netty.util.internal.PlatformDependent0$2 (file:/private/tmp/needmap-firebase-emulators/cloud-firestore-emulator-v1.22.0.jar)
+WARNING: Please consider reporting this to the maintainers of class io.netty.util.internal.PlatformDependent0$2
+WARNING: sun.misc.Unsafe::allocateMemory will be removed in a future release
+
+[debug] [2026-10-10T01:55:56.227Z] DEBUG: Oct 09, 2026 6:55:56 PM com.google.cloud.datastore.emulator.firestore.websocket.WebSocketServer start
+INFO: Started WebSocket server on ws://127.0.0.1:9150
+
+[debug] [2026-10-10T01:55:56.244Z] DEBUG: 
+API endpoint: http://127.0.0.1:8080
+
+[debug] [2026-10-10T01:55:56.244Z] DEBUG: Database Edition: STANDARD
+Database Mode: CLOUD_FIRESTORE
+
+If you are using a library that supports the FIRESTORE_EMULATOR_HOST environment variable, run:
+
+   export FIRESTORE_EMULATOR_HOST=127.0.0.1:8080
+
+If you are running a Firestore in Datastore Mode project, run:
+
+   export DATASTORE_EMULATOR_HOST=127.0.0.1:8080
+
+Note: Support for Datastore Mode is in preview. If you encounter any bugs please file at https://github.com/firebase/firebase-tools/issues.
+Dev App Server is now running.
+
+
+[debug] [2026-10-10T01:55:56.263Z] [firestore] Firestore Emulator was started in standard edition.
+[debug] [2026-10-10T01:55:56.263Z] [firestore] Firestore Emulator UI websocket is running on 9150.
+[debug] [2026-10-10T01:55:59.312Z] Could not find VSCode notification endpoint: TypeError: fetch failed. If you are not running the Firebase SQL Connect VSCode extension, this is expected and not an issue.
+[info] i  Running script: node /private/tmp/needmap-rules-test.mjs 
+[debug] [2026-10-10T01:55:59.314Z] Running node /private/tmp/needmap-rules-test.mjs with environment {"CODEX_CI":"1","CODEX_INTERNAL_ORIGINATOR_OVERRIDE":"codex_vscode","CODEX_PERMISSION_PROFILE":":workspace","CODEX_SANDBOX_NETWORK_DISABLED":"1","CODEX_SESSION_ID":"01a10cf4-7cce-76a0-985d-d0dce87a322c","CODEX_THREAD_ID":"01a10cf4-7cce-76a0-985d-d0dce87a322c","CODEX_VERSION":"0.162.0-alpha.2","COLORTERM":"","COMMAND_MODE":"unix2003","DEBUG":"release","ELECTRON_RUN_AS_NODE":"1","GH_PAGER":"cat","GIT_PAGER":"cat","HOME":"/Users/rishabmanas","LANG":"C.UTF-8","LC_ALL":"C.UTF-8","LC_CTYPE":"C.UTF-8","LOGNAME":"rishabmanas","MACH_PORT_RENDEZVOUS_PEER_VALDATION":"1","MallocNanoZone":"0","NO_COLOR":"1","OLDPWD":"/Users/rishabmanas/Desktop/needmap","OSLogRateLimit":"64","PAGER":"cat","PATH":"/Library/Frameworks/Python.framework/Versions/3.14/bin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/pkg/env/global/bin:/opt/homebrew/bin:/Users/rishabmanas/.codex/tmp/arg0/codex-arg0Knr4IR:/Library/Frameworks/Python.framework/Versions/3.14/bin:/Users/rishabmanas/.vscode/extensions/openai.chatgpt-26.1002.51308-darwin-arm64/bin/macos-aarch64","PWD":"/Users/rishabmanas/Desktop/needmap","RUST_LOG":"warn","SHELL":"/bin/zsh","SHLVL":"0","SSH_AUTH_SOCK":"/var/run/com.apple.launchd.pP36e4F6fo/Listeners","TERM":"dumb","TMPDIR":"/var/folders/ws/9b02z_5d7559b370yr5196mm0000gp/T/","USER":"rishabmanas","VSCODE_CODE_CACHE_PATH":"/Users/rishabmanas/Library/Application Support/Code/CachedData/2a59476c9bfcb90b3ddc372c36762471b7dfad1c","VSCODE_CRASH_REPORTER_PROCESS_TYPE":"extensionHost","VSCODE_CWD":"/","VSCODE_ESM_ENTRYPOINT":"vs/workbench/api/node/extensionHostProcess","VSCODE_HANDLES_UNCAUGHT_ERRORS":"true","VSCODE_IPC_HOOK":"/Users/rishabmanas/Library/Application Support/Code/1.14-main.sock","VSCODE_NLS_CONFIG":"{\"userLocale\":\"en-us\",\"osLocale\":\"en-us\",\"resolvedLanguage\":\"en\",\"defaultMessagesFile\":\"/Applications/Visual Studio Code.app/Contents/Resources/app/out/nls.messages.json\",\"locale\":\"en-us\",\"availableLanguages\":{}}","VSCODE_NODE_COMPILE_CACHE_ROOT":"/Applications/Visual Studio Code.app/Contents/Resources/app/node-compile-cache","VSCODE_PID":"42711","XPC_FLAGS":"0x0","XPC_SERVICE_NAME":"application.com.microsoft.VSCode.40066800.40066806","__CFBundleIdentifier":"com.microsoft.VSCode","__CF_USER_TEXT_ENCODING":"0x1F6:0x0:0x0","_":"/usr/bin/env","XDG_CONFIG_HOME":"/private/tmp/needmap-firebase-config","FIREBASE_EMULATORS_PATH":"/private/tmp/needmap-firebase-emulators","CI":"1","IS_FIREBASE_CLI":"true","GCLOUD_PROJECT":"demo-needmap","FIREBASE_CONFIG":"{\"projectId\":\"demo-needmap\",\"storageBucket\":\"demo-needmap.appspot.com\",\"databaseURL\":\"https://demo-needmap.firebaseio.com\"}","FIREBASE_EMULATOR_HUB":"127.0.0.1:4400","FIREBASE_AUTH_EMULATOR_HOST":"127.0.0.1:9099","FIRESTORE_EMULATOR_HOST":"127.0.0.1:8080","FIREBASE_FIRESTORE_EMULATOR_ADDRESS":"127.0.0.1:8080"}
+[debug] [2026-10-10T01:55:59.412Z] DEBUG: Oct 09, 2026 6:55:59 PM io.gapi.emulators.netty.HttpVersionRoutingHandler channelRead
+INFO: Detected non-HTTP/2 connection.
+
+[debug] [2026-10-10T01:55:59.571Z] DEBUG: Oct 09, 2026 6:55:59 PM io.gapi.emulators.netty.HttpVersionRoutingHandler channelRead
+INFO: Detected HTTP/2 connection.
+
+[debug] [2026-10-10T01:56:00.359Z] DEBUG: Oct 09, 2026 6:56:00 PM com.google.cloud.datastore.emulator.impl.util.WrappedStreamObserver onError
+WARNING: Operation failed: 
+evaluation error at L182:24 for 'create' @ L182, false for 'update' @ L183, Property submittedBy is undefined on object. for 'create' @ L182
+com.google.cloud.datastore.core.exception.DatastoreException: 
+evaluation error at L182:24 for 'create' @ L182, false for 'update' @ L183, Property submittedBy is undefined on object. for 'create' @ L182
+	at com.google.cloud.datastore.core.exception.DatastoreException$Builder.build(DatastoreException.java:152)
+	at com.google.cloud.datastore.emulator.impl.rules.DefaultEmulatorRulesAuthorizer.verboseError(DefaultEmulatorRulesAuthorizer.java:349)
+	at com.google.cloud.datastore.emulator.impl.rules.DefaultEmulatorRulesAuthorizer.withVerboseErrors(DefaultEmulatorRulesAuthorizer.java:326)
+	at com.google.cloud.datastore.emulator.impl.rules.DefaultEmulatorRulesAuthorizer.checkCommit(DefaultEmulatorRulesAuthorizer.java:113)
+	at com.google.cloud.datastore.emulator.impl.firestore.FirestoreEmulatorHelper.commitHelper(FirestoreEmulatorHelper.java:407)
+	at com.google.cloud.datastore.emulator.impl.firestore.FirestoreEmulatorHelper.internalCommit(FirestoreEmulatorHelper.java:348)
+	at com.google.cloud.datastore.emulator.impl.firestore.CloudFirestoreV1.commit(CloudFirestoreV1.java:541)
+	at com.google.cloud.datastore.emulator.impl.firestore.CloudFirestoreV1Router.commit(CloudFirestoreV1Router.java:177)
+	at com.google.cloud.datastore.emulator.firestore.v1.FirestoreV1GrpcAdapter$1.lambda$commit$0(FirestoreV1GrpcAdapter.java:162)
+	at com.google.cloud.datastore.emulator.firestore.v1.FirestoreV1GrpcAdapter.unary(FirestoreV1GrpcAdapter.java:72)
+	at com.google.cloud.datastore.emulator.firestore.v1.FirestoreV1GrpcAdapter$1.commit(FirestoreV1GrpcAdapter.java:162)
+	at com.google.firestore.v1.FirestoreGrpc$MethodHandlers.invoke(FirestoreGrpc.java:1404)
+	at io.grpc.stub.ServerCalls$UnaryServerCallHandler$UnaryServerCallListener.onHalfClose(ServerCalls.java:182)
+	at io.grpc.PartialForwardingServerCallListener.onHalfClose(PartialForwardingServerCallListener.java:35)
+	at io.grpc.ForwardingServerCallListener.onHalfClose(ForwardingServerCallListener.java:23)
+	at io.grpc.ForwardingServerCallListener$SimpleForwardingServerCallListener.onHalfClose(ForwardingServerCallListener.java:40)
+	at io.grpc.Contexts$ContextualizedServerCallListener.onHalfClose(Contexts.java:86)
+	at io.grpc.PartialForwardingServerCallListener.onHalfClose(PartialForwardingServerCallListener.java:35)
+	at io.grpc.ForwardingServerCallListener.onHalfClose(ForwardingServerCallListener.java:23)
+	at io.grpc.ForwardingServerCallListener$SimpleForwardingServerCallListener.onHalfClose(ForwardingServerCallListener.java:40)
+	at io.grpc.Contexts$ContextualizedServerCallListener.onHalfClose(Contexts.java:86)
+	at io.grpc.internal.ServerCallImpl$ServerStreamListenerImpl.halfClosed(ServerCallImpl.java:356)
+	at io.grpc.internal.ServerImpl$JumpToApplicationThreadServerStreamListener$1HalfClosed.runInContext(ServerImpl.java:879)
+	at io.grpc.internal.ContextRunnable.run(ContextRunnable.java:37)
+	at io.grpc.internal.SerializingExecutor.run(SerializingExecutor.java:133)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1090)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:614)
+	at java.base/java.lang.Thread.run(Thread.java:1474)
+Caused by: com.google.firebase.rules.runtime.common.EvaluationException: Error: /private/tmp/firestore.rules line [78], column [12]. Property submittedBy is undefined on object.
+	at com.google.firebase.rules.runtime.impl.DefaultEvaluator$TransformEvaluationException.apply(DefaultEvaluator.java:275)
+	at com.google.firebase.rules.runtime.impl.DefaultEvaluator$TransformEvaluationException.apply(DefaultEvaluator.java:261)
+	at com.google.common.util.concurrent.AbstractCatchingFuture$AsyncCatchingFuture.doFallback(AbstractCatchingFuture.java:207)
+	at com.google.common.util.concurrent.AbstractCatchingFuture$AsyncCatchingFuture.doFallback(AbstractCatchingFuture.java:194)
+	at com.google.common.util.concurrent.AbstractCatchingFuture.run(AbstractCatchingFuture.java:136)
+	at com.google.common.util.concurrent.DirectExecutor.execute(DirectExecutor.java:30)
+	at com.google.common.util.concurrent.AbstractFuture.executeListener(AbstractFuture.java:1045)
+	at com.google.common.util.concurrent.AbstractFuture.addListener(AbstractFuture.java:492)
+	at com.google.common.util.concurrent.FluentFuture$TrustedFuture.addListener(FluentFuture.java:122)
+	at com.google.common.util.concurrent.AbstractCatchingFuture.createAsync(AbstractCatchingFuture.java:58)
+	at com.google.common.util.concurrent.Futures.catchingAsync(Futures.java:411)
+	at com.google.firebase.rules.runtime.impl.DefaultEvaluator.evaluate(DefaultEvaluator.java:177)
+	at com.google.cloud.datastore.emulator.impl.rules.EmulatorRuleClient$EmulatorRuleEvaluator.evaluate(EmulatorRuleClient.java:88)
+	at com.google.cloud.datastore.core.auth.rules.AsyncTwoPhaseRulesAuthorizer.lambda$fullEvaluate$0(AsyncTwoPhaseRulesAuthorizer.java:993)
+	at com.google.cloud.datastore.computation.Computation.tryCatch(Computation.java:472)
+	at com.google.cloud.datastore.core.auth.rules.AsyncTwoPhaseRulesAuthorizer.fullEvaluate(AsyncTwoPhaseRulesAuthorizer.java:992)
+	at com.google.cloud.datastore.core.auth.rules.AsyncTwoPhaseRulesAuthorizer$WriteAuthorizerImpl.lambda$checkWrite$0(AsyncTwoPhaseRulesAuthorizer.java:1227)
+	at com.google.cloud.datastore.computation.Computation.lambda$tryClose$1(Computation.java:741)
+	at com.google.cloud.datastore.computation.Computation.tryCatch(Computation.java:472)
+	at com.google.cloud.datastore.computation.Computation.tryFinally(Computation.java:708)
+	at com.google.cloud.datastore.computation.Computation.tryFinally(Computation.java:714)
+	at com.google.cloud.datastore.computation.Computation.tryClose(Computation.java:741)
+	at com.google.cloud.datastore.core.auth.rules.AsyncTwoPhaseRulesAuthorizer$WriteAuthorizerImpl.checkWrite(AsyncTwoPhaseRulesAuthorizer.java:1199)
+	at com.google.cloud.datastore.emulator.impl.rules.DefaultEmulatorRulesAuthorizer.lambda$checkCommit$2(DefaultEmulatorRulesAuthorizer.java:124)
+	at com.google.cloud.datastore.computation.Computation.run(Computation.java:82)
+	at com.google.cloud.datastore.computation.Computation$Terminated.toFuture(Computation.java:950)
+	at com.google.cloud.datastore.computation.Computation.toFuture(Computation.java:93)
+	at com.google.cloud.datastore.emulator.impl.rules.DefaultEmulatorRulesAuthorizer.finish(DefaultEmulatorRulesAuthorizer.java:308)
+	at com.google.cloud.datastore.emulator.impl.rules.DefaultEmulatorRulesAuthorizer.lambda$checkCommit$0(DefaultEmulatorRulesAuthorizer.java:122)
+	at com.google.cloud.datastore.emulator.impl.rules.DefaultEmulatorRulesAuthorizer.withVerboseErrors(DefaultEmulatorRulesAuthorizer.java:321)
+	... 25 more
+
+
+[debug] [2026-10-10T01:56:00.366Z] DEBUG: Oct 09, 2026 6:56:00 PM io.gapi.emulators.netty.HttpHandler$1 onError
+INFO: Exception when handling request: PERMISSION_DENIED: 
+evaluation error at L182:24 for 'create' @ L182, false for 'update' @ L183, Property submittedBy is undefined on object. for 'create' @ L182
+
+[warn] ⚠  Script exited unsuccessfully (code 1) 
+[debug] [2026-10-10T01:56:00.907Z] [emulators] Shutting down emulators.
+[debug] [2026-10-10T01:56:00.908Z] [firestore] Stopping Firestore Emulator
+[debug] [2026-10-10T01:56:00.909Z] DEBUG: *** shutting down gRPC server since JVM is shutting down
+
+[debug] [2026-10-10T01:56:00.912Z] DEBUG: *** server shut down
+
+[debug] [2026-10-10T01:56:01.235Z] [auth] Stopping Authentication Emulator
+[debug] [2026-10-10T01:56:01.235Z] [hub] Stopping emulator hub
+[debug] [2026-10-10T01:56:01.235Z] [logging] Stopping Logging Emulator
+[debug] [2026-10-10T01:56:01.241Z] Could not find VSCode notification endpoint: TypeError: fetch failed. If you are not running the Firebase SQL Connect VSCode extension, this is expected and not an issue.
+[error] 
+[error] Error: Script "node /private/tmp/needmap-rules-test.mjs" exited with code 1
+[debug] [2026-10-10T01:56:01.520Z] Found emulator hub locator: {"version":"15.32.1","origins":["http://127.0.0.1:4400","http://[::1]:4400"],"pid":1931}
+[debug] [2026-10-10T01:56:45.141Z] ----------------------------------------------------------------------
+[debug] [2026-10-10T01:56:45.143Z] Command:       /usr/local/bin/node /opt/homebrew/bin/firebase emulators:exec --only auth,firestore --project demo-needmap --config /private/tmp/needmap-firebase.json --log-verbosity QUIET node /private/tmp/needmap-rules-test.mjs
+[debug] [2026-10-10T01:56:45.143Z] CLI Version:   15.32.1
+[debug] [2026-10-10T01:56:45.144Z] Platform:      darwin
+[debug] [2026-10-10T01:56:45.144Z] Node Version:  v24.21.0
+[debug] [2026-10-10T01:56:45.144Z] Detected Agent: codex_cli
+[debug] [2026-10-10T01:56:45.144Z] Time:          Fri Oct 09 2026 18:56:45 GMT-0700 (Pacific Daylight Time)
+[debug] [2026-10-10T01:56:45.144Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2026-10-10T01:56:45.658Z] openjdk version "25.0.2" 2026-01-20 LTS
+OpenJDK Runtime Environment Temurin-25.0.2+10 (build 25.0.2+10-LTS)
+
+[debug] [2026-10-10T01:56:45.658Z] OpenJDK 64-Bit Server VM Temurin-25.0.2+10 (build 25.0.2+10-LTS, mixed mode, sharing)
+
+[debug] [2026-10-10T01:56:45.660Z] Parsed Java major version: 25
+[debug] [2026-10-10T01:56:45.660Z] [emulators] Starting emulators: auth, firestore
+[debug] [2026-10-10T01:56:45.660Z] [emulators] Detected demo project ID "demo-needmap", emulated services will use a demo configuration and attempts to access non-emulated services for this project will fail.
+[debug] [2026-10-10T01:56:45.984Z] [logging] Logging Emulator only supports listening on one address (127.0.0.1). Not listening on ::1
+[debug] [2026-10-10T01:56:45.985Z] [firestore] Firestore Emulator only supports listening on one address (127.0.0.1). Not listening on ::1
+[debug] [2026-10-10T01:56:45.985Z] [firestore.websocket] websocket server for firestore only supports listening on one address (127.0.0.1). Not listening on ::1
+[debug] [2026-10-10T01:56:45.985Z] DEBUG: assigned listening specs for emulators
+[debug] [2026-10-10T01:56:45.987Z] Write emulator hub locator at /var/folders/ws/9b02z_5d7559b370yr5196mm0000gp/T/hub-demo-needmap.json
+[debug] [2026-10-10T01:56:45.989Z] DEBUG: Ignoring unsupported arg: auto_download
+[debug] [2026-10-10T01:56:45.989Z] DEBUG: Ignoring unsupported arg: single_project_mode_error
+[debug] [2026-10-10T01:56:45.989Z] DEBUG: Starting Firestore Emulator with command {"binary":"java","args":["-Dgoogle.cloud_firestore.debug_log_level=FINE","-Duser.language=en","-jar","/private/tmp/needmap-firebase-emulators/cloud-firestore-emulator-v1.22.0.jar","--host","127.0.0.1","--port",8080,"--websocket_port",9150,"--database-edition","standard","--project_id","demo-needmap","--rules","/private/tmp/firestore.rules","--single_project_mode",true],"optionalArgs":["port","webchannel_port","host","rules","websocket_port","database-edition","functions_emulator","seed_from_export","project_id","single_project_mode"],"joinArgs":false,"shell":false,"port":8080}
+[debug] [2026-10-10T01:56:45.990Z] [firestore] Firestore Emulator logging to firestore-debug.log
+[debug] [2026-10-10T01:56:46.164Z] DEBUG: WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::allocateMemory has been called by io.netty.util.internal.PlatformDependent0$2 (file:/private/tmp/needmap-firebase-emulators/cloud-firestore-emulator-v1.22.0.jar)
+WARNING: Please consider reporting this to the maintainers of class io.netty.util.internal.PlatformDependent0$2
+WARNING: sun.misc.Unsafe::allocateMemory will be removed in a future release
+
+[debug] [2026-10-10T01:56:46.593Z] DEBUG: Oct 09, 2026 6:56:46 PM com.google.cloud.datastore.emulator.firestore.websocket.WebSocketServer start
+INFO: Started WebSocket server on ws://127.0.0.1:9150
+
+[debug] [2026-10-10T01:56:46.607Z] DEBUG: 
+API endpoint: http://
+[debug] [2026-10-10T01:56:46.607Z] DEBUG: 127.0.0.1:8080
+Database Edition: STANDARD
+Database Mode: CLOUD_FIRESTORE
+
+If you are using a library that supports the FIRESTORE_EMULATOR_HOST environment variable, run:
+
+   export FIRESTORE_EMULATOR_HOST=127.0.0.1:8080
+
+If you are running a Firestore in Datastore Mode project, run:
+
+   export DATASTORE_EMULATOR_HOST=127.0.0.1:8080
+
+Note: Support for Datastore Mode is in preview. If you encounter any bugs please file at https://github.com/firebase/firebase-tools/issues.
+Dev App Server is now running.
+
+
+[debug] [2026-10-10T01:56:46.803Z] [firestore] Firestore Emulator was started in standard edition.
+[debug] [2026-10-10T01:56:46.803Z] [firestore] Firestore Emulator UI websocket is running on 9150.
+[debug] [2026-10-10T01:56:50.181Z] Could not find VSCode notification endpoint: TypeError: fetch failed. If you are not running the Firebase SQL Connect VSCode extension, this is expected and not an issue.
+[info] i  Running script: node /private/tmp/needmap-rules-test.mjs 
+[debug] [2026-10-10T01:56:50.182Z] Running node /private/tmp/needmap-rules-test.mjs with environment {"CODEX_CI":"1","CODEX_INTERNAL_ORIGINATOR_OVERRIDE":"codex_vscode","CODEX_PERMISSION_PROFILE":":workspace","CODEX_SANDBOX_NETWORK_DISABLED":"1","CODEX_SESSION_ID":"01a10cf4-7cce-76a0-985d-d0dce87a322c","CODEX_THREAD_ID":"01a10cf4-7cce-76a0-985d-d0dce87a322c","CODEX_VERSION":"0.162.0-alpha.2","COLORTERM":"","COMMAND_MODE":"unix2003","DEBUG":"release","ELECTRON_RUN_AS_NODE":"1","GH_PAGER":"cat","GIT_PAGER":"cat","HOME":"/Users/rishabmanas","LANG":"C.UTF-8","LC_ALL":"C.UTF-8","LC_CTYPE":"C.UTF-8","LOGNAME":"rishabmanas","MACH_PORT_RENDEZVOUS_PEER_VALDATION":"1","MallocNanoZone":"0","NO_COLOR":"1","OLDPWD":"/Users/rishabmanas/Desktop/needmap","OSLogRateLimit":"64","PAGER":"cat","PATH":"/Library/Frameworks/Python.framework/Versions/3.14/bin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/pkg/env/global/bin:/opt/homebrew/bin:/Users/rishabmanas/.codex/tmp/arg0/codex-arg0Knr4IR:/Library/Frameworks/Python.framework/Versions/3.14/bin:/Users/rishabmanas/.vscode/extensions/openai.chatgpt-26.1002.51308-darwin-arm64/bin/macos-aarch64","PWD":"/Users/rishabmanas/Desktop/needmap","RUST_LOG":"warn","SHELL":"/bin/zsh","SHLVL":"0","SSH_AUTH_SOCK":"/var/run/com.apple.launchd.pP36e4F6fo/Listeners","TERM":"dumb","TMPDIR":"/var/folders/ws/9b02z_5d7559b370yr5196mm0000gp/T/","USER":"rishabmanas","VSCODE_CODE_CACHE_PATH":"/Users/rishabmanas/Library/Application Support/Code/CachedData/2a59476c9bfcb90b3ddc372c36762471b7dfad1c","VSCODE_CRASH_REPORTER_PROCESS_TYPE":"extensionHost","VSCODE_CWD":"/","VSCODE_ESM_ENTRYPOINT":"vs/workbench/api/node/extensionHostProcess","VSCODE_HANDLES_UNCAUGHT_ERRORS":"true","VSCODE_IPC_HOOK":"/Users/rishabmanas/Library/Application Support/Code/1.14-main.sock","VSCODE_NLS_CONFIG":"{\"userLocale\":\"en-us\",\"osLocale\":\"en-us\",\"resolvedLanguage\":\"en\",\"defaultMessagesFile\":\"/Applications/Visual Studio Code.app/Contents/Resources/app/out/nls.messages.json\",\"locale\":\"en-us\",\"availableLanguages\":{}}","VSCODE_NODE_COMPILE_CACHE_ROOT":"/Applications/Visual Studio Code.app/Contents/Resources/app/node-compile-cache","VSCODE_PID":"42711","XPC_FLAGS":"0x0","XPC_SERVICE_NAME":"application.com.microsoft.VSCode.40066800.40066806","__CFBundleIdentifier":"com.microsoft.VSCode","__CF_USER_TEXT_ENCODING":"0x1F6:0x0:0x0","_":"/usr/bin/env","XDG_CONFIG_HOME":"/private/tmp/needmap-firebase-config","FIREBASE_EMULATORS_PATH":"/private/tmp/needmap-firebase-emulators","CI":"1","IS_FIREBASE_CLI":"true","GCLOUD_PROJECT":"demo-needmap","FIREBASE_CONFIG":"{\"projectId\":\"demo-needmap\",\"storageBucket\":\"demo-needmap.appspot.com\",\"databaseURL\":\"https://demo-needmap.firebaseio.com\"}","FIREBASE_EMULATOR_HUB":"127.0.0.1:4400","FIREBASE_AUTH_EMULATOR_HOST":"127.0.0.1:9099","FIRESTORE_EMULATOR_HOST":"127.0.0.1:8080","FIREBASE_FIRESTORE_EMULATOR_ADDRESS":"127.0.0.1:8080"}
+[debug] [2026-10-10T01:56:50.259Z] DEBUG: Oct 09, 2026 6:56:50 PM io.gapi.emulators.netty.HttpVersionRoutingHandler channelRead
+INFO: Detected non-HTTP/2 connection.
+
+[debug] [2026-10-10T01:56:50.377Z] DEBUG: Oct 09, 2026 6:56:50 PM io.gapi.emulators.netty.HttpVersionRoutingHandler channelRead
+INFO: Detected HTTP/2 connection.
+
+[debug] [2026-10-10T01:57:00.313Z] DEBUG: Oct 09, 2026 6:57:00 PM io.gapi.emulators.netty.HttpVersionRoutingHandler channelRead
+INFO: Detected non-HTTP/2 connection.
+
+[debug] [2026-10-10T01:57:00.345Z] DEBUG: Oct 09, 2026 6:57:00 PM com.google.cloud.datastore.emulator.impl.util.WrappedStreamObserver onError
+WARNING: Operation failed: 
+evaluation error at L185:24 for 'create' @ L185, false for 'update' @ L186, false for 'create' @ L185
+com.google.cloud.datastore.core.exception.DatastoreException: 
+evaluation error at L185:24 for 'create' @ L185, false for 'update' @ L186, false for 'create' @ L185
+	at com.google.cloud.datastore.core.exception.DatastoreException$Builder.build(DatastoreException.java:152)
+	at com.google.cloud.datastore.emulator.impl.rules.DefaultEmulatorRulesAuthorizer.verboseError(DefaultEmulatorRulesAuthorizer.java:349)
+	at com.google.cloud.datastore.emulator.impl.rules.DefaultEmulatorRulesAuthorizer.withVerboseErrors(DefaultEmulatorRulesAuthorizer.java:326)
+	at com.google.cloud.datastore.emulator.impl.rules.DefaultEmulatorRulesAuthorizer.checkCommit(DefaultEmulatorRulesAuthorizer.java:113)
+	at com.google.cloud.datastore.emulator.impl.firestore.FirestoreEmulatorHelper.commitHelper(FirestoreEmulatorHelper.java:407)
+	at com.google.cloud.datastore.emulator.impl.firestore.FirestoreEmulatorHelper.internalCommit(FirestoreEmulatorHelper.java:348)
+	at com.google.cloud.datastore.emulator.impl.firestore.CloudFirestoreV1.commit(CloudFirestoreV1.java:541)
+	at com.google.cloud.datastore.emulator.impl.firestore.CloudFirestoreV1Router.commit(CloudFirestoreV1Router.java:177)
+	at com.google.cloud.datastore.emulator.firestore.v1.FirestoreV1GrpcAdapter$1.lambda$commit$0(FirestoreV1GrpcAdapter.java:162)
+	at com.google.cloud.datastore.emulator.firestore.v1.FirestoreV1GrpcAdapter.unary(FirestoreV1GrpcAdapter.java:72)
+	at com.google.cloud.datastore.emulator.firestore.v1.FirestoreV1GrpcAdapter$1.commit(FirestoreV1GrpcAdapter.java:162)
+	at com.google.firestore.v1.FirestoreGrpc$MethodHandlers.invoke(FirestoreGrpc.java:1404)
+	at io.grpc.stub.ServerCalls$UnaryServerCallHandler$UnaryServerCallListener.onHalfClose(ServerCalls.java:182)
+	at io.grpc.PartialForwardingServerCallListener.onHalfClose(PartialForwardingServerCallListener.java:35)
+	at io.grpc.ForwardingServerCallListener.onHalfClose(ForwardingServerCallListener.java:23)
+	at io.grpc.ForwardingServerCallListener$SimpleForwardingServerCallListener.onHalfClose(ForwardingServerCallListener.java:40)
+	at io.grpc.Contexts$ContextualizedServerCallListener.onHalfClose(Contexts.java:86)
+	at io.grpc.PartialForwardingServerCallListener.onHalfClose(PartialForwardingServerCallListener.java:35)
+	at io.grpc.ForwardingServerCallListener.onHalfClose(ForwardingServerCallListener.java:23)
+	at io.grpc.ForwardingServerCallListener$SimpleForwardingServerCallListener.onHalfClose(ForwardingServerCallListener.java:40)
+	at io.grpc.Contexts$ContextualizedServerCallListener.onHalfClose(Contexts.java:86)
+	at io.grpc.internal.ServerCallImpl$ServerStreamListenerImpl.halfClosed(ServerCallImpl.java:356)
+	at io.grpc.internal.ServerImpl$JumpToApplicationThreadServerStreamListener$1HalfClosed.runInContext(ServerImpl.java:879)
+	at io.grpc.internal.ContextRunnable.run(ContextRunnable.java:37)
+	at io.grpc.internal.SerializingExecutor.run(SerializingExecutor.java:133)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1090)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:614)
+	at java.base/java.lang.Thread.run(Thread.java:1474)
+
+
+[debug] [2026-10-10T01:57:00.348Z] DEBUG: Oct 09, 2026 6:57:00 PM io.gapi.emulators.netty.HttpHandler$1 onError
+INFO: Exception when handling request: PERMISSION_DENIED: 
+evaluation error at L185:24 for 'create' @ L185, false for 'update' @ L186, false for 'create' @ L185
+
+[debug] [2026-10-10T01:57:00.374Z] DEBUG: Oct 09, 2026 6:57:00 PM com.google.cloud.datastore.emulator.impl.util.WrappedStreamObserver onError
+WARNING: Operation failed: 
+evaluation error at L185:24 for 'create' @ L185, false for 'update' @ L186, false for 'update' @ L186
+com.google.cloud.datastore.core.exception.DatastoreException: 
+evaluation error at L185:24 for 'create' @ L185, false for 'update' @ L186, false for 'update' @ L186
+	at com.google.cloud.datastore.core.exception.DatastoreException$Builder.build(DatastoreException.java:152)
+	at com.google.cloud.datastore.emulator.impl.rules.DefaultEmulatorRulesAuthorizer.verboseError(DefaultEmulatorRulesAuthorizer.java:349)
+	at com.google.cloud.datastore.emulator.impl.rules.DefaultEmulatorRulesAuthorizer.withVerboseErrors(DefaultEmulatorRulesAuthorizer.java:326)
+	at com.google.cloud.datastore.emulator.impl.rules.DefaultEmulatorRulesAuthorizer.checkCommit(DefaultEmulatorRulesAuthorizer.java:113)
+	at com.google.cloud.datastore.emulator.impl.firestore.FirestoreEmulatorHelper.commitHelper(FirestoreEmulatorHelper.java:407)
+	at com.google.cloud.datastore.emulator.impl.firestore.FirestoreEmulatorHelper.internalCommit(FirestoreEmulatorHelper.java:348)
+	at com.google.cloud.datastore.emulator.impl.firestore.CloudFirestoreV1.commit(CloudFirestoreV1.java:541)
+	at com.google.cloud.datastore.emulator.impl.firestore.CloudFirestoreV1Router.commit(CloudFirestoreV1Router.java:177)
+	at com.google.cloud.datastore.emulator.firestore.v1.FirestoreV1GrpcAdapter$1.lambda$commit$0(FirestoreV1GrpcAdapter.java:162)
+	at com.google.cloud.datastore.emulator.firestore.v1.FirestoreV1GrpcAdapter.unary(FirestoreV1GrpcAdapter.java:72)
+	at com.google.cloud.datastore.emulator.firestore.v1.FirestoreV1GrpcAdapter$1.commit(FirestoreV1GrpcAdapter.java:162)
+	at com.google.firestore.v1.FirestoreGrpc$MethodHandlers.invoke(FirestoreGrpc.java:1404)
+	at io.grpc.stub.ServerCalls$UnaryServerCallHandler$UnaryServerCallListener.onHalfClose(ServerCalls.java:182)
+	at io.grpc.PartialForwardingServerCallListener.onHalfClose(PartialForwardingServerCallListener.java:35)
+	at io.grpc.ForwardingServerCallListener.onHalfClose(ForwardingServerCallListener.java:23)
+	at io.grpc.ForwardingServerCallListener$SimpleForwardingServerCallListener.onHalfClose(ForwardingServerCallListener.java:40)
+	at io.grpc.Contexts$ContextualizedServerCallListener.onHalfClose(Contexts.java:86)
+	at io.grpc.PartialForwardingServerCallListener.onHalfClose(PartialForwardingServerCallListener.java:35)
+	at io.grpc.ForwardingServerCallListener.onHalfClose(ForwardingServerCallListener.java:23)
+	at io.grpc.ForwardingServerCallListener$SimpleForwardingServerCallListener.onHalfClose(ForwardingServerCallListener.java:40)
+	at io.grpc.Contexts$ContextualizedServerCallListener.onHalfClose(Contexts.java:86)
+	at io.grpc.internal.ServerCallImpl$ServerStreamListenerImpl.halfClosed(ServerCallImpl.java:356)
+	at io.grpc.internal.ServerImpl$JumpToApplicationThreadServerStreamListener$1HalfClosed.runInContext(ServerImpl.java:879)
+	at io.grpc.internal.ContextRunnable.run(ContextRunnable.java:37)
+	at io.grpc.internal.SerializingExecutor.run(SerializingExecutor.java:133)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1090)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:614)
+	at java.base/java.lang.Thread.run(Thread.java:1474)
+
+
+[debug] [2026-10-10T01:57:00.375Z] DEBUG: Oct 09, 2026 6:57:00 PM io.gapi.emulators.netty.HttpHandler$1 onError
+INFO: Exception when handling request: PERMISSION_DENIED: 
+evaluation error at L185:24 for 'create' @ L185, false for 'update' @ L186, false for 'update' @ L186
+
+[debug] [2026-10-10T01:57:00.421Z] DEBUG: Oct 09, 2026 6:57:00 PM com.google.cloud.datastore.emulator.impl.util.WrappedStreamObserver onError
+WARNING: Operation failed: 
+evaluation error at L208:24 for 'create' @ L208, evaluation error at L210:24 for 'update' @ L210, false for 'create' @ L208
+com.google.cloud.datastore.core.exception.DatastoreException: 
+evaluation error at L208:24 for 'create' @ L208, evaluation error at L210:24 for 'update' @ L210, false for 'create' @ L208
+	at com.google.cloud.datastore.core.exception.DatastoreException$Builder.build(DatastoreException.java:152)
+	at com.google.cloud.datastore.emulator.impl.rules.DefaultEmulatorRulesAuthorizer.verboseError(DefaultEmulatorRulesAuthorizer.java:349)
+	at com.google.cloud.datastore.emulator.impl.rules.DefaultEmulatorRulesAuthorizer.withVerboseErrors(DefaultEmulatorRulesAuthorizer.java:326)
+	at com.google.cloud.datastore.emulator.impl.rules.DefaultEmulatorRulesAuthorizer.checkCommit(DefaultEmulatorRulesAuthorizer.java:113)
+	at com.google.cloud.datastore.emulator.impl.firestore.FirestoreEmulatorHelper.commitHelper(FirestoreEmulatorHelper.java:407)
+	at com.google.cloud.datastore.emulator.impl.firestore.FirestoreEmulatorHelper.internalCommit(FirestoreEmulatorHelper.java:348)
+	at com.google.cloud.datastore.emulator.impl.firestore.CloudFirestoreV1.commit(CloudFirestoreV1.java:541)
+	at com.google.cloud.datastore.emulator.impl.firestore.CloudFirestoreV1Router.commit(CloudFirestoreV1Router.java:177)
+	at com.google.cloud.datastore.emulator.firestore.v1.FirestoreV1GrpcAdapter$1.lambda$commit$0(FirestoreV1GrpcAdapter.java:162)
+	at com.google.cloud.datastore.emulator.firestore.v1.FirestoreV1GrpcAdapter.unary(FirestoreV1GrpcAdapter.java:72)
+	at com.google.cloud.datastore.emulator.firestore.v1.FirestoreV1GrpcAdapter$1.commit(FirestoreV1GrpcAdapter.java:162)
+	at com.google.firestore.v1.FirestoreGrpc$MethodHandlers.invoke(FirestoreGrpc.java:1404)
+	at io.grpc.stub.ServerCalls$UnaryServerCallHandler$UnaryServerCallListener.onHalfClose(ServerCalls.java:182)
+	at io.grpc.PartialForwardingServerCallListener.onHalfClose(PartialForwardingServerCallListener.java:35)
+	at io.grpc.ForwardingServerCallListener.onHalfClose(ForwardingServerCallListener.java:23)
+	at io.grpc.ForwardingServerCallListener$SimpleForwardingServerCallListener.onHalfClose(ForwardingServerCallListener.java:40)
+	at io.grpc.Contexts$ContextualizedServerCallListener.onHalfClose(Contexts.java:86)
+	at io.grpc.PartialForwardingServerCallListener.onHalfClose(PartialForwardingServerCallListener.java:35)
+	at io.grpc.ForwardingServerCallListener.onHalfClose(ForwardingServerCallListener.java:23)
+	at io.grpc.ForwardingServerCallListener$SimpleForwardingServerCallListener.onHalfClose(ForwardingServerCallListener.java:40)
+	at io.grpc.Contexts$ContextualizedServerCallListener.onHalfClose(Contexts.java:86)
+	at io.grpc.internal.ServerCallImpl$ServerStreamListenerImpl.halfClosed(ServerCallImpl.java:356)
+	at io.grpc.internal.ServerImpl$JumpToApplicationThreadServerStreamListener$1HalfClosed.runInContext(ServerImpl.java:879)
+	at io.grpc.internal.ContextRunnable.run(ContextRunnable.java:37)
+	at io.grpc.internal.SerializingExecutor.run(SerializingExecutor.java:133)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1090)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:614)
+	at java.base/java.lang.Thread.run(Thread.java:1474)
+
+
+[debug] [2026-10-10T01:57:00.422Z] DEBUG: Oct 09, 2026 6:57:00 PM io.gapi.emulators.netty.HttpHandler$1 onError
+INFO: Exception when handling request: PERMISSION_DENIED: 
+evaluation error at L208:24 for 'create' @ L208, evaluation error at L210:24 for 'update' @ L210, false for 'create' @ L208
+
+[debug] [2026-10-10T01:57:00.467Z] DEBUG: Oct 09, 2026 6:57:00 PM com.google.cloud.datastore.emulator.impl.util.WrappedStreamObserver onError
+WARNING: Operation failed: 
+false for 'get' @ L197
+com.google.cloud.datastore.core.exception.DatastoreException: 
+false for 'get' @ L197
+	at com.google.cloud.datastore.core.exception.DatastoreException$Builder.build(DatastoreException.java:152)
+	at com.google.cloud.datastore.emulator.impl.rules.DefaultEmulatorRulesAuthorizer.verboseError(DefaultEmulatorRulesAuthorizer.java:349)
+	at com.google.cloud.datastore.emulator.impl.rules.DefaultEmulatorRulesAuthorizer.withVerboseErrors(DefaultEmulatorRulesAuthorizer.java:326)
+	at com.google.cloud.datastore.emulator.impl.rules.DefaultEmulatorRulesAuthorizer.checkLookup(DefaultEmulatorRulesAuthorizer.java:157)
+	at com.google.cloud.datastore.emulator.impl.firestore.FirestoreEmulatorHelper.snapshotRead(FirestoreEmulatorHelper.java:318)
+	at com.google.cloud.datastore.emulator.impl.firestore.FirestoreEmulatorHelper.lambda$read$0(FirestoreEmulatorHelper.java:265)
+	at com.google.cloud.datastore.emulator.impl.transactions.EmulatorTransactionManager$ReadOnlyTransaction.fold(EmulatorTransactionManager.java:492)
+	at com.google.cloud.datastore.emulator.impl.firestore.FirestoreEmulatorHelper.read(FirestoreEmulatorHelper.java:264)
+	at com.google.cloud.datastore.emulator.impl.firestore.CloudFirestoreV1.getDocument(CloudFirestoreV1.java:338)
+	at com.google.cloud.datastore.emulator.impl.firestore.CloudFirestoreV1Router.getDocument(CloudFirestoreV1Router.java:131)
+	at com.google.cloud.datastore.emulator.impl.firestore.CloudFirestoreV1Router.getOrListDocuments(CloudFirestoreV1Router.java:125)
+	at com.google.cloud.datastore.emulator.firestore.v1.FirestoreV1GrpcAdapter$1.lambda$getOrListDocuments$0(FirestoreV1GrpcAdapter.java:108)
+	at com.google.cloud.datastore.emulator.firestore.v1.FirestoreV1GrpcAdapter.unary(FirestoreV1GrpcAdapter.java:72)
+	at com.google.cloud.datastore.emulator.firestore.v1.FirestoreV1GrpcAdapter$1.getOrListDocuments(FirestoreV1GrpcAdapter.java:108)
+	at com.google.firestore.v1.FirestoreGrpc$MethodHandlers.invoke(FirestoreGrpc.java:1376)
+	at io.grpc.stub.ServerCalls$UnaryServerCallHandler$UnaryServerCallListener.onHalfClose(ServerCalls.java:182)
+	at io.grpc.PartialForwardingServerCallListener.onHalfClose(PartialForwardingServerCallListener.java:35)
+	at io.grpc.ForwardingServerCallListener.onHalfClose(ForwardingServerCallListener.java:23)
+	at io.grpc.ForwardingServerCallListener$SimpleForwardingServerCallListener.onHalfClose(ForwardingServerCallListener.java:40)
+	at io.grpc.Contexts$ContextualizedServerCallListener.onHalfClose(Contexts.java:86)
+	at io.grpc.PartialForwardingServerCallListener.onHalfClose(PartialForwardingServerCallListener.java:35)
+	at io.grpc.ForwardingServerCallListener.onHalfClose(ForwardingServerCallListener.java:23)
+	at io.grpc.ForwardingServerCallListener$SimpleForwardingServerCallListener.onHalfClose(ForwardingServerCallListener.java:40)
+	at io.grpc.Contexts$ContextualizedServerCallListener.onHalfClose(Contexts.java:86)
+	at io.grpc.internal.ServerCallImpl$ServerStreamListenerImpl.halfClosed(ServerCallImpl.java:356)
+	at io.grpc.internal.ServerImpl$JumpToApplicationThreadServerStreamListener$1HalfClosed.runInContext(ServerImpl.java:879)
+	at io.grpc.internal.ContextRunnable.run(ContextRunnable.java:37)
+	at io.grpc.internal.SerializingExecutor.run(SerializingExecutor.java:133)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1090)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:614)
+	at java.base/java.lang.Thread.run(Thread.java:1474)
+
+
+[debug] [2026-10-10T01:57:00.468Z] DEBUG: Oct 09, 2026 6:57:00 PM io.gapi.emulators.netty.HttpHandler$1 onError
+INFO: Exception when handling request: PERMISSION_DENIED: 
+false for 'get' @ L197
+
+[debug] [2026-10-10T01:57:00.483Z] DEBUG: Oct 09, 2026 6:57:00 PM com.google.cloud.datastore.emulator.impl.util.WrappedStreamObserver onError
+WARNING: Operation failed: 
+evaluation error at L198:24 for 'create' @ L198, evaluation error at L200:24 for 'update' @ L200, false for 'create' @ L198
+com.google.cloud.datastore.core.exception.DatastoreException: 
+evaluation error at L198:24 for 'create' @ L198, evaluation error at L200:24 for 'update' @ L200, false for 'create' @ L198
+	at com.google.cloud.datastore.core.exception.DatastoreException$Builder.build(DatastoreException.java:152)
+	at com.google.cloud.datastore.emulator.impl.rules.DefaultEmulatorRulesAuthorizer.verboseError(DefaultEmulatorRulesAuthorizer.java:349)
+	at com.google.cloud.datastore.emulator.impl.rules.DefaultEmulatorRulesAuthorizer.withVerboseErrors(DefaultEmulatorRulesAuthorizer.java:326)
+	at com.google.cloud.datastore.emulator.impl.rules.DefaultEmulatorRulesAuthorizer.checkCommit(DefaultEmulatorRulesAuthorizer.java:113)
+	at com.google.cloud.datastore.emulator.impl.firestore.FirestoreEmulatorHelper.commitHelper(FirestoreEmulatorHelper.java:407)
+	at com.google.cloud.datastore.emulator.impl.firestore.FirestoreEmulatorHelper.internalCommit(FirestoreEmulatorHelper.java:348)
+	at com.google.cloud.datastore.emulator.impl.firestore.CloudFirestoreV1.commit(CloudFirestoreV1.java:541)
+	at com.google.cloud.datastore.emulator.impl.firestore.CloudFirestoreV1Router.commit(CloudFirestoreV1Router.java:177)
+	at com.google.cloud.datastore.emulator.firestore.v1.FirestoreV1GrpcAdapter$1.lambda$commit$0(FirestoreV1GrpcAdapter.java:162)
+	at com.google.cloud.datastore.emulator.firestore.v1.FirestoreV1GrpcAdapter.unary(FirestoreV1GrpcAdapter.java:72)
+	at com.google.cloud.datastore.emulator.firestore.v1.FirestoreV1GrpcAdapter$1.commit(FirestoreV1GrpcAdapter.java:162)
+	at com.google.firestore.v1.FirestoreGrpc$MethodHandlers.invoke(FirestoreGrpc.java:1404)
+	at io.grpc.stub.ServerCalls$UnaryServerCallHandler$UnaryServerCallListener.onHalfClose(ServerCalls.java:182)
+	at io.grpc.PartialForwardingServerCallListener.onHalfClose(PartialForwardingServerCallListener.java:35)
+	at io.grpc.ForwardingServerCallListener.onHalfClose(ForwardingServerCallListener.java:23)
+	at io.grpc.ForwardingServerCallListener$SimpleForwardingServerCallListener.onHalfClose(ForwardingServerCallListener.java:40)
+	at io.grpc.Contexts$ContextualizedServerCallListener.onHalfClose(Contexts.java:86)
+	at io.grpc.PartialForwardingServerCallListener.onHalfClose(PartialForwardingServerCallListener.java:35)
+	at io.grpc.ForwardingServerCallListener.onHalfClose(ForwardingServerCallListener.java:23)
+	at io.grpc.ForwardingServerCallListener$SimpleForwardingServerCallListener.onHalfClose(ForwardingServerCallListener.java:40)
+	at io.grpc.Contexts$ContextualizedServerCallListener.onHalfClose(Contexts.java:86)
+	at io.grpc.internal.ServerCallImpl$ServerStreamListenerImpl.halfClosed(ServerCallImpl.java:356)
+	at io.grpc.internal.ServerImpl$JumpToApplicationThreadServerStreamListener$1HalfClosed.runInContext(ServerImpl.java:879)
+	at io.grpc.internal.ContextRunnable.run(ContextRunnable.java:37)
+	at io.grpc.internal.SerializingExecutor.run(SerializingExecutor.java:133)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1090)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:614)
+	at java.base/java.lang.Thread.run(Thread.java:1474)
+
+
+[debug] [2026-10-10T01:57:00.485Z] DEBUG: Oct 09, 2026 6:57:00 PM io.gapi.emulators.netty.HttpHandler$1 onError
+INFO: Exception when handling request: PERMISSION_DENIED: 
+evaluation error at L198:24 for 'create' @ L198, evaluation error at L200:24 for 'update' @ L200, false for 'create' @ L198
+
+[info] ✔  Script exited successfully (code 0) 
+[debug] [2026-10-10T01:57:01.007Z] [emulators] Shutting down emulators.
+[debug] [2026-10-10T01:57:01.007Z] [firestore] Stopping Firestore Emulator
+[debug] [2026-10-10T01:57:01.009Z] DEBUG: *** shutting down gRPC server since JVM is shutting down
+
+[debug] [2026-10-10T01:57:01.013Z] DEBUG: *** server shut down
+
+[debug] [2026-10-10T01:57:01.013Z] DEBUG: 2610
+[debug] [2026-10-10T01:57:01.013Z] DEBUG: 09 18:57:01.
+[debug] [2026-10-10T01:57:01.013Z] DEBUG: 013:I 3 [main] [com.google.cloud.datastore.emulator.firestore.websocket.WebSocketServer.stop:79] Stopping WebSocket server...
+[debug] [2026-10-10T01:57:01.013Z] DEBUG: 
+
+[debug] [2026-10-10T01:57:01.351Z] [auth] Stopping Authentication Emulator
+[debug] [2026-10-10T01:57:01.352Z] [hub] Stopping emulator hub
+[debug] [2026-10-10T01:57:01.353Z] [logging] Stopping Logging Emulator
+[debug] [2026-10-10T01:57:01.369Z] Could not find VSCode notification endpoint: TypeError: fetch failed. If you are not running the Firebase SQL Connect VSCode extension, this is expected and not an issue.
+[debug] [2026-10-14T18:06:56.251Z] ----------------------------------------------------------------------
+[debug] [2026-10-14T18:06:56.253Z] Command:       /usr/local/bin/node /opt/homebrew/bin/firebase projects:list --json
+[debug] [2026-10-14T18:06:56.253Z] CLI Version:   15.32.1
+[debug] [2026-10-14T18:06:56.253Z] Platform:      darwin
+[debug] [2026-10-14T18:06:56.253Z] Node Version:  v24.21.0
+[debug] [2026-10-14T18:06:56.253Z] Detected Agent: codex_cli
+[debug] [2026-10-14T18:06:56.253Z] Time:          Wed Oct 14 2026 11:06:56 GMT-0700 (Pacific Daylight Time)
+[debug] [2026-10-14T18:06:56.253Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2026-10-14T18:06:56.260Z] >>> [apiv2][query] GET https://firebase-public.firebaseio.com/cli.json [none]
+[debug] [2026-10-14T18:06:56.366Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-10-14T18:06:56.367Z] > authorizing via signed-in user (rishabmsahu748@gmail.com)
+[debug] [2026-10-14T18:06:56.368Z] Checked if tokens are valid: false, expires at: 1791313062405
+[debug] [2026-10-14T18:06:56.368Z] Checked if tokens are valid: false, expires at: 1791313062405
+[debug] [2026-10-14T18:06:56.368Z] > refreshing access token with scopes: []
+[debug] [2026-10-14T18:06:56.370Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2026-10-14T18:06:56.370Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-10-14T18:06:56.529Z] <<< [apiv2][status] GET https://firebase-public.firebaseio.com/cli.json 200
+[debug] [2026-10-14T18:06:56.529Z] <<< [apiv2][body] GET https://firebase-public.firebaseio.com/cli.json {"cloudBuildErrorAfter":1594252800000,"cloudBuildWarnAfter":1590019200000,"defaultNode10After":1594252800000,"minVersion":"3.0.5","node8DeploysDisabledAfter":1613390400000,"node8RuntimeDisabledAfter":1615809600000,"node8WarnAfter":1600128000000}
+[debug] [2026-10-14T18:06:56.560Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 200
+[debug] [2026-10-14T18:06:56.560Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-10-14T18:06:56.571Z] >>> [apiv2][query] GET https://firebase.googleapis.com/v1beta1/projects pageSize=1000
+[debug] [2026-10-14T18:06:57.174Z] <<< [apiv2][status] GET https://firebase.googleapis.com/v1beta1/projects 200
+[debug] [2026-10-14T18:06:57.174Z] <<< [apiv2][body] GET https://firebase.googleapis.com/v1beta1/projects [omitted]
+[info] ┌──────────────────────┬───────────────────┬────────────────┬──────────────────────┐
+│ Project Display Name │ Project ID        │ Project Number │ Resource Location ID │
+├──────────────────────┼───────────────────┼────────────────┼──────────────────────┤
+│ needmap-hackathon    │ needmap-hackathon │ 385002157682   │ [Not specified]      │
+└──────────────────────┴───────────────────┴────────────────┴──────────────────────┘
+[info] 
+[info] 1 project(s) total.
+[debug] [2026-10-14T18:07:17.448Z] ----------------------------------------------------------------------
+[debug] [2026-10-14T18:07:17.450Z] Command:       /usr/local/bin/node /opt/homebrew/bin/firebase deploy --project needmap-hackathon --only firestore:rules
+[debug] [2026-10-14T18:07:17.450Z] CLI Version:   15.32.1
+[debug] [2026-10-14T18:07:17.450Z] Platform:      darwin
+[debug] [2026-10-14T18:07:17.450Z] Node Version:  v24.21.0
+[debug] [2026-10-14T18:07:17.450Z] Detected Agent: codex_cli
+[debug] [2026-10-14T18:07:17.450Z] Time:          Wed Oct 14 2026 11:07:17 GMT-0700 (Pacific Daylight Time)
+[debug] [2026-10-14T18:07:17.451Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2026-10-14T18:07:18.229Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-10-14T18:07:18.229Z] > authorizing via signed-in user (rishabmsahu748@gmail.com)
+[debug] [2026-10-14T18:07:18.229Z] [iam] checking project needmap-hackathon for permissions ["datastore.indexes.create","datastore.indexes.delete","datastore.indexes.list","datastore.indexes.update","firebase.projects.get"]
+[debug] [2026-10-14T18:07:18.246Z] Checked if tokens are valid: true, expires at: 1792004815560
+[debug] [2026-10-14T18:07:18.247Z] Checked if tokens are valid: true, expires at: 1792004815560
+[debug] [2026-10-14T18:07:18.247Z] >>> [apiv2][query] POST https://cloudresourcemanager.googleapis.com/v1/projects/needmap-hackathon:testIamPermissions [none]
+[debug] [2026-10-14T18:07:18.247Z] >>> [apiv2][(partial)header] POST https://cloudresourcemanager.googleapis.com/v1/projects/needmap-hackathon:testIamPermissions  x-goog-user-project=needmap-hackathon
+[debug] [2026-10-14T18:07:18.247Z] >>> [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/needmap-hackathon:testIamPermissions {"permissions":["datastore.indexes.create","datastore.indexes.delete","datastore.indexes.list","datastore.indexes.update","firebase.projects.get"]}
+[debug] [2026-10-14T18:07:18.518Z] <<< [apiv2][status] POST https://cloudresourcemanager.googleapis.com/v1/projects/needmap-hackathon:testIamPermissions 200
+[debug] [2026-10-14T18:07:18.518Z] <<< [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/needmap-hackathon:testIamPermissions {"permissions":["datastore.indexes.create","datastore.indexes.delete","datastore.indexes.list","datastore.indexes.update","firebase.projects.get"]}
+[info] 
+[info] === Deploying to 'needmap-hackathon'...
+[info] 
+[info] i  deploying firestore 
+[info] i  firestore: ensuring required API firestore.googleapis.com is enabled... 
+[debug] [2026-10-14T18:07:18.523Z] Checked if tokens are valid: true, expires at: 1792004815560
+[debug] [2026-10-14T18:07:18.523Z] Checked if tokens are valid: true, expires at: 1792004815560
+[debug] [2026-10-14T18:07:18.523Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/needmap-hackathon/services/firestore.googleapis.com [none]
+[debug] [2026-10-14T18:07:18.523Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/needmap-hackathon/services/firestore.googleapis.com  x-goog-user-project=needmap-hackathon
+[debug] [2026-10-14T18:07:19.063Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/needmap-hackathon/services/firestore.googleapis.com 200
+[debug] [2026-10-14T18:07:19.063Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/needmap-hackathon/services/firestore.googleapis.com [omitted]
+[info] ✔  firestore: required API firestore.googleapis.com is enabled 
+[info] i  firestore: ensuring required API firestore.googleapis.com is enabled... 
+[debug] [2026-10-14T18:07:19.078Z] Checked if tokens are valid: true, expires at: 1792004815560
+[debug] [2026-10-14T18:07:19.078Z] Checked if tokens are valid: true, expires at: 1792004815560
+[debug] [2026-10-14T18:07:19.078Z] >>> [apiv2][query] GET https://firestore.googleapis.com/v1/projects/needmap-hackathon/databases/(default) [none]
+[debug] [2026-10-14T18:07:19.428Z] <<< [apiv2][status] GET https://firestore.googleapis.com/v1/projects/needmap-hackathon/databases/(default) 200
+[debug] [2026-10-14T18:07:19.428Z] <<< [apiv2][body] GET https://firestore.googleapis.com/v1/projects/needmap-hackathon/databases/(default) {"name":"projects/needmap-hackathon/databases/(default)","uid":"de8dd698-ee6d-4490-a007-ece984598df6","createTime":"2026-10-03T21:57:49.101659Z","updateTime":"2026-10-03T21:57:49.101659Z","locationId":"us-west1","type":"FIRESTORE_NATIVE","concurrencyMode":"PESSIMISTIC","versionRetentionPeriod":"3600s","earliestVersionTime":"2026-10-14T17:07:19.449019Z","appEngineIntegrationMode":"DISABLED","keyPrefix":"zuw","pointInTimeRecoveryEnablement":"POINT_IN_TIME_RECOVERY_DISABLED","deleteProtectionState":"DELETE_PROTECTION_DISABLED","databaseEdition":"STANDARD","freeTier":true,"realtimeUpdatesMode":"REALTIME_UPDATES_MODE_ENABLED","etag":"ILL2weqMupcDMOzy1PSLupcD"}
+[info] i  firestore: reading indexes from firestore.indexes.json... 
+[info] i  cloud.firestore: checking firestore.rules for compilation errors... 
+[debug] [2026-10-14T18:07:19.432Z] Checked if tokens are valid: true, expires at: 1792004815560
+[debug] [2026-10-14T18:07:19.432Z] Checked if tokens are valid: true, expires at: 1792004815560
+[debug] [2026-10-14T18:07:19.432Z] >>> [apiv2][query] POST https://firebaserules.googleapis.com/v1/projects/needmap-hackathon:test [none]
+[debug] [2026-10-14T18:07:19.432Z] >>> [apiv2][body] POST https://firebaserules.googleapis.com/v1/projects/needmap-hackathon:test [omitted]
+[debug] [2026-10-14T18:07:19.874Z] <<< [apiv2][status] POST https://firebaserules.googleapis.com/v1/projects/needmap-hackathon:test 200
+[debug] [2026-10-14T18:07:19.874Z] <<< [apiv2][body] POST https://firebaserules.googleapis.com/v1/projects/needmap-hackathon:test {}
+[info] ✔  cloud.firestore: rules file firestore.rules compiled successfully 
+[debug] [2026-10-14T18:07:19.877Z] Checked if tokens are valid: true, expires at: 1792004815560
+[debug] [2026-10-14T18:07:19.877Z] Checked if tokens are valid: true, expires at: 1792004815560
+[debug] [2026-10-14T18:07:19.877Z] >>> [apiv2][query] GET https://firebaserules.googleapis.com/v1/projects/needmap-hackathon/releases pageSize=10&pageToken=
+[debug] [2026-10-14T18:07:20.029Z] <<< [apiv2][status] GET https://firebaserules.googleapis.com/v1/projects/needmap-hackathon/releases 200
+[debug] [2026-10-14T18:07:20.029Z] <<< [apiv2][body] GET https://firebaserules.googleapis.com/v1/projects/needmap-hackathon/releases {"releases":[{"name":"projects/needmap-hackathon/releases/cloud.firestore","rulesetName":"projects/needmap-hackathon/rulesets/55ce542d-35dd-47f1-9734-94fd015ff592","createTime":"2026-10-03T21:57:50.549634Z","updateTime":"2026-10-03T23:18:53.230412Z"}]}
+[debug] [2026-10-14T18:07:20.030Z] Checked if tokens are valid: true, expires at: 1792004815560
+[debug] [2026-10-14T18:07:20.030Z] Checked if tokens are valid: true, expires at: 1792004815560
+[debug] [2026-10-14T18:07:20.030Z] >>> [apiv2][query] GET https://firebaserules.googleapis.com/v1/projects/needmap-hackathon/rulesets/55ce542d-35dd-47f1-9734-94fd015ff592 [none]
+[debug] [2026-10-14T18:07:20.250Z] <<< [apiv2][status] GET https://firebaserules.googleapis.com/v1/projects/needmap-hackathon/rulesets/55ce542d-35dd-47f1-9734-94fd015ff592 200
+[debug] [2026-10-14T18:07:20.250Z] <<< [apiv2][body] GET https://firebaserules.googleapis.com/v1/projects/needmap-hackathon/rulesets/55ce542d-35dd-47f1-9734-94fd015ff592 [omitted]
+[info] i  firestore: uploading rules firestore.rules... 
+[debug] [2026-10-14T18:07:20.252Z] Checked if tokens are valid: true, expires at: 1792004815560
+[debug] [2026-10-14T18:07:20.252Z] Checked if tokens are valid: true, expires at: 1792004815560
+[debug] [2026-10-14T18:07:20.252Z] >>> [apiv2][query] POST https://firebaserules.googleapis.com/v1/projects/needmap-hackathon/rulesets [none]
+[debug] [2026-10-14T18:07:20.252Z] >>> [apiv2][body] POST https://firebaserules.googleapis.com/v1/projects/needmap-hackathon/rulesets [omitted]
+[debug] [2026-10-14T18:07:20.561Z] <<< [apiv2][status] POST https://firebaserules.googleapis.com/v1/projects/needmap-hackathon/rulesets 200
+[debug] [2026-10-14T18:07:20.562Z] <<< [apiv2][body] POST https://firebaserules.googleapis.com/v1/projects/needmap-hackathon/rulesets {"name":"projects/needmap-hackathon/rulesets/4fc3e89e-b478-4392-bc12-d79375c0bcc3","source":{"files":[{"content":"rules_version = '2';\n\nservice cloud.firestore {\n  match /databases/{database}/documents {\n    function isSignedIn() {\n      return request.auth != null;\n    }\n\n    function staffProfileExists() {\n      return isSignedIn()\n        && exists(/databases/$(database)/documents/staffProfiles/$(request.auth.uid));\n    }\n\n    function isActiveStaff() {\n      return staffProfileExists()\n        && get(/databases/$(database)/documents/staffProfiles/$(request.auth.uid)).data.active == true\n        && get(/databases/$(database)/documents/staffProfiles/$(request.auth.uid)).data.role\n          in ['viewer', 'analyst', 'moderator', 'admin'];\n    }\n\n    function hasStaffRole(roles) {\n      return isActiveStaff()\n        && get(/databases/$(database)/documents/staffProfiles/$(request.auth.uid)).data.role\n          in roles;\n    }\n\n    function isKnownCategory(category) {\n      return category in [\n        'healthcare',\n        'water',\n        'transportation',\n        'emergency_response',\n        'food',\n        'broadband',\n        'other'\n      ];\n    }\n\n    function hasValidCoordinates(data) {\n      return data.latitude is number\n        && data.latitude >= -90\n        && data.latitude <= 90\n        && data.longitude is number\n        && data.longitude >= -180\n        && data.longitude <= 180;\n    }\n\n    function isValidIncomingSignal() {\n      let data = request.resource.data;\n      return data.keys().hasOnly([\n          'category',\n          'severity',\n          'summary',\n          'latitude',\n          'longitude',\n          'locationGridId',\n          'locationPrecision',\n          'sourceType',\n          'isSynthetic',\n          'submittedAt'\n        ])\n        && isKnownCategory(data.category)\n        && data.severity in ['low', 'medium', 'high']\n        && data.summary is string\n        && data.summary.size() >= 1\n        && data.summary.size() <= 280\n        && hasValidCoordinates(data)\n        && data.locationGridId is string\n        && data.locationGridId.size() >= 1\n        && data.locationGridId.size() <= 100\n        && data.locationPrecision in [\n          'approximate_grid_500m',\n          'manual_demo_coordinate'\n        ]\n        && data.sourceType == 'community_survey'\n        && data.isSynthetic is bool\n        && data.submittedAt is timestamp\n        && data.submittedAt == request.time;\n    }\n\n    function isValidRecommendationReview() {\n      let data = request.resource.data;\n      return data.keys().hasOnly([\n          'candidateId',\n          'facilityType',\n          'regionId',\n          'regionName',\n          'category',\n          'latitude',\n          'longitude',\n          'status',\n          'owner',\n          'note',\n          'updatedBy',\n          'updatedAt'\n        ])\n        && data.candidateId is string\n        && data.candidateId.size() >= 1\n        && data.candidateId.size() <= 900\n        && data.facilityType is string\n        && data.facilityType.size() >= 1\n        && data.facilityType.size() <= 120\n        && data.regionId is string\n        && data.regionId.size() <= 300\n        && data.regionName is string\n        && data.regionName.size() <= 200\n        && isKnownCategory(data.category)\n        && hasValidCoordinates(data)\n        && data.status in ['new', 'reviewing', 'approved', 'rejected', 'pilot', 'built']\n        && data.owner is string\n        && data.owner.size() <= 80\n        && data.note is string\n        && data.note.size() <= 600\n        && data.updatedBy == request.auth.uid\n        && data.updatedAt is timestamp\n        && data.updatedAt == request.time;\n    }\n\n    function isValidModerationRecord() {\n      let data = request.resource.data;\n      return data.keys().hasOnly([\n          'reportId',\n          'status',\n          'qualityScore',\n          'qualityIssues',\n          'possibleDuplicateOf',\n          'duplicateScore',\n          'updatedBy',\n          'updatedAt'\n        ])\n        && data.reportId is string\n        && data.reportId.size() >= 1\n        && data.reportId.size() <= 900\n        && data.status in ['approved', 'duplicate', 'hidden']\n        && data.qualityScore is number\n        && data.qualityScore >= 0\n        && data.qualityScore <= 100\n        && data.qualityIssues is list\n        && data.qualityIssues.size() <= 8\n        && data.possibleDuplicateOf is string\n        && data.possibleDuplicateOf.size() <= 900\n        && data.duplicateScore is number\n        && data.duplicateScore >= 0\n        && data.duplicateScore <= 1\n        && data.updatedBy == request.auth.uid\n        && data.updatedAt is timestamp\n        && data.updatedAt == request.time;\n    }\n\n    function isValidOutcomeFeedback() {\n      let data = request.resource.data;\n      return data.keys().hasOnly([\n          'recommendationId',\n          'accessChange',\n          'rating',\n          'note',\n          'authorUid',\n          'createdAt'\n        ])\n        && data.recommendationId is string\n        && data.recommendationId.size() >= 1\n        && data.recommendationId.size() <= 900\n        && data.accessChange in ['better', 'same', 'worse']\n        && data.rating is int\n        && data.rating >= 1\n        && data.rating <= 5\n        && data.note is string\n        && data.note.size() >= 1\n        && data.note.size() <= 500\n        && data.authorUid == request.auth.uid\n        && data.createdAt is timestamp\n        && data.createdAt == request.time;\n    }\n\n    // Public reads power the standalone map. New reports still require a\n    // Firebase Anonymous Auth identity and must match the form's exact schema.\n    match /incomingSignals/{signalId} {\n      allow read: if true;\n      allow create: if isSignedIn() && isValidIncomingSignal();\n      allow update, delete: if false;\n    }\n\n    // Staff profiles are provisioned from the Firebase console or Admin SDK.\n    // Browser clients can only fetch their own profile and cannot grant roles.\n    match /staffProfiles/{userId} {\n      allow get: if isSignedIn() && request.auth.uid == userId;\n      allow list, create, update, delete: if false;\n    }\n\n    match /recommendationReviews/{reviewId} {\n      allow read: if isActiveStaff();\n      allow create: if hasStaffRole(['analyst', 'moderator', 'admin'])\n        && isValidRecommendationReview();\n      allow update: if hasStaffRole(['analyst', 'moderator', 'admin'])\n        && request.resource.data.candidateId == resource.data.candidateId\n        && isValidRecommendationReview();\n      allow delete: if hasStaffRole(['admin']);\n    }\n\n    match /reportModeration/{moderationId} {\n      allow read: if isActiveStaff();\n      allow create: if hasStaffRole(['moderator', 'admin'])\n        && isValidModerationRecord();\n      allow update: if hasStaffRole(['moderator', 'admin'])\n        && request.resource.data.reportId == resource.data.reportId\n        && isValidModerationRecord();\n      allow delete: if hasStaffRole(['admin']);\n    }\n\n    match /outcomeFeedback/{feedbackId} {\n      allow read: if isActiveStaff();\n      allow create: if hasStaffRole(['analyst', 'moderator', 'admin'])\n        && isValidOutcomeFeedback();\n      allow update: if false;\n      allow delete: if hasStaffRole(['admin']);\n    }\n  }\n}\n","name":"firestore.rules"}]},"createTime":"2026-10-14T18:07:20.539391Z","metadata":{"services":["cloud.firestore"]}}
+[debug] [2026-10-14T18:07:20.562Z] [rules] created ruleset projects/needmap-hackathon/rulesets/4fc3e89e-b478-4392-bc12-d79375c0bcc3
+[debug] [2026-10-14T18:07:20.562Z] [rules] releasing cloud.firestore with ruleset projects/needmap-hackathon/rulesets/4fc3e89e-b478-4392-bc12-d79375c0bcc3
+[debug] [2026-10-14T18:07:20.563Z] Checked if tokens are valid: true, expires at: 1792004815560
+[debug] [2026-10-14T18:07:20.563Z] Checked if tokens are valid: true, expires at: 1792004815560
+[debug] [2026-10-14T18:07:20.563Z] >>> [apiv2][query] PATCH https://firebaserules.googleapis.com/v1/projects/needmap-hackathon/releases/cloud.firestore [none]
+[debug] [2026-10-14T18:07:20.563Z] >>> [apiv2][body] PATCH https://firebaserules.googleapis.com/v1/projects/needmap-hackathon/releases/cloud.firestore {"release":{"name":"projects/needmap-hackathon/releases/cloud.firestore","rulesetName":"projects/needmap-hackathon/rulesets/4fc3e89e-b478-4392-bc12-d79375c0bcc3"}}
+[debug] [2026-10-14T18:07:20.852Z] <<< [apiv2][status] PATCH https://firebaserules.googleapis.com/v1/projects/needmap-hackathon/releases/cloud.firestore 200
+[debug] [2026-10-14T18:07:20.852Z] <<< [apiv2][body] PATCH https://firebaserules.googleapis.com/v1/projects/needmap-hackathon/releases/cloud.firestore {"name":"projects/needmap-hackathon/releases/cloud.firestore","rulesetName":"projects/needmap-hackathon/rulesets/4fc3e89e-b478-4392-bc12-d79375c0bcc3","createTime":"2026-10-03T21:57:50.549634Z","updateTime":"2026-10-14T18:07:20.842834Z"}
+[debug] [2026-10-14T18:07:20.853Z] [rules] updated release projects/needmap-hackathon/releases/cloud.firestore
+[info] ✔  firestore: released rules firestore.rules to cloud.firestore 
+[info] 
+[info] ✔  Deploy complete! 
+[info] 
+[info] Project Console: https://console.firebase.google.com/project/needmap-hackathon/overview
+[debug] [2026-10-14T18:07:48.351Z] ----------------------------------------------------------------------
+[debug] [2026-10-14T18:07:48.353Z] Command:       /usr/local/bin/node /opt/homebrew/bin/firebase help
+[debug] [2026-10-14T18:07:48.353Z] CLI Version:   15.32.1
+[debug] [2026-10-14T18:07:48.353Z] Platform:      darwin
+[debug] [2026-10-14T18:07:48.353Z] Node Version:  v24.21.0
+[debug] [2026-10-14T18:07:48.353Z] Detected Agent: codex_cli
+[debug] [2026-10-14T18:07:48.353Z] Time:          Wed Oct 14 2026 11:07:48 GMT-0700 (Pacific Daylight Time)
+[debug] [2026-10-14T18:07:48.353Z] ----------------------------------------------------------------------
+[debug] 
+[info] 
+[info] To see more about a specific namespace or command, run:
+[info]   firebase <namespace|command> --help
+[info] 
+[info]   To get help with a specific command, type firebase help [command_name]
+[info] 
+[info]  Privacy Policy: https://firebase.google.com/support/privacy
+[info] 
+[debug] [2026-10-14T18:07:52.298Z] ----------------------------------------------------------------------
+[debug] [2026-10-14T18:07:52.301Z] Command:       /usr/local/bin/node /opt/homebrew/bin/firebase help auth
+[debug] [2026-10-14T18:07:52.301Z] CLI Version:   15.32.1
+[debug] [2026-10-14T18:07:52.301Z] Platform:      darwin
+[debug] [2026-10-14T18:07:52.301Z] Node Version:  v24.21.0
+[debug] [2026-10-14T18:07:52.301Z] Detected Agent: codex_cli
+[debug] [2026-10-14T18:07:52.301Z] Time:          Wed Oct 14 2026 11:07:52 GMT-0700 (Pacific Daylight Time)
+[debug] [2026-10-14T18:07:52.301Z] ----------------------------------------------------------------------
+[debug] 
+[info] 
+[info] To see more about a specific command, run:
+[info]   firebase auth:<command> --help
+[info]  Privacy Policy: https://firebase.google.com/support/privacy
+[info] 

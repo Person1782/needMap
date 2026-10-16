@@ -1,0 +1,218 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function staffProfileExists() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/staffProfiles/$(request.auth.uid));
+    }
+
+    function isActiveStaff() {
+      return staffProfileExists()
+        && get(/databases/$(database)/documents/staffProfiles/$(request.auth.uid)).data.active == true
+        && get(/databases/$(database)/documents/staffProfiles/$(request.auth.uid)).data.role
+          in ['viewer', 'analyst', 'moderator', 'admin'];
+    }
+
+    function hasStaffRole(roles) {
+      return isActiveStaff()
+        && get(/databases/$(database)/documents/staffProfiles/$(request.auth.uid)).data.role
+          in roles;
+    }
+
+    function isKnownCategory(category) {
+      return category in [
+        'healthcare',
+        'water',
+        'transportation',
+        'emergency_response',
+        'food',
+        'broadband',
+        'other'
+      ];
+    }
+
+    function hasValidCoordinates(data) {
+      return data.latitude is number
+        && data.latitude >= -90
+        && data.latitude <= 90
+        && data.longitude is number
+        && data.longitude >= -180
+        && data.longitude <= 180;
+    }
+
+    function isValidIncomingSignal() {
+      let data = request.resource.data;
+      return data.keys().hasOnly([
+          'category',
+          'severity',
+          'summary',
+          'latitude',
+          'longitude',
+          'locationGridId',
+          'locationPrecision',
+          'sourceType',
+          'isSynthetic',
+          'submittedAt'
+        ])
+        && isKnownCategory(data.category)
+        && data.severity in ['low', 'medium', 'high']
+        && data.summary is string
+        && data.summary.size() >= 1
+        && data.summary.size() <= 280
+        && hasValidCoordinates(data)
+        && data.locationGridId is string
+        && data.locationGridId.size() >= 1
+        && data.locationGridId.size() <= 100
+        && data.locationPrecision in [
+          'approximate_grid_500m',
+          'manual_demo_coordinate'
+        ]
+        && data.sourceType == 'community_survey'
+        && data.isSynthetic is bool
+        && data.submittedAt is timestamp
+        && data.submittedAt == request.time;
+    }
+
+    function isValidRecommendationReview() {
+      let data = request.resource.data;
+      return data.keys().hasOnly([
+          'candidateId',
+          'facilityType',
+          'regionId',
+          'regionName',
+          'category',
+          'latitude',
+          'longitude',
+          'status',
+          'owner',
+          'note',
+          'updatedBy',
+          'updatedAt'
+        ])
+        && data.candidateId is string
+        && data.candidateId.size() >= 1
+        && data.candidateId.size() <= 900
+        && data.facilityType is string
+        && data.facilityType.size() >= 1
+        && data.facilityType.size() <= 120
+        && data.regionId is string
+        && data.regionId.size() <= 300
+        && data.regionName is string
+        && data.regionName.size() <= 200
+        && isKnownCategory(data.category)
+        && hasValidCoordinates(data)
+        && data.status in ['new', 'reviewing', 'approved', 'rejected', 'pilot', 'built']
+        && data.owner is string
+        && data.owner.size() <= 80
+        && data.note is string
+        && data.note.size() <= 600
+        && data.updatedBy == request.auth.uid
+        && data.updatedAt is timestamp
+        && data.updatedAt == request.time;
+    }
+
+    function isValidModerationRecord() {
+      let data = request.resource.data;
+      return data.keys().hasOnly([
+          'reportId',
+          'status',
+          'qualityScore',
+          'qualityIssues',
+          'possibleDuplicateOf',
+          'duplicateScore',
+          'updatedBy',
+          'updatedAt'
+        ])
+        && data.reportId is string
+        && data.reportId.size() >= 1
+        && data.reportId.size() <= 900
+        && data.status in ['approved', 'duplicate', 'hidden']
+        && data.qualityScore is number
+        && data.qualityScore >= 0
+        && data.qualityScore <= 100
+        && data.qualityIssues is list
+        && data.qualityIssues.size() <= 8
+        && data.possibleDuplicateOf is string
+        && data.possibleDuplicateOf.size() <= 900
+        && data.duplicateScore is number
+        && data.duplicateScore >= 0
+        && data.duplicateScore <= 1
+        && data.updatedBy == request.auth.uid
+        && data.updatedAt is timestamp
+        && data.updatedAt == request.time;
+    }
+
+    function isValidOutcomeFeedback() {
+      let data = request.resource.data;
+      return data.keys().hasOnly([
+          'recommendationId',
+          'accessChange',
+          'rating',
+          'note',
+          'authorUid',
+          'createdAt'
+        ])
+        && data.recommendationId is string
+        && data.recommendationId.size() >= 1
+        && data.recommendationId.size() <= 900
+        && data.accessChange in ['better', 'same', 'worse']
+        && data.rating is int
+        && data.rating >= 1
+        && data.rating <= 5
+        && data.note is string
+        && data.note.size() >= 1
+        && data.note.size() <= 500
+        && data.authorUid == request.auth.uid
+        && data.createdAt is timestamp
+        && data.createdAt == request.time;
+    }
+
+    // Public reads power the standalone map. New reports still require a
+    // Firebase Anonymous Auth identity and must match the form's exact schema.
+    match /incomingSignals/{signalId} {
+      allow read: if true;
+      allow create: if isSignedIn() && isValidIncomingSignal();
+      allow update, delete: if false;
+    }
+
+    // Staff profiles are provisioned from the Firebase console or Admin SDK.
+    // Browser clients can only fetch their own profile and cannot grant roles.
+    match /staffProfiles/{userId} {
+      allow get: if isSignedIn() && request.auth.uid == userId;
+      allow list, create, update, delete: if false;
+    }
+
+    match /recommendationReviews/{reviewId} {
+      allow read: if isActiveStaff();
+      allow create: if hasStaffRole(['analyst', 'moderator', 'admin'])
+        && isValidRecommendationReview();
+      allow update: if hasStaffRole(['analyst', 'moderator', 'admin'])
+        && request.resource.data.candidateId == resource.data.candidateId
+        && isValidRecommendationReview();
+      allow delete: if hasStaffRole(['admin']);
+    }
+
+    match /reportModeration/{moderationId} {
+      allow read: if isActiveStaff();
+      allow create: if hasStaffRole(['moderator', 'admin'])
+        && isValidModerationRecord();
+      allow update: if hasStaffRole(['moderator', 'admin'])
+        && request.resource.data.reportId == resource.data.reportId
+        && isValidModerationRecord();
+      allow delete: if hasStaffRole(['admin']);
+    }
+
+    match /outcomeFeedback/{feedbackId} {
+      allow read: if isActiveStaff();
+      allow create: if hasStaffRole(['analyst', 'moderator', 'admin'])
+        && isValidOutcomeFeedback();
+      allow update: if false;
+      allow delete: if hasStaffRole(['admin']);
+    }
+  }
+}

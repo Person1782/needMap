@@ -227,7 +227,7 @@ form.addEventListener("submit", async (event) => {
   setStatus("Connecting securely…");
 
   try {
-    const user = await getAnonymousUser();
+    await getAnonymousUser();
 
     await addDoc(collection(db, "incomingSignals"), {
       category,
@@ -240,7 +240,6 @@ form.addEventListener("submit", async (event) => {
       sourceType: "community_survey",
       isSynthetic: true,
       submittedAt: serverTimestamp(),
-      submittedBy: user.uid,
     });
 
     form.reset();
