@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { buildRecommendations, MIN_LOCATION_SEPARATION_KM } from "../analysis.js";
+import { buildRecommendations, inferServiceNeed, MIN_LOCATION_SEPARATION_KM } from "../analysis.js";
 import { pointInGeometry } from "../regions.js";
 
 const square = (west, south, east, north) => ({ type: "Polygon", coordinates: [
@@ -94,4 +94,50 @@ test("suggestions stay on valid land components when a median falls in a boundar
   const candidates = buildRecommendations([report("west", -3, { region: holeRegion }), report("east", 3, { region: holeRegion })]);
   assert.equal(candidates.length, 1);
   assert.equal(pointInGeometry(candidates[0].position.longitude, candidates[0].position.latitude, geometry), true);
+});
+
+
+test("legacy medication and healthcare reports form one shared regional group capped at three locations", () => {
+  const reports = [-12, -4, 4, 12].flatMap((longitude, index) => [
+    report(`care-${index}`, longitude),
+    report(`medicine-${index}`, longitude + 0.01, { category: "medication_access", summary: "Prescription medicines unavailable" }),
+  ]);
+  const candidates = buildRecommendations(reports);
+  assert.equal(candidates.length, 3);
+  assert.deepEqual(candidates.map((item) => item.locationRank), [1, 2, 3]);
+  assert.ok(candidates.every((item) => item.category === "healthcare" && item.recommendationGroupId === "test:healthcare" && item.locationCount === 3));
+  assert.deepEqual(candidates.flatMap((item) => item.signals.map((signal) => signal.id)).sort(), reports.map((item) => item.id).sort());
+  assert.deepEqual(buildRecommendations([...reports].reverse()), candidates);
+});
+
+test("one medication report and one healthcare report together meet the minimum support", () => {
+  const candidates = buildRecommendations([
+    report("clinic", 0),
+    report("medicine", 0.0001, { category: "medication_access", summary: "Prescription medicines unavailable" }),
+  ]);
+  assert.equal(candidates.length, 1);
+  assert.equal(candidates[0].id, "test:healthcare");
+  assert.equal(candidates[0].signals.length, 2);
+  assert.equal(candidates[0].analysis.facilityType, "Pharmacy");
+});
+
+test("merged healthcare retains existing text-based pharmacy and clinic proposals and direct legacy input", () => {
+  const medication = (id, extra = {}) => report(id, 0, { summary: "No pharmacy has the required medication", ...extra });
+  const pharmacy = buildRecommendations([medication("a"), medication("b", { category: "medication_access", summary: "Treatment unavailable" }), report("c", 0)])[0];
+  assert.equal(pharmacy.category, "healthcare");
+  assert.equal(pharmacy.analysis.facilityType, "Pharmacy");
+  const clinic = buildRecommendations([report("b", 0), report("c", 0)])[0];
+  assert.equal(clinic.category, "healthcare");
+  assert.equal(clinic.analysis.facilityType, "Community health clinic");
+  assert.equal(inferServiceNeed({ category: "medication_access", signals: pair("legacy", 0), region }).facilityType, "Pharmacy");
+});
+
+
+test("medication-only wording and plural medicine terms still propose pharmacies after the category merge", () => {
+  for (const summary of ["Medication unavailable", "Medications unavailable", "Medicines unavailable", "Prescriptions unavailable", "Pharmacies unavailable"]) {
+    const candidates = buildRecommendations(pair("medicine", 0, { summary }));
+    assert.equal(candidates.length, 1);
+    assert.equal(candidates[0].category, "healthcare");
+    assert.equal(candidates[0].analysis.facilityType, "Pharmacy", summary);
+  }
 });

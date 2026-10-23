@@ -54,6 +54,37 @@ test("population counts follow both filters, suppress stale requests, and update
   } finally { page.workspace.destroy(); }
 });
 
+test("Healthcare population requests combine clinic and medication locations once while All Problems retains other categories", async () => {
+  const calls = [];
+  const page = fixture(async (scope) => { calls.push(scope); return result(1200, scope.reports.length); });
+  const submitted = [
+    { id: "clinic", category: "healthcare", summary: "Clinic needed", latitude: -1.29, longitude: 36.82 },
+    { id: "pharmacy", category: "healthcare", summary: "Pharmacy has no medicine", latitude: -1.291, longitude: 36.821 },
+    { id: "legacy", category: "medication_access", summary: "Prescription unavailable", latitude: -1.292, longitude: 36.822 },
+    { id: "water", category: "water", summary: "Water missing", latitude: -1.293, longitude: 36.823 },
+  ];
+  const ids = (scope) => scope.reports.map((entry) => entry.id).sort();
+  try {
+    page.workspace.update({ region, reports: submitted, reportsReady: true });
+    page.workspace.setVisible(true); await tick();
+    assert.equal(calls.length, 1);
+    assert.deepEqual(ids(calls[0]), ["clinic", "legacy", "pharmacy", "water"]);
+    page.choose("healthcare"); await tick();
+    assert.equal(calls.length, 2);
+    assert.deepEqual(ids(calls[1]), ["clinic", "legacy", "pharmacy"], "Merged Healthcare uses one request containing every selected report exactly once");
+    assert.deepEqual(calls[1].reports.map(({ latitude, longitude }) => [latitude, longitude]), submitted.slice(0, 3).map(({ latitude, longitude }) => [latitude, longitude]));
+    assert.match(page.text(), /500 m of 3 reports/);
+    assert.equal(calls[1].region.id, region.id);
+    page.choose("all"); await tick();
+    assert.equal(calls.length, 3);
+    assert.deepEqual(ids(calls[2]), ["clinic", "legacy", "pharmacy", "water"]);
+    assert.match(page.text(), /500 m of 4 reports/);
+    page.choose("water"); await tick();
+    assert.deepEqual(ids(calls[3]), ["water"], "Unrelated categories remain independently filterable");
+    assert.equal(submitted[2].category, "medication_access", "Population filtering never rewrites stored reports");
+  } finally { page.workspace.destroy(); }
+});
+
 test("loading, failure, changed coordinates and hidden/destroyed views cannot display an old population", async () => {
   const pending = [];
   const page = fixture((scope, { signal }) => new Promise((resolve, reject) => pending.push({ scope, signal, resolve, reject })));
@@ -74,5 +105,27 @@ test("loading, failure, changed coordinates and hidden/destroyed views cannot di
     assert.equal(pending[2].signal.aborted, true);
     const before = page.text(); pending[2].resolve(result(9999)); await tick();
     assert.equal(page.text(), before);
+  } finally { page.workspace.destroy(); }
+});
+
+test("population details open only on click, update while loading, and close when scope changes", async () => {
+  let resolve;
+  const page = fixture(() => new Promise((done) => { resolve = done; }));
+  try {
+    page.workspace.update({ region, reports, reportsReady: true }); page.workspace.setVisible(true);
+    assert.equal(page.document.querySelector(".population-dialog"), null);
+    page.document.querySelector("#analysis-population").click();
+    assert.match(page.document.querySelector(".population-dialog").textContent, /still being calculated/);
+    resolve({ ...result(1234, 2), areaKm2: 1.1, geometry: { type: "MultiPolygon", coordinates: [[[[0, 0], [1, 0], [1, 1], [0, 0]]]] } }); await tick();
+    const dialog = page.document.querySelector(".population-dialog");
+    assert.match(dialog.textContent, /About 1,200 residents/);
+    assert.match(dialog.textContent, /All Problems/);
+    assert.match(dialog.textContent, /Sources for this calculation/);
+    page.choose("healthcare");
+    assert.equal(page.document.querySelector(".population-dialog"), null);
+    page.document.querySelector("#analysis-population").click();
+    assert.match(page.document.querySelector(".population-dialog").textContent, /Healthcare/);
+    page.workspace.setVisible(false);
+    assert.equal(page.document.querySelector(".population-dialog"), null);
   } finally { page.workspace.destroy(); }
 });

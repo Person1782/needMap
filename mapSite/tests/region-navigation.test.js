@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { readFile } from "node:fs/promises";
 import { createRegionNavigation as makeRegionNavigation, countRegions, loadIpRegion, normalizeNavigationRegion, regionContains, searchRegions, WORLD_REGION, SAVED_REGION_KEY } from "../region-navigation.js";
 import { REGION_CATALOG_ROWS } from "../region-catalog.js";
 
@@ -28,6 +29,19 @@ const preferenceStore = (initial) => {
   const values = new Map(initial === undefined ? [] : [[SAVED_REGION_KEY, initial]]);
   return { getItem: (key) => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: (key) => values.delete(key) };
 };
+const americanSamoaDistrictPoints = [
+  ["Rose", -14.528293552499917, -168.16423748389929],
+  ["Swains", -11.05641041499996, -171.0796180589739],
+  ["Western", -14.333347263499945, -170.75812979584566],
+  ["Eastern", -14.282972914499936, -170.68364495007262],
+  ["Manuʻa", -14.247043552499917, -169.48593087009277],
+];
+async function localAmericanSamoaResponse(input) {
+  const url = new URL(input);
+  assert.equal(url.origin, "http://localhost");
+  assert.ok(["/data/regions/as.json", "/data/regions/us-as.json"].includes(url.pathname));
+  return new Response(await readFile(new URL(`../public${url.pathname}`, import.meta.url)));
+}
 
 test("the local picker searches countries and states across continents and accents", () => {
   for (const [query, id] of [["California", "US-CA"], ["Tamil Nadu", "IN-TN"],
@@ -294,6 +308,36 @@ test("manual selections persist across controllers and a failed choice does not 
   second.destroy();
 });
 
+test("explicit Worldwide selection is saved and restored without IP or boundary requests", async () => {
+  const storage = preferenceStore(JSON.stringify({ version: 1, id: "US-CA" }));
+  const failRequest = async () => assert.fail("Worldwide does not require a lookup");
+  const first = createRegionNavigation({ storage, request: failRequest, fetchImpl: failRequest });
+  assert.equal(await first.select("world"), WORLD_REGION);
+  assert.deepEqual(JSON.parse(storage.getItem(SAVED_REGION_KEY)), { version: 1, id: "world" });
+  first.destroy();
+  const changes = [];
+  const returning = createRegionNavigation({ storage, request: failRequest, fetchImpl: failRequest,
+    onChange: (region, details) => changes.push([region.id, details.source]),
+  });
+  assert.equal(await returning.initialize(), WORLD_REGION);
+  assert.deepEqual(changes, [["world", "saved"]]);
+  returning.destroy();
+});
+
+test("Worldwide remains only an initial fallback until a first-visit IP region is selected", async () => {
+  const storage = preferenceStore();
+  let ipCalls = 0;
+  const navigation = createRegionNavigation({ storage,
+    fetchImpl: async () => { ipCalls += 1; return located(); }, request: async () => [california()],
+  });
+  assert.equal(navigation.getSelected(), WORLD_REGION);
+  assert.equal(storage.getItem(SAVED_REGION_KEY), null);
+  assert.equal((await navigation.initialize()).id, "US-CA");
+  assert.equal(ipCalls, 1);
+  assert.deepEqual(JSON.parse(storage.getItem(SAVED_REGION_KEY)), { version: 1, id: "US-CA" });
+  navigation.destroy();
+});
+
 test("missing, malformed, outdated, and deleted selections fall back to IP detection", async () => {
   for (const stored of [undefined, "{broken", "null", "[]", JSON.stringify({ version: 1, id: "deleted-region" }),
     JSON.stringify({ version: 0, id: "US-CA" }), JSON.stringify({ version: 1, id: { value: "US-CA" } })]) {
@@ -370,4 +414,66 @@ test("blocked preference storage permits automatic initialization and subsequent
   assert.equal((await navigation.initialize()).id, "US-CA");
   assert.equal((await navigation.select("US")).id, "US");
   navigation.destroy();
+});
+
+test("both American Samoa entries open complete local polygons without reports or external boundary lookups", async () => {
+  const requests = [], statuses = [];
+  const navigation = makeRegionNavigation({ storage: null,
+    request: async () => assert.fail("American Samoa must not depend on Nominatim"),
+    fetchImpl: async (url) => { requests.push(String(url)); return localAmericanSamoaResponse(url); },
+    onStatus: (status) => statuses.push(status),
+  });
+  try {
+    for (const [id, kind, countryCode] of [["AS", "country", "AS"], ["US-AS", "state", "US"]]) {
+      const selected = await navigation.select(id);
+      assert.equal(selected.id, id); assert.equal(selected.kind, kind); assert.equal(selected.countryCode, countryCode);
+      assert.equal(selected.source, "Natural Earth"); assert.equal(selected.sourceVersion, "5.1.1");
+      for (const [district, latitude, longitude] of americanSamoaDistrictPoints) {
+        assert.equal(regionContains(selected, latitude, longitude), true, `${id} contains ${district}`);
+        assert.ok(selected.bounds[0][0] <= latitude && selected.bounds[1][0] >= latitude);
+        assert.ok(selected.bounds[0][1] <= longitude && selected.bounds[1][1] >= longitude);
+      }
+      assert.equal(regionContains(selected, -13, -169), false, "Ocean inside the overview bounds is not a report-membership polygon");
+      assert.equal(regionContains(selected, -13.84, -171.75), false, "Neighboring Samoa is outside American Samoa");
+      assert.equal(statuses.at(-1).state, "ready");
+    }
+    assert.deepEqual(requests, ["http://localhost/data/regions/as.json", "http://localhost/data/regions/us-as.json"]);
+    assert.ok(statuses.every((status) => status.state !== "error"));
+  } finally { navigation.destroy(); }
+});
+
+test("saved American Samoa restores its whole territory locally before IP detection", async () => {
+  const storage = preferenceStore(JSON.stringify({ version: 1, id: "AS" }));
+  const changes = [], requests = [];
+  const navigation = makeRegionNavigation({ storage,
+    request: async () => assert.fail("A saved American Samoa selection must not request Nominatim"),
+    fetchImpl: async (url) => { requests.push(String(url)); return localAmericanSamoaResponse(url); },
+    onChange: (region, details) => changes.push([region.id, details.source]),
+  });
+  try {
+    assert.equal((await navigation.initialize()).id, "AS");
+    assert.deepEqual(changes, [["AS", "saved"]]);
+    assert.deepEqual(requests, ["http://localhost/data/regions/as.json"]);
+    assert.equal(regionContains(navigation.getSelected(), americanSamoaDistrictPoints[1][1], americanSamoaDistrictPoints[1][2]), true);
+  } finally { navigation.destroy(); }
+});
+
+test("an American Samoa IP location uses its local whole-territory polygon", async () => {
+  const requests = [], storage = preferenceStore();
+  const navigation = makeRegionNavigation({ storage, ipEndpoint: "https://ip.example.test/geo",
+    request: async () => assert.fail("Detected American Samoa must not request Nominatim"),
+    fetchImpl: async (url) => {
+      requests.push(String(url));
+      return String(url) === "https://ip.example.test/geo"
+        ? new Response(JSON.stringify({ country_code: "AS", latitude: -14.28, longitude: -170.68 }))
+        : localAmericanSamoaResponse(url);
+    },
+  });
+  try {
+    const selected = await navigation.initialize();
+    assert.equal(selected.id, "AS");
+    assert.deepEqual(requests, ["https://ip.example.test/geo", "http://localhost/data/regions/as.json"]);
+    assert.deepEqual(JSON.parse(storage.getItem(SAVED_REGION_KEY)), { version: 1, id: "AS" });
+    assert.equal(regionContains(selected, americanSamoaDistrictPoints[0][1], americanSamoaDistrictPoints[0][2]), true);
+  } finally { navigation.destroy(); }
 });

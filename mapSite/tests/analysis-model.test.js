@@ -12,7 +12,7 @@ const model = (options = {}) => buildAnalysisModel({ region: country, now, ...op
 const factor = (row, id) => row.factors.find((item) => item.id === id);
 
 test("taxonomy refines legacy categories and avoids incidental destination words", () => {
-  assert.equal(categoryForReport(report("a", "healthcare", { summary: "The pharmacy has no medicine" })), "medication_access");
+  assert.equal(categoryForReport(report("a", "healthcare", { summary: "The pharmacy has no medicine" })), "healthcare");
   assert.equal(categoryForReport(report("b", "transportation", { summary: "Potholes block the bridge" })), "roads");
   assert.equal(categoryForReport(report("c", "other", { summary: "Our school has no classroom" })), "education");
   assert.equal(categoryForReport(report("d", "transportation", { summary: "No bus to the school on Main Road" })), "transportation");
@@ -20,6 +20,50 @@ test("taxonomy refines legacy categories and avoids incidental destination words
   assert.equal(categoryForReport(report("f", "internet")), "broadband");
   assert.equal(categoryForReport(null), "other");
   assert.equal(categoryForReport({ category: "__proto__" }), "other");
+});
+
+test("medication aliases and legacy other reports share the Healthcare category without rewriting reports", () => {
+  assert.equal(ANALYSIS_CATEGORIES.filter((item) => item.id === "healthcare").length, 1);
+  assert.equal(ANALYSIS_CATEGORIES.find((item) => item.id === "healthcare").label, "Healthcare");
+  assert.ok(!ANALYSIS_CATEGORIES.some((item) => item.id === "medication_access"));
+  for (const category of ["healthcare", "medical", "medicine", "medication", "medications", "pharmacy", "medication_access", " Medication_Access "]) {
+    const legacy = report("legacy", category);
+    assert.equal(categoryForReport(legacy), "healthcare", category);
+    assert.equal(legacy.category, category);
+  }
+  assert.equal(categoryForReport(report("a", "other", { summary: "The pharmacy has no prescriptions available" })), "healthcare");
+  assert.equal(categoryForReport(report("b", "healthcare", { summary: "Clinic closed and medications unavailable" })), "healthcare");
+  assert.equal(categoryForReport(report("c", "transportation", { summary: "No bus to the pharmacy" })), "transportation");
+});
+
+test("care and medication reports form one deduplicated Healthcare overview and priority row", () => {
+  const reports = [
+    report("care", "healthcare", { resolved: false, problemDurationDays: 365 }),
+    report("medicine", "medication_access", { severity: "low", status: "resolved", problemDurationDays: 0 }),
+    report("medicine", "healthcare", { severity: "high", resolved: false, problemDurationDays: 365 }),
+    report("pharmacy", "other", { summary: "The pharmacy is unavailable", status: "open" }),
+    report("water"),
+  ];
+  const full = model({ reports });
+  const healthcare = full.rankings.find((row) => row.category === "healthcare");
+  assert.equal(full.overview.totalReports, 4);
+  assert.deepEqual(full.overview.mostCommonProblem, { category: "healthcare", label: "Healthcare", count: 3,
+    tied: [{ category: "healthcare", label: "Healthcare", count: 3 }] });
+  assert.equal(full.rankings.filter((row) => row.category === "healthcare").length, 1);
+  assert.ok(!full.rankings.some((row) => row.category === "medication_access"));
+  assert.equal(healthcare.reportCount, 3);
+  assert.deepEqual(healthcare.reports.map((item) => item.id), ["care", "medicine", "pharmacy"]);
+  assert.equal(factor(healthcare, "frequency").score, 75);
+  assert.equal(factor(healthcare, "severity").reportUrgencyMean, 75);
+  assert.equal(factor(healthcare, "duration").reportEvidence.length, 2);
+  for (const category of ["healthcare", "medicine", "medication", "medications", "pharmacy", "medication_access", " MEDICATION_ACCESS "]) {
+    const filtered = model({ reports, category });
+    assert.equal(filtered.category, "healthcare", category);
+    assert.equal(filtered.overview.totalReports, 3, category);
+    assert.equal(filtered.overview.unresolvedIssues, 2, category);
+    assert.equal(filtered.overview.resolvedReports, 1, category);
+    assert.deepEqual(filtered.rankings, [healthcare], category);
+  }
 });
 
 test("overview deduplicates report IDs, filters categories, and does not invent resolution", () => {

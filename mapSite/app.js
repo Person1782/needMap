@@ -6,7 +6,6 @@ import { collection, getFirestore, onSnapshot } from "https://www.gstatic.com/fi
 import { firebaseConfig } from "./firebase-config.js";
 import { buildRecommendations } from "./analysis.js";
 import { enrichSignalsWithRegions } from "./regions.js";
-import { loadNearbyServices } from "./existing-services.js";
 import { normalizeReport, filterReports, reportSnapshotKey } from "./dashboard-state.js";
 import { createRegionNavigation, regionContains, WORLD_REGION } from "./region-navigation.js";
 import { createRegionPicker } from "./region-picker.js";
@@ -14,8 +13,14 @@ import { serviceIconSvg } from "./service-icons.js";
 import { ANALYSIS_CATEGORIES, categoryForReport } from "./analysis-model.js";
 import { createAnalysisWorkspace } from "./analysis-workspace.js";
 import { createReportLocationMap } from "./report-location-map.js";
+import { createAnalysisOverviewMap } from "./analysis-overview-map.js";
+import { createMapPopups } from "./map-popups.js";
+import { attachMapZoom } from "./map-zoom.js";
+import { attachMapViewport, MAP_WORLD_BOUNDS, MAP_VIEWPORT_OPTIONS } from "./map-viewport.js";
 import { reviewComplaints } from "./analysis-ai.js";
 import "./analysis.css";
+import { createPopulationAreaMap } from "./population-area-map.js";
+import "./population-details.css";
 
 const firebaseApp = initializeApp(firebaseConfig);
 if (import.meta.env.DEV && import.meta.env.VITE_FIREBASE_APPCHECK_DEBUG_TOKEN) {
@@ -34,30 +39,32 @@ const search = $("#report-search");
 const category = $("#category-filter");
 const urgency = $("#urgency-filter");
 const viewport = $("#viewport-filter");
-const mapMessage = $("#map-message");
-const map = L.map("map", { maxBounds: [[-85, -180], [85, 180]], maxBoundsViscosity: 1, minZoom: 2 }).setView([20, 0], 2);
+const map = L.map("map", { ...MAP_VIEWPORT_OPTIONS, minZoom: 2, scrollWheelZoom: true, touchZoom: true, zoomSnap: 0.25 }).setView([20, 0], 2);
+const mapViewport = attachMapViewport(map);
+const detachMapZoom = attachMapZoom(map);
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-  maxZoom: 19, noWrap: true, bounds: [[-85.051129, -180], [85.051129, 180]], attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>',
+  maxZoom: 19, noWrap: true, bounds: MAP_WORLD_BOUNDS, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>',
 }).addTo(map);
 const reportsLayer = L.layerGroup().addTo(map);
 const candidatesLayer = L.layerGroup().addTo(map);
-const servicesLayer = L.layerGroup().addTo(map);
+const mapPopups = createMapPopups(L, map);
+let reportPopupDisposers = [];
+let candidatePopupDisposers = [];
 const selectedRegionLayer = L.layerGroup().addTo(map);
 const colors = { low: "#2f8a69", medium: "#d28b27", high: "#c34e42", unknown: "#526575" };
 let reports = [];
 let recommendations = [];
 let selectedRegion = WORLD_REGION;
+let pendingRegionFit = false;
 let snapshotKey = "";
 let regionRevision = 0;
 let regionController;
 let resolving = false;
-let serviceRevision = 0;
-let renderFrame;
 let connectionFailed = false;
 let reportsReady = false;
-const analysisWorkspace = createAnalysisWorkspace({ firebaseApp, reviewComplaints, createReportMap: (container, report) => createReportLocationMap(L, container, report) });
+const analysisWorkspace = createAnalysisWorkspace({ firebaseApp, reviewComplaints, createPopulationMap: (container, options) => createPopulationAreaMap(L, container, options), createOverviewMap: (container) => createAnalysisOverviewMap(L, container, { reportPopup, candidatePopup }), createReportMap: (container, report) => createReportLocationMap(L, container, report) });
 function updateAnalysis() {
-  analysisWorkspace.update({ region: selectedRegion, reports: regionReports(), reportsReady, connectionFailed });
+  analysisWorkspace.update({ region: selectedRegion, reports: regionReports(), recommendations, reportsReady, connectionFailed });
 }
 function element(tag, text, className) {
   const node = document.createElement(tag);
@@ -76,6 +83,17 @@ function iconElement(category, detail) {
 function regionReports() {
   return reports.filter((report) => regionContains(selectedRegion, report.latitude, report.longitude))
     .map((report) => ({ ...report, category: categoryForReport(report) }));
+}
+function fitSelectedRegion() {
+  const container = map.getContainer();
+  if (!container.clientWidth || !container.clientHeight) {
+    pendingRegionFit = true;
+    return;
+  }
+  pendingRegionFit = false;
+  mapViewport.refresh();
+  if (selectedRegion.bounds) map.fitBounds(selectedRegion.bounds, { padding: [35, 35], maxZoom: 11, animate: false });
+  else map.setView([20, 0], 2, { animate: false });
 }
 function reportPopup(report) {
   const content = element("div", undefined, "report-popup");
@@ -96,12 +114,17 @@ function renderReports() {
   $("#report-count").textContent = selected.length;
   $("#urgent-count").textContent = selected.filter((report) => report.severity === "high").length;
   $("#report-scope").textContent = `${selected.length} of ${regionReports().length} reports in ${selectedRegion.name}${viewport.checked ? " · limited to the map area" : ""}.`;
+  // Hidden Leaflet layers do not emit marker removal events when rebuilt.
+  for (const dispose of reportPopupDisposers) dispose();
+  reportPopupDisposers = [];
   reportsLayer.clearLayers();
   reportList.replaceChildren();
-  if (!selected.length) reportList.append(element("p", reports.length ? "No reports match these filters." : "Community reports will appear here when they arrive.", "empty-state"));
+  if (!selected.length) reportList.append(element("p", regionReports().length ? "No reports match these filters."
+    : reportsReady ? `No reports in ${selectedRegion.name} yet.` : "Community reports will appear here when they arrive.", "empty-state"));
   selected.forEach((report) => {
     const icon = L.divIcon({ className: "", html: `<span class="report-marker" style="background:${colors[report.severity] || colors.unknown}" aria-hidden="true">${serviceIconSvg(report.category)}</span>`, iconSize: [26, 26], iconAnchor: [13, 13] });
-    L.marker([report.latitude, report.longitude], { icon, title: `${label(report.category)} · ${label(report.severity)} urgency` }).bindPopup(() => reportPopup(report)).addTo(reportsLayer);
+    const marker = L.marker([report.latitude, report.longitude], { icon, title: `${label(report.category)} · ${label(report.severity)} urgency` }).addTo(reportsLayer);
+    reportPopupDisposers.push(mapPopups.register(marker, () => reportPopup(report)));
     const card = element("button", undefined, "report-card");
     card.type = "button";
     const heading = element("span", undefined, "report-card-heading");
@@ -112,7 +135,7 @@ function renderReports() {
     card.addEventListener("click", () => {
       map.setView([report.latitude, report.longitude], 14);
       // Map movement may rebuild markers when the viewport filter is enabled.
-      L.popup().setLatLng([report.latitude, report.longitude]).setContent(reportPopup(report)).openOn(map);
+      mapPopups.openAt([report.latitude, report.longitude], () => reportPopup(report));
     });
     reportList.append(card);
   });
@@ -128,37 +151,19 @@ function candidatePopup(candidate) {
   const heading = element("strong", undefined, "service-heading");
   heading.append(iconElement(candidate.category, candidate.analysis.facilityType), element("span", candidate.analysis.facilityType));
   content.append(heading, element("p", `Suggested location ${candidate.locationRank || 1} of ${candidate.locationCount || 1} · ${candidate.signals.length} supporting reports`), element("p", candidate.analysis.decisionSummary || candidate.analysis.rationale));
-  const services = element("button", "Find nearby existing services", "text-button");
-  services.type = "button";
-  services.addEventListener("click", () => showServices(candidate));
-  content.append(element("small", "Report-based suggestions ranked by urgency and demand. Local site checks are still needed."), services);
+  content.append(element("small", "Report-based suggestions ranked by urgency and demand. Local site checks are still needed."));
   return content;
 }
 function renderCandidates() {
+  for (const dispose of candidatePopupDisposers) dispose();
+  candidatePopupDisposers = [];
   candidatesLayer.clearLayers();
   recommendations.forEach((candidate) => {
     const rank = [1, 2, 3].includes(candidate.locationRank) ? candidate.locationRank : 1;
     const icon = L.divIcon({ className: "", html: `<span class="candidate-marker" aria-hidden="true">${serviceIconSvg(candidate.category, candidate.analysis.facilityType)}<b>${rank}</b></span>`, iconSize: [36, 36], iconAnchor: [18, 18] });
-    L.marker([candidate.position.latitude, candidate.position.longitude], { icon, title: `${candidate.analysis.facilityType} · suggested location ${rank}` }).bindPopup(() => candidatePopup(candidate)).addTo(candidatesLayer);
+    const marker = L.marker([candidate.position.latitude, candidate.position.longitude], { icon, title: `${candidate.analysis.facilityType} · suggested location ${rank}` }).addTo(candidatesLayer);
+    candidatePopupDisposers.push(mapPopups.register(marker, () => candidatePopup(candidate)));
   });
-}
-async function showServices(candidate) {
-  const revision = ++serviceRevision;
-  servicesLayer.clearLayers();
-  mapMessage.hidden = false;
-  mapMessage.textContent = "Looking for existing services within 5 km…";
-  try {
-    const result = await loadNearbyServices(candidate, { radiusMeters: 5000 });
-    if (revision !== serviceRevision) return;
-    result.services.forEach((service) => {
-      const content = element("div");
-      content.append(element("strong", service.name || "Existing service"), element("p", "OpenStreetMap listing; verify current opening hours and capacity."));
-      L.circleMarker([service.latitude, service.longitude], { radius: 6, color: "#15344a", fillColor: "#fff", fillOpacity: 1 }).bindPopup(content).addTo(servicesLayer);
-    });
-    mapMessage.textContent = `${result.services.length} existing service listings within 5 km. OpenStreetMap coverage may be incomplete.`;
-  } catch {
-    if (revision === serviceRevision) mapMessage.textContent = "Existing services could not be loaded. Try again shortly.";
-  }
 }
 function updateCandidates() {
   const scoped = regionReports();
@@ -171,25 +176,29 @@ function updateCandidates() {
     ? `${candidates.length} proposed service locations. Numbered icons show up to three locations per service.`
     : resolving && !selectedRegion.geometry ? "Finding locations for proposed services…" : "Proposed services need at least two reports in the same region and category.";
   if (connectionFailed) candidateStatus.textContent += " Reports may be out of date while the connection is unavailable.";
+  updateAnalysis();
 }
 
 [search, category, urgency, viewport].forEach((control) => control.addEventListener("input", renderReports));
 $("#fit-reports").addEventListener("click", () => {
   viewport.checked = false;
   const selected = selectedReports();
-  if (selected.length) map.fitBounds(selected.map((report) => [report.latitude, report.longitude]), { padding: [45, 45], maxZoom: 13 });
+  const points = $("#layer-reports").checked ? selected.map((report) => [report.latitude, report.longitude]) : [];
+  if ($("#layer-candidates").checked) points.push(...recommendations.map((candidate) => [candidate.position.latitude, candidate.position.longitude]));
+  if (points.length) map.fitBounds(points, { padding: [45, 45], maxZoom: 13 });
+  else if (selectedRegion.bounds) map.fitBounds(selectedRegion.bounds, { padding: [35, 35], maxZoom: 11 });
+  else map.setView([20, 0], 2);
   renderReports();
 });
-$("#layer-reports").addEventListener("change", (event) => event.target.checked ? reportsLayer.addTo(map) : reportsLayer.removeFrom(map));
+$("#layer-reports").addEventListener("change", (event) => {
+  if (event.target.checked) { renderReports(); reportsLayer.addTo(map); }
+  else reportsLayer.removeFrom(map);
+});
 $("#layer-candidates").addEventListener("change", (event) => {
-  event.target.checked ? candidatesLayer.addTo(map) : candidatesLayer.removeFrom(map);
+  if (event.target.checked) { renderCandidates(); candidatesLayer.addTo(map); }
+  else candidatesLayer.removeFrom(map);
 });
 map.on("moveend zoomend", () => { if (viewport.checked) renderReports(); });
-const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => {
-  cancelAnimationFrame(renderFrame);
-  renderFrame = requestAnimationFrame(() => map.invalidateSize({ pan: false }));
-});
-observer?.observe($("#map"));
 if (["#plan", "#decisions"].includes(window.location.hash)) window.history.replaceState(null, "", "#explore-view");
 function showPage() {
   const analyzing = window.location.hash.startsWith("#analysis");
@@ -204,7 +213,11 @@ function showPage() {
   document.querySelector(".skip-link").textContent = analyzing ? "Skip to analysis" : "Skip to map and reports";
   document.title = analyzing ? "NeedMap | Regional Analysis" : "NeedMap | Community Map";
   updateAnalysis(); analysisWorkspace.setVisible(analyzing);
-  if (!analyzing) requestAnimationFrame(() => map.invalidateSize({ pan: false }));
+  if (!analyzing) requestAnimationFrame(() => {
+    if ($("#explore-view").hidden) return;
+    if (pendingRegionFit) fitSelectedRegion();
+    else mapViewport.refresh();
+  });
 }
 window.addEventListener("hashchange", showPage);
 showPage();
@@ -212,21 +225,16 @@ showPage();
 const regionNavigation = createRegionNavigation({
   onChange(region) {
     selectedRegion = region;
-    serviceRevision += 1;
-    servicesLayer.clearLayers();
     selectedRegionLayer.clearLayers();
     map.closePopup();
-    mapMessage.hidden = true;
     viewport.checked = false;
     $("#current-region").textContent = region.label || region.name;
     $("#map-region-label").textContent = region.name === "Worldwide" ? "Worldwide community map" : region.name;
     if (region.geometry) L.geoJSON(region.geometry, { style: { color: "#005ea8", weight: 2, fillOpacity: .025 }, interactive: false }).addTo(selectedRegionLayer);
-    if (region.bounds) map.fitBounds(region.bounds, { padding: [35, 35], maxZoom: 11, animate: false });
-    else map.setView([20, 0], 2, { animate: false });
+    fitSelectedRegion();
     refreshCategories();
     renderReports();
     updateCandidates();
-    updateAnalysis();
     regionPicker.close();
   },
   onStatus({ state, message }) {
@@ -249,15 +257,11 @@ const unsubscribe = onSnapshot(collection(db, "incomingSignals"), (snapshot) => 
   regionController?.abort();
   regionController = new AbortController();
   const revision = ++regionRevision;
-  serviceRevision += 1;
-  servicesLayer.clearLayers();
-  mapMessage.hidden = true;
   reports = incoming;
   resolving = reports.length > 0;
   refreshCategories();
   renderReports();
   updateCandidates();
-  updateAnalysis();
   liveDot.className = "live-dot connected";
   status.textContent = resolving ? `Finding regions · 0/${reports.length}` : "Live · no reports yet";
   if (!reports.length) return;
@@ -288,10 +292,9 @@ const unsubscribe = onSnapshot(collection(db, "incomingSignals"), (snapshot) => 
   status.textContent = "Connection unavailable · reload to reconnect";
   liveDot.className = "live-dot error";
   updateCandidates();
-  updateAnalysis();
 });
 window.addEventListener("pagehide", (event) => {
   if (event.persisted) return;
-  unsubscribe(); regionController?.abort(); regionNavigation.destroy(); regionPicker.destroy(); observer?.disconnect(); analysisWorkspace.destroy();
+  unsubscribe(); regionController?.abort(); regionNavigation.destroy(); regionPicker.destroy(); mapViewport.destroy(); analysisWorkspace.destroy(); mapPopups.destroy(); detachMapZoom();
   window.removeEventListener("hashchange", showPage);
 });

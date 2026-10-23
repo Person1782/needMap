@@ -10,9 +10,9 @@ counts and source fingerprints.
 
 The verified build contains **5,422 entries**: 250 countries/territories, 4,771
 state/province entries (4,105 original and 666 additional source entries), and
-401 NeedMap subdivisions across 146 parents. There are 3,201 parent boundary
-files containing 3,602 parent/child records, totaling 98,522,658 UTF-8 bytes.
-All 3,201 files passed the runtime loader's validation. The index retains 1,570
+401 NeedMap subdivisions across 146 parents. There are 3,202 parent boundary
+files containing 3,603 parent/child records, totaling 98,526,277 UTF-8 bytes.
+All 3,202 files passed the runtime loader's validation. The index retains 1,570
 original state entries without a matched CGAZ parent; they use the existing
 boundary lookup on selection. Another 92 eligible large parents remain whole
 where a verified partition could not be produced. Twenty-four corrupted source
@@ -36,7 +36,7 @@ reconstructed by the runtime loader from the ordered child polygons.
 
 ## Sources and attribution
 
-The boundaries come from [geoBoundaries CGAZ](https://www.geoboundaries.org/globalDownloads.html),
+The primary boundaries come from [geoBoundaries CGAZ](https://www.geoboundaries.org/globalDownloads.html),
 the project's simplified, gap-filled global administrative composite. CGAZ
 uses United States Department of State definitions for disputed areas; the
 underlying administrative data has different represented years by country.
@@ -62,16 +62,47 @@ normalized name/native-name within the same country, using administrative-name
 prefix aliases only when the match is unambiguous. Reversible source mojibake is
 repaired before matching; legitimate Unicode names are preserved.
 
+### Complete American Samoa geometry
+
+The `AS` country entry and `US-AS` territory entry use the same complete land
+geometry from [Natural Earth 10m Admin 1, version 5.1.1](https://www.naturalearthdata.com/downloads/10m-cultural-vectors/10m-admin-1-states-provinces/).
+This replaces the CGAZ territory boundary, which omitted Rose Atoll and Swains
+Island. All five source districts are retained: Western District, Eastern
+District, Manu'a Islands, Rose Atoll, and Swains Island. Their six polygon parts
+and 71 coordinate positions are copied without simplification or rounding.
+The bounding view includes every island; report membership uses the land
+polygons and excludes ocean and neighboring Samoa.
+
+The two local files are `data/regions/as.json` and `data/regions/us-as.json`.
+They retain their existing country/state identities and require no external
+boundary request when selected. The complete dataset therefore has 3,200 CGAZ
+parent files and two Natural Earth parent files. The runtime loader restricts
+this additional source to those two identities and version 5.1.1.
+
+The source [Natural Earth archive](https://naturalearth.s3.amazonaws.com/10m_cultural/ne_10m_admin_1_states_provinces.zip)
+is pinned to SHA-256
+`efc59726337323058f9446210adc96673179cd344e053666ee3d28cb58ba2b05`.
+The generator verifies both this checksum and the archive's version file.
+Natural Earth data is [public domain](https://www.naturalearthdata.com/about/terms-of-use/).
+Per-record provenance and the internal build audit retain the version, source
+URL, checksum, and all five source district IDs.
+
 ## Rebuilding and checking
 
-The build requires Node.js with the map's installed dependencies, Python 3, and
-Shapely (the verified build used Shapely 2.2.0). Download the pinned GeoPackages
-above to a build cache, then run from `mapSite`:
+The build requires Node.js with the map's installed dependencies, Python 3.11
+or newer, Shapely (the verified build used Shapely 2.2.0), and pyshp. Download
+the pinned GeoPackages and Natural Earth archive above to a build cache, then
+run all three steps from `mapSite`:
 
 ```sh
 python3 scripts/prepare-world-boundaries.py /path/ADM1.gpkg /path/ADM2.gpkg /path/prepared
 node scripts/build-world-regions.mjs /path/prepared
+python3 scripts/supplement-american-samoa.py /path/ne_10m_admin_1_states_provinces.zip
 ```
+
+Always run the supplement after the standard build, including a resumed build.
+It updates only the two American Samoa files, their catalog paths, and build
+provenance/counts. Repeating it produces identical files.
 
 The preparation step repairs invalid source polygons, simplifies them by 0.001
 degrees while preserving topology, and rounds coordinates to six decimal
@@ -88,11 +119,13 @@ Renamed/rematched records reuse geometry under their corrected IDs, and obsolete
 generated files are removed. The internal audit distinguishes whole-parent
 fallbacks, matches to existing entries, extra source entries, and unassigned
 country/disputed source records. Numeric disputed-area codes are never invented
-as country codes. Original countries and unmatched state entries use their
-existing administrative-boundary lookup when selected.
+as country codes. Countries other than American Samoa and unmatched state
+entries use their existing administrative-boundary lookup when selected.
 
 `tests/world-region-catalog.test.js` verifies index completeness, country-code
 coverage, parent/child consistency, and every shipped file through the runtime
 loader. Source-name/ring-cleaning tests and the pure grouping tests cover the
 offline build invariants. No live boundary download is needed to search the
 complete region index.
+`tests/american-samoa-data.test.js` checks both American Samoa identities,
+source provenance, every district, remote-island coverage, and ocean exclusion.

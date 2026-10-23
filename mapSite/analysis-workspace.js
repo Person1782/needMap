@@ -3,6 +3,7 @@ import { loadAnalysisEvidence } from "./analysis-evidence.js";
 import { serviceIconSvg } from "./service-icons.js";
 import { getReportCoordinates } from "./report-location-map.js";
 import { loadReportPopulation } from "./report-population.js";
+import { createPopulationDetails } from "./population-details.js";
 
 const number = (value, digits = 0) => Number.isFinite(value) ? value.toLocaleString(undefined, { maximumFractionDigits: digits }) : "Unknown";
 const categoryName = (value) => ANALYSIS_CATEGORIES.find((entry) => entry.id === value)?.label || value;
@@ -13,7 +14,7 @@ const dateLabel = (value) => {
 };
 
 /** Shared region/reports come from the map; external work starts only on Analysis. */
-export function createAnalysisWorkspace({ document = globalThis.document, loadEvidence = loadAnalysisEvidence, loadPopulation = loadReportPopulation, reviewComplaints, firebaseApp, createReportMap } = {}) {
+export function createAnalysisWorkspace({ document = globalThis.document, loadEvidence = loadAnalysisEvidence, loadPopulation = loadReportPopulation, reviewComplaints, firebaseApp, createReportMap, createOverviewMap, createPopulationMap } = {}) {
   const byId = (id) => document.getElementById(id);
   const filter = byId("analysis-category");
   const node = (tag, text, className) => {
@@ -24,7 +25,8 @@ export function createAnalysisWorkspace({ document = globalThis.document, loadEv
   };
   const icon = (category) => { const item = node("span", undefined, "service-icon"); item.setAttribute("aria-hidden", "true"); item.innerHTML = serviceIconSvg(category); return item; };
   for (const category of ANALYSIS_CATEGORIES) { const option = node("option", category.label); option.value = category.id; filter.append(option); }
-  let region = null, reports = [], reportsReady = false, connectionFailed = false;
+  let region = null, reports = [], recommendations = [], reportsReady = false, connectionFailed = false;
+  let overviewMap = null, overviewKey = "", populationDetails;
   let visible = false, destroyed = false, evidence = null, evidenceState = "idle", evidenceRevision = 0, evidenceController;
   let insights = [], aiState = "idle", aiRevision = 0, aiController, aiTimer, reportKey = "", reviewResult = null;
   let population = null, populationState = "idle", populationKey = "", populationGeometry, populationRevision = 0, populationController;
@@ -77,13 +79,50 @@ export function createAnalysisWorkspace({ document = globalThis.document, loadEv
     reportMapGroups.push(() => { disposed = true; row.removeEventListener("toggle", sync); stop(); });
     sync();
   }
-  function metric(label, value, detail, category) {
-    const item = node("div", undefined, `analysis-metric${typeof value === "string" && value.length > 9 ? " word-metric" : ""}`);
+  function metric(label, value, detail, category, tag = "div") {
+    const item = node(tag, undefined, `analysis-metric${typeof value === "string" && value.length > 9 ? " word-metric" : ""}`);
     const strong = node("strong");
     if (category) strong.append(icon(category));
     strong.append(node("span", value));
     item.append(node("span", label, "metric-label"), strong, node("span", detail, "metric-description"));
     return item;
+  }
+  function populationScope() {
+    const selected = filter.value || "all";
+    return reports.filter((report) => selected === "all" || categoryForReport(report) === selected);
+  }
+  function populationContext() {
+    const selected = filter.value || "all";
+    return {
+      population: population || { status: populationState === "loading" || populationState === "idle" ? "loading" : "unavailable" },
+      reports: populationScope(), region, category: selected === "all" ? "All Problems" : categoryName(selected),
+    };
+  }
+  function openPopulationDetails() {
+    if (!visible || destroyed) return;
+    populationDetails ||= createPopulationDetails({ document, createMap: createPopulationMap });
+    populationDetails.open(populationContext());
+  }
+  function clearOverviewMap() {
+    overviewMap?.destroy(); overviewMap = null; overviewKey = "";
+  }
+  function renderOverviewMap(model) {
+    const container = byId("analysis-overview-map"), note = byId("analysis-map-note");
+    if (!container || !createOverviewMap) return;
+    const scopedReports = model.rankings.flatMap((ranking) => ranking.reports.map((report) => ({ ...report, category: ranking.category })));
+    const scopedRecommendations = recommendations.map((item) => ({ ...item, category: categoryForReport(item) }))
+      .filter((item) => model.category === "all" || item.category === model.category);
+    const key = JSON.stringify([region.id, region.geometry, model.category, reportsReady, connectionFailed, scopedReports, scopedRecommendations]);
+    if (key === overviewKey) return;
+    try {
+      overviewMap ||= createOverviewMap(container);
+      overviewMap.update({ region, category: model.category, reports: scopedReports, recommendations: scopedRecommendations, reportsReady });
+      overviewKey = key;
+      if (note) note.textContent = !reportsReady ? "Waiting for report locations…" : `${number(scopedReports.length)} ${scopedReports.length === 1 ? "report" : "reports"} · ${number(scopedRecommendations.length)} proposed service ${scopedRecommendations.length === 1 ? "location" : "locations"}${connectionFailed ? " · Last loaded reports" : ""}. Hover for details; click to keep them open.`;
+    } catch {
+      clearOverviewMap();
+      if (note) note.textContent = "The map could not be loaded. Reports are still available below.";
+    }
   }
   function populationMetric() {
     let value = "Unavailable", detail = "Population data could not be loaded for these report locations.";
@@ -95,13 +134,21 @@ export function createAnalysisWorkspace({ document = globalThis.document, loadEv
       detail = `Within 500 m of ${number(population.reportCount)} ${population.reportCount === 1 ? "report" : "reports"} · WorldPop ${population.year}. Overlapping areas counted once. This estimates nearby residents, not confirmed people affected.`;
       if (connectionFailed) detail += " Based on the last loaded reports.";
     } else if (population?.message) detail = population.message;
-    const result = metric("Estimated residents near reports", value, detail);
+    const result = metric("Estimated residents near reports", value, detail, undefined, "button");
+    result.type = "button";
+    result.classList.add("analysis-population-button");
     result.id = "analysis-population";
     result.setAttribute("aria-live", "polite");
+    result.setAttribute("aria-haspopup", "dialog");
+    result.append(node("span", "See how this was calculated →", "metric-detail-hint"));
+    result.addEventListener("click", openPopulationDetails);
     return result;
   }
   function renderPopulation() {
-    if (visible && !destroyed) byId("analysis-population")?.replaceWith(populationMetric());
+    if (visible && !destroyed) {
+      byId("analysis-population")?.replaceWith(populationMetric());
+      populationDetails?.update(populationContext());
+    }
   }
   function cancelPopulation() {
     ++populationRevision; populationController?.abort(); populationController = null;
@@ -113,6 +160,7 @@ export function createAnalysisWorkspace({ document = globalThis.document, loadEv
     const scoped = reports.filter((report) => selected === "all" || categoryForReport(report) === selected);
     const key = JSON.stringify([region.id, selected, reportsReady, scoped.map((report) => [report.id, report.latitude, report.longitude])]);
     if (key !== populationKey || populationGeometry !== region.geometry) {
+      populationDetails?.close();
       cancelPopulation(); populationKey = key; populationGeometry = region.geometry;
       population = null; populationState = "idle";
     }
@@ -168,6 +216,7 @@ export function createAnalysisWorkspace({ document = globalThis.document, loadEv
     const selectedCategory = filter.value || "all";
     const model = buildAnalysisModel({ reports, region, evidence, category: selectedCategory, complaintInsights: insights, reportsAvailable: reportsReady });
     const overview = model.overview;
+    renderOverviewMap(model);
     renderReportChart(model);
     byId("analysis-scope").textContent = `${region.label || region.name} · ${selectedCategory === "all" ? "All Problems" : categoryName(selectedCategory)}`;
     byId("analysis-category-icon").innerHTML = serviceIconSvg(selectedCategory);
@@ -275,7 +324,7 @@ export function createAnalysisWorkspace({ document = globalThis.document, loadEv
       clearReportMaps();
       byId("analysis-rankings").replaceChildren();
     }
-    region = next.region; reports = next.reports; reportsReady = next.reportsReady; connectionFailed = !!next.connectionFailed;
+    region = next.region; reports = next.reports; recommendations = next.recommendations || []; reportsReady = next.reportsReady; connectionFailed = !!next.connectionFailed;
     const key = JSON.stringify(reports.map((report) => [report.id, report.summary, report.category, report.severity, report.submittedAt]));
     if (changedRegion || key !== reportKey) {
       reportKey = key; ++aiRevision; aiController?.abort(); clearTimeout(aiTimer); insights = []; reviewResult = null; aiState = "idle";
@@ -284,5 +333,5 @@ export function createAnalysisWorkspace({ document = globalThis.document, loadEv
   }
   const onFilter = () => { clearReportMaps(); byId("analysis-rankings").replaceChildren(); ensurePopulation(); render(); };
   filter.addEventListener("change", onFilter);
-  return { update, setVisible(value) { visible = value; if (value) { ensurePopulation(); render(); ensureEvidence(); ensureAI(); } else { clearReportMaps(); cancelPopulation(); } }, destroy() { destroyed = true; clearReportMaps(); cancelPopulation(); ++evidenceRevision; ++aiRevision; evidenceController?.abort(); aiController?.abort(); clearTimeout(aiTimer); filter.removeEventListener("change", onFilter); } };
+  return { update, setVisible(value) { visible = value; if (value) { ensurePopulation(); render(); ensureEvidence(); ensureAI(); } else { clearReportMaps(); clearOverviewMap(); populationDetails?.close(); cancelPopulation(); } }, destroy() { destroyed = true; clearReportMaps(); clearOverviewMap(); populationDetails?.destroy(); cancelPopulation(); ++evidenceRevision; ++aiRevision; evidenceController?.abort(); aiController?.abort(); clearTimeout(aiTimer); filter.removeEventListener("change", onFilter); } };
 }

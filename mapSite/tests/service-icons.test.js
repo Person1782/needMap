@@ -19,6 +19,14 @@ test("inferred service names select the appropriate specific icon", () => {
   }
 });
 
+test("healthcare and legacy medication report categories share the medical icon", () => {
+  for (const category of ["healthcare", "medical", "medication_access", "medication", "medications", "medicine", "pharmacy"]) {
+    assert.equal(serviceIconSvg(category), SERVICE_ICONS.hospital, category);
+  }
+  assert.equal(serviceIconSvg("healthcare", "Pharmacy"), SERVICE_ICONS.medication,
+    "A proposed pharmacy keeps its specific service icon within Healthcare");
+});
+
 test("icons fall back safely and never interpolate report content into SVG markup", () => {
   for (const category of [null, undefined, {}, "constructor", "toString", "<img src=x onerror=alert(1)>"]) {
     assert.equal(serviceIconSvg(category), SERVICE_ICONS.other);

@@ -64,25 +64,26 @@ test("the menu has one unified region list without download controls or a separa
   for (const [, id] of picker.matchAll(/byId\("([^"]+)"\)/g)) assert.ok(ids.includes(id), `Missing picker DOM hook ${id}`);
 });
 
-test("opening the list shows all 250 countries and territories without another click", () => {
+test("opening the list puts Worldwide first followed by all 250 countries and territories", () => {
   const page = mount({ liveDirectory: true }); page.picker.open();
   const expected = searchRegions("", { kind: "country", limit: Infinity });
-  assert.equal(page.buttons().length, 250);
-  assert.deepEqual(page.buttons().map((button) => button.getAttribute("data-region-id")), expected.map((entry) => entry.id));
-  assert.equal(page.buttons()[0].textContent, "Afghanistan");
+  assert.equal(page.buttons().length, 251);
+  assert.deepEqual(page.buttons().map((button) => button.getAttribute("data-region-id")), ["world", ...expected.map((entry) => entry.id)]);
+  assert.equal(page.buttons()[0].textContent, "Worldwide");
+  assert.equal(page.buttons()[1].textContent, "Afghanistan");
   assert.equal(page.buttons().at(-1).textContent, "Zimbabwe");
-  assert.match(page.elements["region-search-status"].textContent, /^250 countries and territories\.$/);
+  assert.match(page.elements["region-search-status"].textContent, /^Worldwide and 250 countries and territories\.$/);
   assert.deepEqual(page.selections, []); assert.equal(page.detections, 0);
   assert.equal(page.document.activeElement, page.elements["region-search"]);
 });
 
 test("initial country browsing preserves the current-country marker without automatically navigating", () => {
   const page = mount(); page.picker.open();
-  assert.equal(page.buttons().length, 250);
+  assert.equal(page.buttons().length, 251);
   assert.deepEqual(page.queries[0], ["", { kind: "country", limit: Infinity }]);
   assert.deepEqual(page.selections, []); assert.equal(page.detections, 0);
   assert.equal(page.document.activeElement, page.elements["region-search"]);
-  assert.equal(page.buttons()[2].getAttribute("aria-current"), "true");
+  assert.equal(page.buttons()[3].getAttribute("aria-current"), "true");
   assert.equal(page.buttons().filter((button) => button.getAttribute("aria-current")).length, 1);
 });
 
@@ -106,11 +107,11 @@ test("typing resets scroll without taking focus and clearing or whitespace resto
   assert.equal(page.document.activeElement, page.elements["region-search"]);
   assert.equal(page.elements["region-search-status"].textContent, "5 matching regions.");
   page.elements["region-search"].value = ""; page.elements["region-search"].dispatch("input");
-  assert.equal(page.buttons().length, 250);
+  assert.equal(page.buttons().length, 251);
   assert.deepEqual(page.queries.at(-1), ["", { kind: "country", limit: Infinity }]);
   page.elements["region-search"].value = "   "; page.elements["region-search"].dispatch("input");
-  assert.equal(page.buttons().length, 250);
-  assert.equal(page.elements["region-search-status"].textContent, "250 countries and territories.");
+  assert.equal(page.buttons().length, 251);
+  assert.equal(page.elements["region-search-status"].textContent, "Worldwide and 250 countries and territories.");
 });
 
 test("empty results retain independent navigation errors", () => {
@@ -124,11 +125,11 @@ test("empty results retain independent navigation errors", () => {
 
 test("choosing a region uses its navigation ID and updates the visible current-region marker", () => {
   const page = mount(); page.picker.open();
-  page.buttons()[4].dispatch("click");
+  page.buttons()[5].dispatch("click");
   assert.deepEqual(page.selections, ["country-4"]);
   page.picker.close(); page.picker.open();
-  assert.equal(page.buttons()[4].getAttribute("aria-current"), "true");
-  assert.equal(page.buttons()[2].getAttribute("aria-current"), null);
+  assert.equal(page.buttons()[5].getAttribute("aria-current"), "true");
+  assert.equal(page.buttons()[3].getAttribute("aria-current"), null);
   assert.equal(page.worldwide, 0); assert.equal(page.detections, 0);
 });
 
@@ -137,15 +138,41 @@ test("keyboard navigation reaches the final country and Escape restores the Chan
   const submitted = page.elements["region-search-form"].dispatch("submit");
   assert.equal(submitted.prevented, true); assert.equal(page.document.activeElement, page.buttons()[0]);
   page.elements["region-results"].dispatch("keydown", { key: "End" });
-  assert.equal(page.document.activeElement, page.buttons()[249]);
+  assert.equal(page.document.activeElement, page.buttons()[250]);
   page.elements["region-results"].dispatch("keydown", { key: "ArrowUp" });
-  assert.equal(page.document.activeElement, page.buttons()[248]);
+  assert.equal(page.document.activeElement, page.buttons()[249]);
   page.elements["region-results"].dispatch("keydown", { key: "Home" });
   assert.equal(page.document.activeElement, page.buttons()[0]);
   page.document.dispatch("keydown", { key: "Escape" });
   assert.equal(page.elements["region-menu"].hidden, true);
   assert.equal(page.document.activeElement, page.elements["change-region"]);
   assert.equal(page.elements["change-region"].getAttribute("aria-expanded"), "false");
+});
+
+test("Worldwide is directly selectable and preserves the current selection marker", () => {
+  const page = mount(); page.picker.open();
+  page.buttons()[0].dispatch("click");
+  assert.deepEqual(page.selections, ["world"]);
+  page.picker.close(); page.picker.open();
+  assert.equal(page.buttons()[0].getAttribute("aria-current"), "true");
+  assert.equal(page.buttons().filter((button) => button.getAttribute("aria-current")).length, 1);
+  assert.equal(page.detections, 0);
+});
+
+test("world and global search aliases find Worldwide without treating it as a country", () => {
+  const page = mount({ liveDirectory: true }); page.picker.open();
+  for (const query of ["world", "Worldwide", "GLOBAL", "glob", "all regions", "global regions"]) {
+    page.elements["region-search"].value = query; page.elements["region-search"].dispatch("input");
+    const expectedCount = countRegions(query) + 1;
+    assert.equal(page.buttons().length, expectedCount, query);
+    assert.equal(page.buttons()[0].getAttribute("data-region-id"), "world", query);
+    assert.equal(page.buttons().filter((button) => button.getAttribute("data-region-id") === "world").length, 1);
+    assert.equal(page.elements["region-search-status"].textContent, `${expectedCount} matching region${expectedCount === 1 ? "" : "s"}.`);
+  }
+  assert.equal(countRegions("", { kind: "country" }), 250);
+  page.elements["region-search"].value = "Kenya"; page.elements["region-search"].dispatch("input");
+  assert.ok(page.buttons().length > 0);
+  assert.ok(page.buttons().every((button) => button.getAttribute("data-region-id") !== "world"));
 });
 
 test("destroy removes listeners and prevents stale result controls from navigating", () => {

@@ -3,8 +3,7 @@
 // remains an interval; weights are never redistributed to the available factors.
 export const ANALYSIS_CATEGORIES = Object.freeze([
   { id: "water", label: "Water supply", severity: 100, rationale: "Safe water and sanitation are essential to survival and disease prevention." },
-  { id: "healthcare", label: "Healthcare", severity: 95, rationale: "Unavailable essential care can cause preventable illness, disability, or death." },
-  { id: "medication_access", label: "Medication access", severity: 95, rationale: "Unavailable essential medicines can interrupt treatment and threaten life." },
+  { id: "healthcare", label: "Healthcare", severity: 95, rationale: "Unavailable essential care or medicines can interrupt treatment and cause preventable illness, disability, or death." },
   { id: "emergency_response", label: "Emergency response", severity: 95, rationale: "Delays in emergency response can immediately threaten life." },
   { id: "food", label: "Food access", severity: 90, rationale: "Inadequate food access threatens nutrition and health." },
   { id: "roads", label: "Roads", severity: 70, rationale: "Unsafe or impassable roads can prevent access to essential services." },
@@ -17,7 +16,7 @@ export const ANALYSIS_CATEGORIES = Object.freeze([
 
 export const PRIORITY_WEIGHTS = Object.freeze({ severity: 30, affected_population: 25, access: 20, frequency: 15, duration: 10 });
 const CATEGORY_BY_ID = new Map(ANALYSIS_CATEGORIES.map((category) => [category.id, category]));
-const ALIASES = Object.freeze({ medical: "healthcare", medicine: "medication_access", medication: "medication_access", medications: "medication_access", pharmacy: "medication_access", medication_access: "medication_access", internet: "broadband", wifi: "broadband", transit: "transportation", transport: "transportation", road: "roads", school: "education", water_supply: "water", sanitation: "water", emergency: "emergency_response" });
+const ALIASES = Object.freeze({ medical: "healthcare", medicine: "healthcare", medication: "healthcare", medications: "healthcare", pharmacy: "healthcare", medication_access: "healthcare", internet: "broadband", wifi: "broadband", transit: "transportation", transport: "transportation", road: "roads", school: "education", water_supply: "water", sanitation: "water", emergency: "emergency_response" });
 const MEDICATION = /\b(?:pharmac(?:y|ies)|medications?|medicines?|prescriptions?)\b/i;
 const EDUCATION = /\b(?:schools?|classrooms?|teachers?|education)\b/i;
 const ROAD_DAMAGE = /\b(?:potholes?|road\s+(?:damage|repair|maintenance|closure)|(?:damaged|broken|unsafe|unpaved|impassable|flooded|closed)\s+(?:roads?|bridges?)|(?:roads?|bridges?)\s+(?:are\s+|is\s+)?(?:damaged|broken|unsafe|unpaved|impassable|flooded|closed)|collapsed\s+bridge)\b/i;
@@ -26,13 +25,17 @@ const round = (number) => Math.round(number * 10) / 10;
 const clamp = (number, low = 0, high = 100) => Math.max(low, Math.min(high, number));
 const finite = (number) => typeof number === "number" && Number.isFinite(number);
 
+function normalizeCategory(value) {
+  const raw = typeof value === "string" ? value.trim().toLowerCase() : "";
+  return Object.hasOwn(ALIASES, raw) ? ALIASES[raw] : CATEGORY_BY_ID.has(raw) ? raw : null;
+}
+
 export function categoryForReport(report) {
-  const raw = typeof report?.category === "string" ? report.category.trim().toLowerCase() : "other";
-  const category = Object.hasOwn(ALIASES, raw) ? ALIASES[raw] : CATEGORY_BY_ID.has(raw) ? raw : "other";
+  const category = normalizeCategory(report?.category) || "other";
   const summary = typeof report?.summary === "string" ? report.summary : "";
   // Refine legacy combined categories, without treating every mention of a road
   // or a school as the report's main problem.
-  if (["healthcare", "other"].includes(category) && MEDICATION.test(summary)) return "medication_access";
+  if (category === "other" && MEDICATION.test(summary)) return "healthcare";
   if (["transportation", "other"].includes(category) && ROAD_DAMAGE.test(summary)) return "roads";
   if (category === "other" && EDUCATION.test(summary)) return "education";
   return category;
@@ -179,7 +182,7 @@ function rankCategory(definition, reports, regionReportCount, indicators, contex
 
 export function buildAnalysisModel({ reports = [], reportsAvailable = true, region = null, evidence = {}, category = "all", now = Date.now(), complaintInsights = [] } = {}) {
   const regionReports = uniqueReports(reports);
-  const selectedCategory = CATEGORY_BY_ID.has(category) ? category : "all";
+  const selectedCategory = normalizeCategory(category) || "all";
   const selectedReports = regionReports.filter((report) => selectedCategory === "all" || categoryForReport(report) === selectedCategory);
   const currentYear = new Date(now).getUTCFullYear();
   const allIndicators = (Array.isArray(evidence?.indicators) ? evidence.indicators : []).filter((indicator) => {

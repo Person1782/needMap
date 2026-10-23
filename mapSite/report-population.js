@@ -81,7 +81,10 @@ function validatedPopulation(result, polygonCount) {
       throw new Error("Population components did not match the total.");
     }
   }
-  return result.total_population;
+  return { value: result.total_population, areaKm2: result.area_km2, dataset: result.data_source,
+    components: Array.isArray(result.polygons)
+      ? result.polygons.map(({ index, population, area_km2 }) => ({ index, population, areaKm2: area_km2 })).sort((a, b) => a.index - b.index)
+      : [{ index: 0, population: result.total_population, areaKm2: result.area_km2 }] };
 }
 
 async function queryPopulation(geometry, { signal, fetchImpl, pollDelayMs }) {
@@ -108,7 +111,9 @@ async function queryPopulation(geometry, { signal, fetchImpl, pollDelayMs }) {
     if (attempt) await wait(pollDelayMs, signal);
     const task = await request(url);
     if (task?.task_id !== id || task.error) throw new Error("Population calculation failed.");
-    if (task.status === "success") return validatedPopulation(task.result, geometry.coordinates.length);
+    if (task.status === "success") return {
+      ...validatedPopulation(task.result, geometry.coordinates.length), taskUrl: url,
+    };
     if (!["pending", "progress", "started", "processing"].includes(task.status)) {
       throw new Error("Population calculation failed.");
     }
@@ -160,18 +165,19 @@ export async function loadReportPopulation({ reports = [], region = null } = {},
     const cached = cache.get(key);
     if (cached && timestamp >= cached.time && timestamp - cached.time < TTL_MS) {
       cache.delete(key); cache.set(key, cached);
-      return { ...base, status: "ready", value: cached.value, retrievedAt: cached.retrievedAt };
+      return { ...structuredClone(cached.result), ...base, status: "ready" };
     }
     cache.delete(key);
-    const value = await withDeadline((activeSignal) => queryPopulation(area.geometry, {
+    const details = await withDeadline((activeSignal) => queryPopulation(area.geometry, {
       signal: activeSignal, fetchImpl,
       pollDelayMs: Number.isFinite(pollDelayMs) ? Math.max(0, Math.min(5000, pollDelayMs)) : 1500,
     }), signal, Number.isFinite(timeoutMs) ? Math.max(1, Math.min(60_000, timeoutMs)) : 60_000);
     assertActive(signal);
     const retrievedAt = new Date(timestamp).toISOString();
-    cache.set(key, { value, retrievedAt, time: timestamp });
+    const result = { ...details, geometry: area.geometry, retrievedAt };
+    cache.set(key, { result: structuredClone(result), time: timestamp });
     while (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value);
-    return { ...base, status: "ready", value, retrievedAt };
+    return { ...base, status: "ready", ...result };
   } catch (error) {
     if (signal?.aborted) throw abortError();
     return { ...base, status: "unavailable",

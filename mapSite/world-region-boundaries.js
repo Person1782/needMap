@@ -4,6 +4,14 @@ export const WORLD_REGION_BOUNDARY_LIMITS = Object.freeze({
 });
 const VERSION = "needmap-v2";
 const SOURCE = "geoBoundaries CGAZ";
+const DERIVED_SOURCE = "NeedMap regions grouped from geoBoundaries administrative areas";
+// These two catalog identities describe the same territory. Its complete island
+// geometry is pinned separately because the CGAZ record omits Rose and Swains.
+const NATURAL_EARTH_BOUNDARIES = Object.freeze({
+  AS: { file: "data/regions/as.json", kind: "country", countryCode: "AS" },
+  "US-AS": { file: "data/regions/us-as.json", kind: "state", countryCode: "US" },
+});
+const NATURAL_EARTH_VERSION = "5.1.1";
 const caches = new WeakMap();
 
 function boundaryError(message) {
@@ -59,7 +67,12 @@ function resolveEntry(entry) {
       url.username || url.password || url.search || url.hash) {
     throw boundaryError("the boundary URL must use this website's origin.");
   }
-  return { parentId, countryCode, url, entryId: entry.id, entryKind: entry.kind };
+  const naturalEarth = NATURAL_EARTH_BOUNDARIES[parentId];
+  const registeredNaturalEarth = naturalEarth?.file === file && naturalEarth.countryCode === countryCode;
+  return { parentId, countryCode, url, entryId: entry.id, entryKind: entry.kind,
+    source: registeredNaturalEarth ? "Natural Earth" : SOURCE,
+    sourceVersion: registeredNaturalEarth ? NATURAL_EARTH_VERSION : null,
+    parentKind: registeredNaturalEarth ? naturalEarth.kind : null };
 }
 
 async function readBoundedText(response, signal) {
@@ -114,6 +127,11 @@ function validateSet(value, expected) {
             !record.id.startsWith(`${expected.parentId}:${VERSION}:`) || record.id.length > 250)) {
       throw boundaryError("a region has invalid, duplicate, or mixed-parent identification.");
     }
+    if (expected.source === "Natural Earth"
+      ? record.source !== expected.source || record.sourceVersion !== expected.sourceVersion || (parent && record.kind !== expected.parentKind)
+      : record.source !== undefined && record.source !== SOURCE && !(!parent && record.source === DERIVED_SOURCE)) {
+      throw boundaryError("the boundary source does not match its verified catalog metadata.");
+    }
     ids.add(record.id);
     const geometry = record.geometry;
     const polygons = geometry?.type === "Polygon" ? [geometry.coordinates]
@@ -146,7 +164,8 @@ function validateSet(value, expected) {
       id: record.id, name: record.name.trim(), kind: record.kind,
       countryCode: record.countryCode, parentId: parent ? null : expected.parentId,
       geometry: { type: geometry.type, coordinates: geometry.coordinates },
-      bounds: [[latitude(south), west], [latitude(north), east]], source: SOURCE,
+      bounds: [[latitude(south), west], [latitude(north), east]], source: expected.source,
+      ...(expected.sourceVersion ? { sourceVersion: expected.sourceVersion } : {}),
     };
     if (!parent) {
       region.parentName = value.regions[0].name.trim();

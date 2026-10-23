@@ -255,7 +255,8 @@ export function createRegionNavigation({
   let revision = 0;
   let controller;
   let destroyed = false;
-  const byId = new Map(entries.map((entry) => [entry.id, entry]));
+  // Worldwide is a selectable saved scope, not a country or catalog boundary.
+  const byId = new Map([...entries, WORLD_REGION].map((entry) => [entry.id, entry]));
   const regionSets = new Map();
   const parentRegions = new Map();
   const clearSavedSelection = () => {
@@ -323,6 +324,7 @@ export function createRegionNavigation({
     return region;
   };
   const resolveEntry = async (entry, operation) => {
+    if (entry.kind === "world") return WORLD_REGION;
     const parentEntry = entry.kind === "needmap" ? byId.get(entry.parentId) : entry;
     if (!parentEntry) throw new Error("This area's parent region is unavailable.");
     const parent = await resolveParent(parentEntry, operation);

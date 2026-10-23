@@ -20,6 +20,14 @@ The public API needs no key and documents a 1,000-request daily limit and a 50,0
 
 Population requests begin only on Analysis after reports load. Their completion replaces only the population card, preserving expanded report maps. A newer region/filter selection always wins over an older response, including providers that ignore cancellation.
 
+## Clicked calculation details
+
+The population card opens a dialog only when clicked. It displays the exact merged geometry sent to WorldPop, report points, the returned area, report count, 500-meter radius, dataset year, returned population, and rounded card value. Component population bars appear only when the provider returns verified totals for the separate polygons. The map shows the calculation boundary, not an invented density layer.
+
+The source boxes link to the validated v2 task result, API documentation, and WorldPop modeling methods, and identify what each was used for. NeedMap's report coordinates and 500-meter assumption are described separately from population data. An open loading dialog updates when the estimate arrives; changing region/category or leaving Analysis closes it. Closing the dialog releases its map and restores keyboard focus to the population card.
+
+The area map establishes its view before adding Leaflet polygons. Tile failures do not remove the local boundary or report points. If the interactive renderer fails, the dialog draws the same geometry and points as a local SVG outline without network requests, preserving holes and wrapping areas across the date line.
+
 ## Verification and provider documentation
 
 On October 22, 2026, live requests confirmed browser CORS support and 2025 results for a public San Francisco test polygon, a 500-meter buffer, multiple separate buffers, and an ocean polygon returning numeric zero. Automated tests cover overlap, duplicate locations, region clipping, dateline/poles, missing coordinates, response validation, cancellation, caching, and UI selection races.

@@ -1,4 +1,5 @@
 import { pointInGeometry } from "./regions.js";
+import { categoryForReport } from "./analysis-model.js";
 
 const EARTH_RADIUS_KM = 6371;
 
@@ -63,8 +64,7 @@ function groupSignalsByRegionAndCategory(signals) {
     const identity = typeof signal.id === "string" && signal.id ? `id:${signal.id}` : reportKey(signal);
     if (seenReports.has(identity)) return;
     seenReports.add(identity);
-    const category = typeof signal.category === "string" && signal.category.trim()
-      ? signal.category.trim() : "other";
+    const category = categoryForReport(signal);
     const key = `${signal.region.id}:${category}`;
     if (!groups.has(key)) {
       groups.set(key, {
@@ -240,6 +240,7 @@ export function weightedGeometricMedian(signals) {
 }
 
 export function inferServiceNeed(candidate) {
+  const category = categoryForReport(candidate);
   const text = candidate.signals
     .map((signal) => signal.summary || "")
     .join(" ")
@@ -247,7 +248,7 @@ export function inferServiceNeed(candidate) {
   const rules = [
     { pattern: /\b(gas|fuel|petrol|refuel|gasoline)\b/, facilityType: "Gas station" },
     { pattern: /\b(bus|public transit|transit stop|no car|shuttle|ride)\b/, facilityType: "Transit stop or shuttle hub" },
-    { pattern: /\b(pharmacy|medicine|prescription)\b/, facilityType: "Pharmacy" },
+    { pattern: /\b(?:pharmac(?:y|ies)|medications?|medicines?|prescriptions?)\b/, facilityType: "Pharmacy" },
     { pattern: /\b(doctor|clinic|hospital|medical|health care|healthcare|meditation)\b/, facilityType: "Community health clinic" },
     { pattern: /\b(grocery|groceries|fresh food|supermarket)\b/, facilityType: "Grocery store" },
     { pattern: /\b(food pantry|food bank|meals|hungry)\b/, facilityType: "Food distribution point" },
@@ -257,7 +258,6 @@ export function inferServiceNeed(candidate) {
   const defaults = {
     transportation: "Transit access hub",
     healthcare: "Community health clinic",
-    medication_access: "Pharmacy",
     education: "School or education center",
     roads: "Road access improvements",
     food: "Food access center",
@@ -267,10 +267,11 @@ export function inferServiceNeed(candidate) {
     other: "Community service center",
   };
   const match = rules.find((rule) => rule.pattern.test(text));
-  const refinedCategory = ["medication_access", "education", "roads"].includes(candidate.category);
-  const facilityType = (refinedCategory ? defaults[candidate.category] : match?.facilityType) ||
-    (Object.hasOwn(defaults, candidate.category) ? defaults[candidate.category] : null) ||
-    "Community service center";
+  const refinedCategory = ["education", "roads"].includes(category);
+  const facilityType = candidate.category === "medication_access" ? "Pharmacy"
+    : (refinedCategory ? defaults[category] : match?.facilityType) ||
+      (Object.hasOwn(defaults, category) ? defaults[category] : null) ||
+      "Community service center";
   const severityCounts = candidate.signals.reduce(
     (counts, signal) => ({
       ...counts,
@@ -285,7 +286,7 @@ export function inferServiceNeed(candidate) {
       summary: typeof signal.summary === "string"
         ? signal.summary.trim().replaceAll(/\s+/g, " ").slice(0, 500)
         : "",
-      relevance: `This ${signal.severity || "unknown"}-urgency report contributes directly to the observed ${candidate.category.replaceAll("_", " ")} need.`,
+      relevance: `This ${signal.severity || "unknown"}-urgency report contributes directly to the observed ${category.replaceAll("_", " ")} need.`,
     }))
     .filter((item) => item.reportId && item.summary)
     .sort((first, second) => first.reportId.localeCompare(second.reportId))
@@ -299,7 +300,7 @@ export function inferServiceNeed(candidate) {
     : severityCounts.medium > 0
       ? "medium"
       : "emerging";
-  const decisionSummary = `${candidate.signals.length} ${candidate.category.replaceAll("_", " ")} reports within ${candidate.region.name} indicate repeated demand for a ${facilityType.toLowerCase()}.`;
+  const decisionSummary = `${candidate.signals.length} ${category.replaceAll("_", " ")} reports within ${candidate.region.name} indicate repeated demand for a ${facilityType.toLowerCase()}.`;
 
   return {
     facilityType,
@@ -314,7 +315,7 @@ export function inferServiceNeed(candidate) {
       "A way to monitor usage and collect follow-up community feedback",
     ],
     expectedImpact: [
-      `Shorter aggregate travel distance from the reported ${candidate.category.replaceAll("_", " ")} needs`,
+      `Shorter aggregate travel distance from the reported ${category.replaceAll("_", " ")} needs`,
       "A measurable service response that can be compared with later reports and usage data",
     ],
     implementationSteps: [

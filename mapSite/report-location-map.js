@@ -1,4 +1,5 @@
 import { serviceIconSvg } from "./service-icons.js";
+import { MAP_WORLD_BOUNDS, MAP_VIEWPORT_OPTIONS } from "./map-viewport.js";
 
 const MAX_LATITUDE = 85.0511287798;
 const urgencyColors = Object.freeze({ low: "#2f8a69", medium: "#d28b27", high: "#c34e42", unknown: "#526575" });
@@ -17,6 +18,7 @@ export function createReportLocationMap(L, container, report) {
   let map;
   try {
     map = L.map(container, {
+      ...MAP_VIEWPORT_OPTIONS,
       zoomControl: false,
       attributionControl: true,
       minZoom: 14,
@@ -37,7 +39,7 @@ export function createReportLocationMap(L, container, report) {
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19,
       noWrap: true,
-      bounds: [[-85.051129, -180], [85.051129, 180]],
+      bounds: MAP_WORLD_BOUNDS,
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>',
     }).addTo(map);
     const color = Object.hasOwn(urgencyColors, report.severity) ? urgencyColors[report.severity] : urgencyColors.unknown;

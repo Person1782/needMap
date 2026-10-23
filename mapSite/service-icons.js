@@ -17,7 +17,7 @@ export const SERVICE_ICONS = Object.freeze({
 
 const CATEGORY_ICONS = Object.freeze({
   healthcare: "hospital", medical: "hospital", medicine: "hospital", meditation: "hospital",
-  medication_access: "medication", medication: "medication", pharmacy: "medication",
+  medication_access: "hospital", medication: "hospital", medications: "hospital", pharmacy: "hospital",
   education: "education", roads: "roads", road: "roads",
   transportation: "transit", transit: "transit", water: "water", water_supply: "water", broadband: "broadband", internet: "broadband",
   food: "food", fuel: "fuel", emergency_response: "emergency", emergency: "emergency", other: "other",

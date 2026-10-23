@@ -70,13 +70,32 @@ test("an index and Internet participation gap are never transformed into affecte
   const health = evidence.indicators.find((item) => item.category === "healthcare" && item.kind === "access_gap_index");
   assert.equal(health.value, 30); assert.equal(health.unit, "index points");
   assert.match(health.description, /not a percentage/);
+  assert.match(health.description, /does not measure medication-specific availability or access/);
+  assert.match(health.usedFor, /not a medication-specific access measure/);
   const internet = evidence.indicators.find((item) => item.category === "broadband" && item.kind === "access_gap_percent");
   assert.equal(internet.value, 40); assert.equal(internet.isProxy, true);
   assert.ok(!evidence.indicators.some((item) => ["healthcare", "broadband"].includes(item.category) && item.kind === "affected_population"));
-  for (const category of ["medication_access", "roads", "transportation", "fuel", "emergency_response", "other"]) {
+  for (const category of ["roads", "transportation", "fuel", "emergency_response", "other"]) {
     assert.ok(evidence.unavailableCategories.includes(category));
     assert.ok(!evidence.indicators.some((item) => item.category === category));
   }
+});
+
+test("evidence exposes one Healthcare category and never a separate medication availability claim", async () => {
+  const evidence = await loadAnalysisEvidence(country, { now, fetchImpl: fakeApi() });
+  assert.ok(!evidence.unavailableCategories.includes("healthcare"));
+  assert.ok(!evidence.unavailableCategories.includes("medication_access"));
+  assert.ok(!evidence.indicators.some((item) => item.category === "medication_access"));
+  const healthcare = evidence.indicators.filter((item) => item.category === "healthcare");
+  assert.deepEqual(healthcare.map((item) => item.kind), ["access_index", "access_gap_index"]);
+  for (const item of healthcare) {
+    assert.match(item.description, /does not measure medication-specific availability or access/);
+    assert.match(item.usedFor, /not a medication-specific access measure/);
+    assert.ok(item.sources.every((source) => /not a medication-specific access measure/.test(source.usedFor)));
+  }
+  const missing = await loadAnalysisEvidence(country, { now, fetchImpl: fakeApi({ data: {} }) });
+  assert.equal(missing.unavailableCategories.filter((category) => category === "healthcare").length, 1);
+  assert.ok(!missing.unavailableCategories.includes("medication_access"));
 });
 
 test("a failed series preserves other evidence and is not cached as absence", async () => {

@@ -23,8 +23,8 @@ export const ANALYSIS_INDICATORS = Object.freeze([
     gap: true, affected: true },
   { code: "SH_UHC_SCI", category: "healthcare", kind: "access_index", unit: "index points",
     title: "Universal health coverage service coverage index", publisher: "World Health Organization via World Bank",
-    description: "A 0–100 composite of essential health-service coverage. The difference from 100 is an index gap, not a percentage of people without healthcare.",
-    usedFor: "Healthcare service-access factor only; never converted into a number of affected people.", gap: true },
+    description: "A 0–100 composite of essential health-service coverage. The difference from 100 is an index gap, not a percentage of people without healthcare. It does not measure medication-specific availability or access.",
+    usedFor: "Healthcare service-access factor only; not a medication-specific access measure and never converted into a number of affected people.", gap: true },
   { code: "IT.NET.USER.ZS", category: "broadband", kind: "access_percent", unit: "%",
     title: "Individuals using the Internet", publisher: "International Telecommunication Union via World Bank",
     description: "Share of people who used the Internet in the last three months. Non-use may reflect affordability, skills, or choice as well as service availability; it does not measure a broadband outage.",
@@ -202,7 +202,7 @@ function buildEvidence(region, countryCode, response, now) {
         kind: definition.kind === "access_index" ? "access_gap_index" : "access_gap_percent",
         value: 100 - observation.value,
         description: definition.category === "water" ? "Share of people without at least basic drinking water service, calculated as 100 minus the reported access percentage. This is not a measure of all sanitation or water-safety problems."
-          : definition.category === "healthcare" ? "Difference between 100 and the essential health-service coverage index. This is an index gap, not a percentage of people without healthcare."
+          : definition.category === "healthcare" ? "Difference between 100 and the essential health-service coverage index. This is an index gap, not a percentage of people without healthcare, and does not measure medication-specific availability or access."
           : "Share of people who did not use the Internet in the last three months, calculated as 100 minus reported use. Non-use can reflect affordability, skills or choice as well as availability; it does not establish an infrastructure failure.",
         calculation: definition.kind === "access_index" ? "100 − service coverage index" : "100 − reported percentage",
       });
@@ -226,7 +226,7 @@ function buildEvidence(region, countryCode, response, now) {
     }
   }
   const presentCategories = new Set(indicators.map((item) => item.category));
-  const unavailableCategories = ["healthcare", "medication_access", "education", "roads", "transportation",
+  const unavailableCategories = ["healthcare", "education", "roads", "transportation",
     "water", "broadband", "food", "fuel", "emergency_response", "other"].filter((category) => !presentCategories.has(category));
   const notes = [];
   if (!exact && indicators.length) notes.push(`These statistics describe ${countryName} as a whole. They are national context, not estimates for ${region.name || "the selected region"}, and do not contribute to its priority scores.`);

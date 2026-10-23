@@ -11,7 +11,7 @@ const entry = (id = "XX-ONE", extra = {}) => ({ id, name: "Example State", kind:
 const data = (parentId = "XX-ONE", countryCode = "XX") => ({ version: "needmap-v2", parentId, regions: [
   { id: parentId, name: "Example State", kind: "state", countryCode, parentId: "", geometry: rectangle(), bounds: [[20, 20], [30, 30]] },
   { id: `${parentId}:needmap-v2:west`, name: "Example State — West", kind: "needmap", countryCode, parentId,
-    geometry: rectangle(0, 0, 2, 4), excludedGeometry: rectangle(-1, -1, 5, 5) },
+    source: "NeedMap regions grouped from geoBoundaries administrative areas", geometry: rectangle(0, 0, 2, 4), excludedGeometry: rectangle(-1, -1, 5, 5) },
   { id: `${parentId}:needmap-v2:east`, name: "Example State — East", kind: "needmap", countryCode, parentId,
     geometry: rectangle(2, 0, 4, 4), excludedGeometry: null },
 ] });
@@ -105,6 +105,30 @@ test("date-line and polar bounds remain visible and country parent files are sup
   value.regions = [{ ...value.regions[0], kind: "country", geometry: rectangle(179, 86, -179, 89) }];
   const regions = await loadWorldRegionSet(entry("XX", { kind: "country" }), { fetchImpl: provider(value).fetchImpl });
   assert.deepEqual(regions[0].bounds, [[85, -180], [85, 180]]);
+});
+
+test("Natural Earth source metadata is pinned to both American Samoa catalog identities", async () => {
+  for (const descriptor of [entry("AS", { kind: "country", countryCode: "AS", boundaryFile: "data/regions/as.json" }),
+    entry("US-AS", { kind: "state", countryCode: "US", boundaryFile: "data/regions/us-as.json" })]) {
+    const value = data(descriptor.id, descriptor.countryCode);
+    value.regions = [{ ...value.regions[0], kind: descriptor.kind, source: "Natural Earth", sourceVersion: "5.1.1" }];
+    const records = await loadWorldRegionSet(descriptor, { fetchImpl: provider(value).fetchImpl });
+    assert.equal(records[0].source, "Natural Earth");
+    assert.equal(records[0].sourceVersion, "5.1.1");
+    for (const change of [{ source: "geoBoundaries CGAZ" }, { source: "Unverified" }, { source: undefined },
+      { sourceVersion: undefined }, { sourceVersion: "5.1.0" }, { kind: descriptor.kind === "country" ? "state" : "country" }]) {
+      const invalid = structuredClone(value); Object.assign(invalid.regions[0], change);
+      await assert.rejects(loadWorldRegionSet(descriptor, { fetchImpl: provider(invalid).fetchImpl }), /source does not match/);
+    }
+    await assert.rejects(loadWorldRegionSet({ ...descriptor, boundaryFile: "data/regions/unregistered.json" },
+      { fetchImpl: provider(value).fetchImpl }), /source does not match/);
+    const invalidGeometry = structuredClone(value);
+    invalidGeometry.regions[0].geometry = { type: "Point", coordinates: [-170.7, -14.3] };
+    await assert.rejects(loadWorldRegionSet(descriptor, { fetchImpl: provider(invalidGeometry).fetchImpl }), /polygon is invalid/);
+  }
+  const unrelated = data();
+  unrelated.regions[0].source = "Natural Earth"; unrelated.regions[0].sourceVersion = "5.1.1";
+  await assert.rejects(loadWorldRegionSet(entry(), { fetchImpl: provider(unrelated).fetchImpl }), /source does not match/);
 });
 
 test("size and coordinate limits reject downloads without silent truncation", async () => {

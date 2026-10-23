@@ -42,6 +42,87 @@ test("analysis loads lazily, then category updates the overview, rankings, repor
     assert.equal(page.query("#analysis-rankings").children.length, 2);
   } finally { page.workspace.destroy(); }
 });
+
+test("overview map follows report and recommendation filters without resetting on evidence completion", async () => {
+  const updates = []; let created = 0, destroyed = 0;
+  const page = fixture({ createOverviewMap: () => {
+    created++;
+    return { update: (context) => updates.push(context), destroy: () => destroyed++ };
+  } });
+  const reports = [report("w", "water"), report("h", "medical")];
+  const recommendations = [{ id: "rw", category: "water" }, { id: "rh", category: "medical" }];
+  try {
+    page.workspace.update({ region: country, reports, recommendations, reportsReady: true });
+    assert.equal(created, 0, "No overview map is mounted on the Map tab");
+    page.workspace.setVisible(true); await tick();
+    assert.equal(created, 1); assert.equal(updates.length, 1);
+    assert.equal(updates[0].reports.length, 2); assert.equal(updates[0].recommendations.length, 2);
+    page.choose("healthcare");
+    assert.deepEqual(updates.at(-1).reports.map((item) => item.id), ["h"]);
+    assert.deepEqual(updates.at(-1).recommendations.map((item) => item.id), ["rh"]);
+    assert.equal(updates.at(-1).recommendations[0].category, "healthcare");
+    page.workspace.update({ region: local, reports: [], recommendations: [], reportsReady: true }); await tick();
+    assert.equal(updates.at(-1).region.id, local.id); assert.equal(updates.at(-1).reports.length, 0);
+    page.workspace.setVisible(false); assert.equal(destroyed, 1);
+    page.workspace.setVisible(true); assert.equal(created, 2);
+  } finally { page.workspace.destroy(); }
+  assert.equal(destroyed, 2);
+});
+test("Healthcare combines clinic and medication reports into one option, ranking, chart and overview map filter", async () => {
+  const updates = [];
+  const page = fixture({
+    loadEvidence: async () => ({ status: "unavailable", indicators: [] }),
+    createOverviewMap: () => ({ update: (context) => updates.push(context), destroy() {} }),
+  });
+  const reports = [
+    report("clinic", "healthcare", "Clinic unavailable"),
+    report("pharmacy", "healthcare", "Pharmacy has no essential medication"),
+    report("legacy", "medication_access", "Prescription supply unavailable"),
+    report("water", "water", "Water unavailable"),
+  ];
+  const recommendations = [
+    { id: "clinic-service", category: "healthcare", analysis: { facilityType: "Clinic" } },
+    { id: "pharmacy-service", category: "medication_access", analysis: { facilityType: "Pharmacy" } },
+    { id: "water-service", category: "water", analysis: { facilityType: "Water station" } },
+  ];
+  const ids = (items) => items.map((item) => item.id).sort();
+  const chartRows = () => [...page.query("#analysis-report-chart").querySelectorAll(".report-chart-row")];
+  try {
+    page.workspace.update({ region: country, reports, recommendations, reportsReady: true });
+    page.workspace.setVisible(true); await tick();
+    const options = [...page.query("#analysis-category").options];
+    assert.equal(options.filter((option) => option.textContent === "Healthcare").length, 1);
+    assert.equal(options.some((option) => option.value === "medication_access" || option.textContent === "Medication access"), false);
+    assert.match(page.text("#analysis-overview"), /Total reports4/);
+    assert.equal(page.query("#analysis-rankings").children.length, 2);
+    assert.equal(page.query('.priority-row[data-category="medication_access"]'), null);
+    const healthcare = page.query('.priority-row[data-category="healthcare"]');
+    assert.equal(healthcare.querySelectorAll(".analysis-report").length, 3);
+    for (const entry of reports.slice(0, 3)) assert.ok(healthcare.textContent.includes(entry.summary));
+    assert.deepEqual(chartRows().map((row) => row.dataset.category), ["healthcare", "water"]);
+    assert.deepEqual(chartRows().map((row) => row.querySelector(".report-chart-count").textContent), ["3 reports", "1 report"]);
+    assert.deepEqual(ids(updates.at(-1).reports), ["clinic", "legacy", "pharmacy", "water"]);
+    assert.deepEqual(ids(updates.at(-1).recommendations), ["clinic-service", "pharmacy-service", "water-service"]);
+
+    page.choose("healthcare");
+    assert.match(page.text("#analysis-overview"), /Total reports3/);
+    assert.equal(page.query("#analysis-rankings").children.length, 1);
+    assert.deepEqual(chartRows().map((row) => row.dataset.category), ["healthcare"]);
+    assert.equal(chartRows()[0].querySelector(".report-chart-count").textContent, "3 reports");
+    assert.deepEqual(ids(updates.at(-1).reports), ["clinic", "legacy", "pharmacy"]);
+    assert.ok(updates.at(-1).reports.every((entry) => entry.category === "healthcare"));
+    assert.deepEqual(ids(updates.at(-1).recommendations), ["clinic-service", "pharmacy-service"]);
+    assert.ok(updates.at(-1).recommendations.every((entry) => entry.category === "healthcare"));
+    assert.doesNotMatch(page.text("#analysis-rankings"), /Water unavailable/);
+
+    page.choose("all");
+    assert.match(page.text("#analysis-overview"), /Total reports4/);
+    assert.deepEqual(ids(updates.at(-1).reports), ["clinic", "legacy", "pharmacy", "water"]);
+    assert.equal(page.query("#analysis-rankings").children.length, 2);
+    assert.equal(reports[2].category, "medication_access", "Filtering preserves the stored legacy report");
+  } finally { page.workspace.destroy(); }
+});
+
 test("late evidence cannot overwrite a newer region; prior counts and public facts clear immediately", async () => {
   const pending = [];
   const page = fixture({ loadEvidence: (region, { signal }) => new Promise((resolve) => pending.push({ region, signal, resolve })) });

@@ -181,3 +181,32 @@ test("failed attempts are not cached and already-cancelled requests never use ca
   await assert.rejects(loadReportPopulation(selection, { fetchImpl, signal: controller.signal }), { name: "AbortError" });
   assert.equal(count, 3);
 });
+
+test("exposes only validated calculation metadata and cached results cannot mutate future details", async () => {
+  const { calls, fetchImpl } = provider();
+  const first = await loadReportPopulation(selection, { fetchImpl, now });
+  assert.equal(first.areaKm2, 0.78);
+  assert.equal(first.dataset, "worldpop_R2025A_2025_100m");
+  assert.equal(first.taskUrl, `${WORLDPOP_POPULATION_API}/tasks/${taskId}`);
+  assert.deepEqual(first.components, [{ index: 0, population: 4445.14, areaKm2: 0.78 }]);
+  assert.deepEqual(first.geometry, JSON.parse(calls[0].options.body).geojson);
+  first.geometry.coordinates[0][0][0][0] = 999;
+  first.components[0].population = 999;
+  const second = await loadReportPopulation({ reports: [report(), report("b")] }, { fetchImpl, now: now + 1 });
+  assert.equal(second.reportCount, 2);
+  assert.equal(second.components[0].population, 4445.14);
+  assert.notEqual(second.geometry.coordinates[0][0][0][0], 999);
+  second.components[0].population = -1;
+  const third = await loadReportPopulation(selection, { fetchImpl, now: now + 2 });
+  assert.equal(third.components[0].population, 4445.14);
+  assert.equal(third.retrievedAt, new Date(now).toISOString());
+  assert.equal(calls.length, 2);
+});
+
+test("preserves matched component populations and their reported areas for the calculation breakdown", async () => {
+  const polygons = [{ index: 1, population: 200, area_km2: 0.7 }, { index: 0, population: 400, area_km2: 0.8 }];
+  const { fetchImpl } = provider({ task: success({ total_population: 600, area_km2: 1.5, polygons }) });
+  const answer = await loadReportPopulation({ reports: [report(), report("b", -122.44)] }, { fetchImpl, now });
+  assert.deepEqual(answer.components, [{ index: 0, population: 400, areaKm2: 0.8 }, { index: 1, population: 200, areaKm2: 0.7 }]);
+  assert.equal(answer.areaKm2, 1.5);
+});

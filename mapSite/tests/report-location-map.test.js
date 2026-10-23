@@ -57,6 +57,9 @@ test("mini-map centers the matching category marker at the report location with 
   for (const setting of ["zoomControl", "dragging", "scrollWheelZoom", "doubleClickZoom", "keyboard", "touchZoom", "boxZoom", "tapHold"]) assert.equal(options[setting], false, setting);
   assert.equal(options.minZoom, 14);
   assert.equal(options.maxZoom, 14);
+  assert.deepEqual(options.maxBounds, [[-85.0511287798, -180], [85.0511287798, 180]]);
+  assert.equal(options.maxBoundsViscosity, 1);
+  assert.equal(options.bounceAtZoomLimits, false);
   assert.deepEqual(mock.calls.marker.coordinates, mock.calls.view.coordinates);
   assert.equal(mock.calls.marker.options.icon, mock.calls.icon);
   for (const setting of ["interactive", "keyboard", "draggable"]) assert.equal(mock.calls.marker.options[setting], false, setting);
@@ -74,7 +77,7 @@ test("tiles use the existing OpenStreetMap provider and retain required attribut
   createReportLocationMap(mock.L, {}, report).destroy();
   assert.equal(mock.calls.tiles.url, "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png");
   assert.equal(mock.calls.tiles.options.noWrap, true);
-  assert.deepEqual(mock.calls.tiles.options.bounds, [[-85.051129, -180], [85.051129, 180]]);
+  assert.deepEqual(mock.calls.tiles.options.bounds, [[-85.0511287798, -180], [85.0511287798, 180]]);
   assert.equal(mock.calls.tiles.options.attribution, '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>');
   assert.equal(mock.calls.map.options.attributionControl, true);
   assert.equal(mock.calls.prefix, false);
