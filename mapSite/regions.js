@@ -3,7 +3,7 @@ const REQUEST_GAP_MS = 1100;
 const REQUEST_TIMEOUT_MS = 15000;
 const CACHE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 const CACHE_PREFIX = "needmap-region-v1:";
-const REGION_ENDPOINT = (
+export const REGION_ENDPOINT = (
   import.meta.env?.VITE_REGION_LOOKUP_ENDPOINT ||
   "https://nominatim.openstreetmap.org"
 ).replace(/\/$/, "");
@@ -39,7 +39,9 @@ function writeCache(key, value) {
   }
 }
 
-async function policyLimitedFetch(url, signal) {
+// Navigation and report enrichment share one queue so their requests cannot
+// exceed the provider's per-client limit when they run at the same time.
+export async function policyLimitedFetch(url, signal) {
   const request = requestQueue.then(async () => {
     signal?.throwIfAborted();
     const waitFor = REQUEST_GAP_MS - (Date.now() - lastRequestStartedAt);

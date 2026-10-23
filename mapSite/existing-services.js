@@ -4,6 +4,9 @@ const CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 25000;
 
 const CATEGORY_FILTERS = {
+  medication_access: ['["amenity"="pharmacy"]'],
+  education: ['["amenity"="school"]', '["amenity"="college"]', '["amenity"="library"]'],
+  roads: ['["highway"="primary"]', '["highway"="secondary"]', '["highway"="tertiary"]'],
   transportation: [
     '["amenity"="bus_station"]',
     '["public_transport"="station"]',

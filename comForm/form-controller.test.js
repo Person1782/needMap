@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import { context, read, plain, valid } from './test-helpers.js';
 const html = read('index.html');
-function mount({ write = (_id, _report, done) => done(null), online = true, saved = null, storageFailure = false, geolocation = true, search } = {}) {
-  let focused, locationSuccess, locationFailure, timerId = 0, draft = saved, writes = 0;
+function mount({ write = (_id, _report, done) => done(null), online = true, saved = null, storageFailure = false, geolocation = true, search, hints = {}, preference = null, performance, mapUrl = '/map/' } = {}) {
+  let focused, locationSuccess, locationFailure, timerId = 0, draft = saved, writes = 0, savedPreference = preference;
+  const navigations = [];
   const timers = new Map();
   class Element {
     value = ''; textContent = ''; disabled = false; hidden = false; attributes = {}; children = []; listeners = {};
@@ -21,21 +22,26 @@ function mount({ write = (_id, _report, done) => done(null), online = true, save
   }
   const elements = Object.fromEntries([...html.matchAll(/id="([^"]+)"/g)].map(([, id]) => [id, new Element(id)]));
   const form = elements['signal-form'];
+  form.setAttribute('data-map-url', mapUrl);
   form.reset = () => { if (!form.dispatch('reset').prevented) ['category', 'severity', 'summary', 'place-query'].forEach(name => { elements[name].value = ''; }); };
   elements['form-fields'].querySelectorAll = () => ['category', 'severity', 'summary', 'location-button', 'clear-location', 'place-query', 'place-search-button', 'submit-button'].map(name => elements[name]);
   const rootEvents = new Element('window');
-  const navigator = { onLine: online };
+  const connection = new Element('connection');
+  const navigator = { onLine: online, ...hints };
+  if (hints.connection) navigator.connection = Object.assign(connection, hints.connection);
   if (geolocation) navigator.geolocation = { getCurrentPosition(success, error) { locationSuccess = success; locationFailure = error; } };
-  const ctx = context({ document: { getElementById: id => elements[id], createElement: () => new Element() }, navigator, XMLHttpRequest: function () {},
-    localStorage: { getItem() { if (storageFailure) throw new Error('blocked'); return draft; }, setItem(_key, value) { draft = value; }, removeItem() { draft = null; } },
+  const body = new Element('body');
+  const ctx = context({ document: { body, getElementById: id => elements[id], createElement: () => new Element() }, navigator, performance, XMLHttpRequest: function () {},
+    location: { hostname: '127.0.0.1', host: '127.0.0.1:5173', port: '5173', protocol: 'http:', assign(url) { navigations.push(url); } },
+    localStorage: { getItem(key) { if (storageFailure) throw new Error('blocked'); return key === 'needmap-connection-mode-v1' ? savedPreference : draft; }, setItem(key, value) { if (key === 'needmap-connection-mode-v1') savedPreference = value; else draft = value; }, removeItem() { draft = null; } },
     addEventListener: rootEvents.addEventListener.bind(rootEvents), setTimeout: (callback, delay) => { timers.set(++timerId, { callback, delay }); return timerId; }, clearTimeout: id => timers.delete(id) });
   ctx.NeedMapNetwork.createClient = () => ({ writeReport: (id, report, done) => { writes++; write(id, plain(report), done); } });
   if (search) ctx.NeedMapNetwork.request = search;
   vm.runInContext(read('app.js'), ctx);
-  return { elements, form, navigator, window: rootEvents,
-    get focused() { return focused; }, get writes() { return writes; }, get saved() { return draft; },
+  return { elements, form, navigator, body, connection, navigations, window: rootEvents,
+    get focused() { return focused; }, get writes() { return writes; }, get saved() { return draft; }, get preference() { return savedPreference; },
     locate: () => locationSuccess({ coords: valid.location }), rejectLocation: (code = 1) => locationFailure({ code }),
-    slow() { for (const timer of timers.values()) if (timer.delay === 15000) timer.callback(); },
+    slow() { for (const timer of timers.values()) if (timer.delay === 8000 || timer.delay === 15000) timer.callback(); },
     fill({ addLocation = true } = {}) { for (const name of ['category', 'severity', 'summary']) elements[name].value = valid[name]; if (addLocation) { elements['location-button'].dispatch('click'); locationSuccess({ coords: valid.location }); } } };
 }
 
@@ -102,4 +108,84 @@ test('failed replacement location never silently submits a previously selected a
   assert.equal(JSON.parse(page.saved).location, null);
   page.form.dispatch('submit'); assert.equal(page.writes, 0);
   assert.match(page.elements['location-error'].textContent, /Add your approximate location/);
+});
+
+test('fast and unsupported-browser conditions navigate only after confirmed success', () => {
+  for (const hints of [{}, { connection: { effectiveType: '4g', downlink: 20, rtt: 50 }, deviceMemory: 8 }]) {
+    let finish;
+    const page = mount({ hints, write: (_id, _report, done) => { finish = done; } });
+    page.fill(); page.form.dispatch('submit');
+    assert.deepEqual(page.navigations, []);
+    finish(null);
+    assert.deepEqual(page.navigations, ['http://127.0.0.1:5174/']);
+    assert.equal(page.saved, null);
+    assert.equal(page.elements['map-link-container'].hidden, false);
+  }
+});
+
+test('automatic slow mode keeps every field usable and remains after confirmed submission', () => {
+  for (const hints of [{ connection: { effectiveType: '3g' } }, { connection: { saveData: true } }, { hardwareConcurrency: 2 }, { deviceMemory: 1 }]) {
+    const page = mount({ hints }); page.fill();
+    assert.equal(page.body.getAttribute('data-connection-mode'), 'slow');
+    page.form.dispatch('submit');
+    assert.equal(page.writes, 1); assert.deepEqual(page.navigations, []); assert.equal(page.saved, null);
+    assert.match(page.elements['form-status'].textContent, /Report received.*stay here/);
+    assert.equal(page.elements['map-link-container'].hidden, false);
+    assert.equal(page.elements['map-link'].href, 'http://127.0.0.1:5174/');
+  }
+});
+
+test('manual slow choice persists independently of drafts and survives resets and reloads', () => {
+  const page = mount(); page.fill();
+  const draft = page.saved;
+  page.elements['connection-mode'].value = 'slow'; page.elements['connection-mode'].dispatch('change');
+  assert.equal(page.preference, 'slow'); assert.equal(page.saved, draft);
+  page.form.dispatch('submit'); assert.deepEqual(page.navigations, []);
+  const reloaded = mount({ preference: page.preference });
+  assert.equal(reloaded.elements['connection-mode'].value, 'slow');
+  reloaded.form.reset(); assert.equal(reloaded.preference, 'slow');
+  reloaded.elements['connection-mode'].value = 'auto'; reloaded.elements['connection-mode'].dispatch('change');
+  reloaded.fill(); reloaded.form.dispatch('submit'); assert.equal(reloaded.navigations.length, 1);
+});
+
+test('degrading conditions, slow confirmation and manual switches during a send prevent navigation', () => {
+  for (const degrade of [
+    page => { page.navigator.connection.effectiveType = '2g'; page.connection.dispatch('change'); page.navigator.connection.effectiveType = '4g'; page.connection.dispatch('change'); },
+    page => page.slow(),
+    page => { page.elements['connection-mode'].value = 'slow'; page.elements['connection-mode'].dispatch('change'); }
+  ]) {
+    let finish;
+    const page = mount({ hints: { connection: { effectiveType: '4g' } }, write: (_id, _report, done) => { finish = done; } });
+    page.fill(); page.form.dispatch('submit'); degrade(page); finish(null);
+    assert.deepEqual(page.navigations, []); assert.match(page.elements['form-status'].textContent, /Report received.*stay here/);
+  }
+});
+
+test('a report begun in slow mode never redirects when conditions improve during its send', () => {
+  let finish;
+  const page = mount({ hints: { connection: { effectiveType: '2g' } }, write: (_id, _report, done) => { finish = done; } });
+  page.fill(); page.form.dispatch('submit');
+  page.navigator.connection.effectiveType = '4g'; page.connection.dispatch('change'); finish(null);
+  assert.deepEqual(page.navigations, []);
+});
+
+test('failed or offline submissions never navigate or expose a submitted-report map link', () => {
+  for (const options of [{ online: false }, { write: (_id, _report, done) => done(new Error('unconfirmed')) }]) {
+    const page = mount(options); page.fill(); page.form.dispatch('submit');
+    assert.deepEqual(page.navigations, []); assert.equal(page.elements['map-link-container'].hidden, true); assert.ok(page.saved);
+  }
+});
+
+test('unavailable preference storage still supports manual slow mode for the current visit', () => {
+  const page = mount({ storageFailure: true });
+  page.elements['connection-mode'].value = 'slow'; page.elements['connection-mode'].dispatch('change');
+  page.fill(); page.form.dispatch('submit');
+  assert.deepEqual(page.navigations, []); assert.match(page.elements['mode-preference-note'].textContent, /cannot save/);
+});
+
+test('configured production map destination is used by both automatic and explicit navigation', () => {
+  const page = mount({ mapUrl: 'https://map.needmap.example/' }); page.fill(); page.form.dispatch('submit');
+  assert.deepEqual(page.navigations, ['https://map.needmap.example/']);
+  assert.equal(page.elements['map-link'].href, 'https://map.needmap.example/');
+  assert.doesNotMatch(html, /rel="(?:preload|prefetch|preconnect)"/);
 });

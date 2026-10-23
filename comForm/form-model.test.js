@@ -6,7 +6,7 @@ const model = context().NeedMapForm;
 function submit(manager, report) { return new Promise((resolve, reject) => manager.submit(report, (error, id) => error ? reject(error) : resolve(id))); }
 
 test("all browser scripts parse as ES5 without modern runtime dependencies", () => {
-  for (const file of ["firebase-config.js", "form-model.js", "firebase-submit.js", "place-search.js", "app.js"]) {
+  for (const file of ["firebase-config.js", "form-model.js", "firebase-submit.js", "place-search.js", "adaptive-mode.js", "app.js"]) {
     parse(read(file), { ecmaVersion: 5 });
     assert.doesNotMatch(read(file), /\bfetch\(|new Promise|\.finally\(|\.randomUUID\(|\.replaceChildren\(|\bFormData\(/);
   }

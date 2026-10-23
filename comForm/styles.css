@@ -22,6 +22,12 @@ a:focus, button:focus, input:focus, select:focus, textarea:focus, [tabindex]:foc
 h1 { margin: 0; color: #15344a; font: normal 34px/1.15 Georgia, serif; }
 .intro { margin: 16px 0; color: #526373; }
 .privacy-note { margin: 20px 0; padding-left: 14px; border-left: 3px solid #9bb1be; font-size: 13px; color: #435b6e; }
+.connection-mode { margin: 20px 0; padding: 12px 16px; background: #e8edf1; border: 1px solid #cbd3da; border-radius: 3px; }
+.connection-mode label { margin-top: 0; }
+.connection-mode select { max-width: 320px; }
+.connection-mode .field-help { margin-bottom: 0; }
+body[data-connection-mode="slow"] { background: #fff; }
+body[data-connection-mode="slow"] .form-card { border-top-width: 1px; }
 .form-card { padding: 24px; background: #fff; border: 1px solid #cbd3da; border-top: 4px solid #15344a; border-radius: 3px; }
 h2 { margin: 0 0 8px; color: #15344a; font-size: 21px; }
 h3 { margin: 0 0 16px; color: #15344a; font-size: 17px; }

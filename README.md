@@ -1,22 +1,48 @@
-# NeedMap — Community service planning
+# NeedMap — Community reporting and map
 
-NeedMap connects anonymous reports about service access with a practical planning workspace. The community form and dashboard are independent websites sharing one Firebase project.
+NeedMap connects anonymous service-access reports with a worldwide community map and regional Analysis page. The reporting form and map are independent websites sharing one Firebase project. The old Plan page, cost calculator, and staff planning interface remain removed.
 
-## Explore and Plan
+## Adaptive reporting form
 
-**Explore** combines the map and report library. Search by need or place, filter by category and urgency, and optionally limit reports to the map area. Proposed service markers link directly to a plan. Nearby existing services can be requested from a candidate's map popup.
+The form keeps every reporting field in both modes. Automatic mode uses available effective connection speed, latency, data-saving preferences, device memory/CPU hints, and passive load/submission timings. It does not download speed-test data or assume Wi-Fi is fast. A manual **Slow connection mode** choice is remembered on that device when storage is available.
 
-**Plan** uses one shared set of region-based service candidates. Evidence analysis runs when Plan opens; switching tabs does not repeat it. Each candidate has editable population, uptake, travel, capital, operating-cost, contingency and delivery assumptions. A before/after preview calculates travel-time change, expected users, total weekly hours, first-year investment and sequential delivery time. Plans can be exported to CSV or printed, and drafts persist on the device when storage is available.
+After confirmed delivery, normal mode opens the Map page. Slow mode stays on the confirmation screen and offers an explicit map link. A report that starts in slow mode, or encounters slow conditions during submission, stays on the form even if conditions subsequently improve. Offline/reconnection events never automatically submit a report, and retries reuse the same submission reference.
 
-There are no AI confidence percentages, staff sign-in/workflow controls, alert panels or browser notifications in these two views. Existing private staff collections and their access rules are unchanged; the dashboard no longer connects to them.
+The production form uses system fonts and a single classic ES5 script, without map assets or the Firebase JavaScript SDK. HTML, JavaScript, and CSS total approximately **30 KB uncompressed / 11 KB gzip**. Compression must be enabled by the host. Existing drafts last seven days; all required fields and privacy validation remain available. See [form documentation](comForm/README.md) for submission and compatibility details.
 
-## Public reporting form
+The form still requests device location only when the person selects **Use my location** for their report. A town/neighbourhood search is available as an alternative. Report coordinates are rounded before storage or submission.
 
-The form is text-first, uses system fonts and a single classic ES5 script, and does not download a map or the Firebase JavaScript SDK. Its production HTML, JavaScript and CSS total about **26 KB uncompressed / 10 KB gzip**, plus a small icon. The server must enable compression to obtain the compressed size.
+## Map and regions
 
-Device location is requested on the user's action. If it is unavailable or declined, the user can search for a town or neighbourhood and select its centre. Coordinates are rounded before storage or submission; no latitude/longitude entry is shown. Place search sends only the search query to the configured geocoding provider. The query and place label are not included in public reports.
+Map and Analysis share the same selected region. A returning visitor's saved region is restored first; otherwise NeedMap detects an approximate country/state from their IP without requesting browser location permission. It chooses a smaller NeedMap geographic area when the IP position and administrative boundaries support one; otherwise it uses a state/province or country. If detection or boundary lookup fails, the worldwide map and manual region picker remain usable. Only the catalog ID/version is saved under `needmap-selected-region-v1`; location coordinates are not saved by this preference. IP location can reflect a VPN or network gateway rather than the visitor's actual region.
 
-Drafts last seven days on the device. Reconnection never automatically submits a report. Explicit retries reuse the same reference, and success requires confirmed delivery. See [the form documentation](comForm/README.md) for compatibility, provider capacity and retry details.
+**Change Region**, at the top left, uses one complete bundled directory of countries, states/provinces, and precomputed NeedMap areas. Opening the dropdown shows all countries and territories. Typing searches every country, state, and NeedMap region from the first load without a result cutoff. California follows the same geographic grouping rules as every other state; it has no special list or hand-assigned counties.
+
+Large states with suitable administrative data are divided into neighboring geographic groups. Smaller states and places without sufficient subdivision data remain whole. The entire directory is generated before deployment; the browser loads only the selected place's map boundaries. Searching does not make provider requests. There are no export/download controls or separate region sections.
+
+Selecting an area scopes reports and proposed services to its polygon. IP detection uses the same directory, and a newer manual selection always wins over a pending automatic lookup. Whole-state and whole-country entries remain in the same list. [Region data documentation](mapSite/REGION-DATA.md) explains provenance and coverage.
+
+## Proposed service locations
+
+Map and Analysis use the same local SVG icons for healthcare, medication, education, roads, transportation, water, internet, food, fuel, emergency response, and other services. Legacy combined categories are conservatively refined from report text; the reporting schema is unchanged.
+
+For each selected region and category, the map shows **up to three** distinct proposed locations. Each requires at least two unique supporting reports. Splitting must reduce urgency-weighted straight-line travel distance by at least 25%, and resulting locations must be at least 250 metres apart. Urgency weights are 1, 2, and 3 for low, medium, and high. Locations use an approximate weighted geographic median constrained to the region boundary and are ranked by urgency score, then report count. Insufficient or colocated reports produce fewer locations.
+
+These are report-based suggestions, not mathematically proven optimal building sites: roads, land availability, capacity, and costs are not modeled. In Worldwide view, recommendations retain the named report regions. Numbered icons and popups identify the rank and supporting report count. Nearby existing services can still be requested from a proposed service's popup.
+
+## Regional analysis
+
+Open **Analysis** (`#analysis`) from the map header. The shared **Change Region** dropdown and **Infrastructure problem** filter update the overview, report-count chart, rankings, and report details. Region changes also update the map and persist for a return visit. No export, cost calculator, or separate planning tools are included.
+
+The overview shows report counts, the most reported problem, and **Estimated residents near reports**. The population card uses WorldPop's 2025 100-meter population estimates within 500-meter neighborhoods around the selected reports, merged and clipped to the selected region. Overlaps are counted once, including under All Problems. This estimates nearby residents, not confirmed people affected. Missing population data or unusable report locations show unavailable, never a fabricated zero. The existing form does not collect a problem start date, and submission dates are never treated as problem duration. Demonstration reports remain labeled as such. See [population calculation and limits](mapSite/REPORT-POPULATION.md).
+
+Expanding a priority shows a small, zoomed-in map beside each located report. It uses the report's stored approximate coordinates and the same category marker as the main map. Maps load only inside expanded priorities and, when supported, as the report scrolls into view. Closing a priority or leaving Analysis releases its maps. Missing or unsupported coordinates show a location-unavailable message rather than a guessed location.
+
+Priority weights remain **severity 30%, people affected 25%, service access 20%, report frequency 15%, and reported duration 10%** internally. Severity combines an explicit NeedMap essential-service policy (80%) with reported urgency (20%). Missing scoring inputs are not filled in or reweighted. Rankings remain provisional where data is missing. National context alone cannot establish a local priority rank. The page shows the priority order without numeric scores, score ranges, scoring percentages, or a formula table. Every problem opens to available statistics, original reports, and validated report excerpts.
+
+Public statistics are fetched on opening Analysis from the World Bank API, including WHO/UNICEF, WHO, UNESCO, ITU and FAO indicators. Current coverage is **country-level**. For a state or custom NeedMap region these figures are labeled national context and do not enter its local score or affected-population estimate. Unsupported categories remain missing. The page omits source boxes, citation links, calculation formulas, and measurements expressed as indices out of 100. Evidence metadata and internal calculations remain available in the data model; derived water/food estimates still require a same-year population denominator. See [source definitions and limitations](mapSite/ANALYSIS-EVIDENCE.md).
+
+AI complaint review uses the existing Firebase AI Logic connection and loads its SDK only when Analysis has reports to review. It selects exact report excerpts and explicit duration phrases; counts, public statistics, severity weights, and scores remain deterministic. Returned report IDs and quotes are validated against the input. The bounded review covers up to 100 reports per region snapshot and displays its coverage. It sends report category/text with temporary IDs, without location coordinates. Provider errors remain visible as **AI review unavailable** and never masquerade as an AI result. Firebase AI Logic and App Check must be configured for the host; no secret model API key is embedded in the browser.
 
 ## Run locally
 
@@ -34,46 +60,27 @@ npm install
 npm run dev
 ```
 
-Open `http://127.0.0.1:5174/`. The dashboard is designed for desktop; the reporting form adapts to small screens.
+Open `http://127.0.0.1:5174/`. The map remains designed for desktop; the form adapts to small screens. Each app has `npm test`, `npm run build`, and `npm run preview`. Production output is in each app's `dist/`. Preview ports are 4173 and 4174.
 
-Each app has `npm test`, `npm run build` and `npm run preview`. Production output lives in its own `dist/` folder. Form preview uses port 4173; dashboard preview uses port 4174. The form's custom build bundles and checks ES5 syntax; Vite's development client is not part of that production output.
+## Deployment configuration
 
-## Planning evidence and limits
+The form maps local port 5173 to 5174 (and preview 4173 to 4174). Its production map destination defaults to `/map/`. If the apps are hosted separately, build the form with the actual map URL:
 
-`mapSite/planning-references.js` contains dated primary-source references checked on October 21, 2026. The first set covers Fremont, California and relevant Northern California comparison projects: Census population, Alameda County mobile-pharmacy acquisition, Sonoma County accessible vehicles, and public clinic, water and Wi-Fi programmes. References are shown with their scope, geography and date.
+```sh
+cd comForm
+NEEDMAP_MAP_URL=https://your-map-host.example/ npm run build
+```
 
-Only compatible benchmark fields are prefilled. A vehicle price is not a full service-launch budget; a funding request is not a contractor quote. Citywide population is shown as context and never silently becomes the population served. Unsupported costs, operating budgets, uptake, local journey times and missing timeline stages remain empty. A separately labelled fictional example can demonstrate the calculator.
+Deploying `/map/` requires the host to serve the map build there. This repository does not currently define hosting for the two sites. `VITE_REGION_LOOKUP_ENDPOINT` configures the Nominatim-compatible boundary service; `VITE_IP_LOCATION_ENDPOINT` configures the browser-accessible IP-region endpoint. Do not embed secret API keys in client build variables. Production traffic needs provider capacity appropriate to the audience.
 
-Travel savings compare entered one-way journey times, multiplied by return journeys, frequency and expected users. A worse scenario shows increased travel and zero shorter-journey beneficiaries. The calculator does not model route networks, capacity constraints, financing, inflation or causal health/economic outcomes. Currency selection labels inputs; it does not convert amounts.
+No production deployment or Firebase rule change is included in these changes.
 
 ## Privacy and Firebase
 
-Reports in `incomingSignals` are publicly readable and immutable from browser clients. Anonymous Firebase authentication allows creation without collecting a name or email address. The UID is not stored on the public report. Client validation screens common personal-contact and street-address patterns; it is not a guarantee that every identifying detail is detected. The form warns against posting personal information and is not an emergency-response channel.
+Reports in `incomingSignals` are publicly readable and immutable from browser clients. Anonymous Firebase authentication permits creation without collecting a name or email. Its UID is not stored on the public report. Client validation screens common personal-contact and street-address patterns; this does not guarantee every identifying detail is detected. The form warns against posting personal information and is not an emergency-response channel.
 
-The report schema remains:
+The report schema is unchanged: `category`, `severity`, `summary`, `latitude`, `longitude`, `locationGridId`, `locationPrecision`, `sourceType`, `isSynthetic`, and server `submittedAt`. Grid spacing is approximate, not measured accuracy. Place names and search queries are not published in reports. Existing private legacy staff collections and access rules remain unchanged; the map does not connect to them.
 
-| Field | Meaning |
-| --- | --- |
-| `category`, `severity`, `summary` | Service, urgency, and a description of up to 280 characters |
-| `latitude`, `longitude`, `locationGridId` | Rounded approximate location |
-| `locationPrecision` | `approximate_grid_500m`: grid spacing, not measured accuracy |
-| `sourceType`, `isSynthetic` | Survey source and demonstration-data label |
-| `submittedAt` | Server timestamp |
+## Verification
 
-A place centre may be much farther from a concern than the grid spacing. Exact device locations and geocoding labels are not published. Do not submit household details in report text.
-
-Keep Anonymous Authentication enabled in the existing Firebase project. Firebase AI Logic supplies optional evidence analysis; local report-based candidates remain usable if it fails. Local App Check configuration remains in the ignored `mapSite/.env.local`. Production authentication/App Check and hosting are separate deployment concerns.
-
-## Main implementation files
-
-- `mapSite/app.js`: two-view integration, live reports, map and regions.
-- `mapSite/analysis-coordinator.js`: one batched, cancellable evidence-analysis pipeline.
-- `mapSite/planning-workspace.js`, `planning-model.js`, `planning-references.js`: planner UI, deterministic calculations and sourced benchmarks.
-- `comForm/app.js`, `form-model.js`, `firebase-submit.js`, `place-search.js`: form, privacy validation, REST delivery and geocoding.
-- `firestore.rules`: unchanged public-report and protected legacy staff access rules.
-
-## Verification boundaries
-
-Automated suites cover report filtering and tab navigation, stale analysis cancellation, provider fallback, planner calculations and persistence, source scope, form validation, location races, offline/retry behavior and ES5 compatibility. The REST submission path was also verified with isolated Firebase Auth and Firestore emulators, including server timestamps, duplicate prevention and rule denials. Browser rendering and provider checks do not replace physical old-phone testing. Very old devices without current HTTPS/TLS support cannot connect to Firebase.
-
-Nominatim's public service has an application-wide rate limit; concurrent production traffic requires a shared rate-limited/cache proxy or another suitable provider. Its endpoint is configurable in the form HTML. This local implementation does not change production hosting or Firebase rules.
+Tests cover form validation, confirmed delivery, duplicate prevention, slow/fast/manual modes, condition changes during submission, denied storage, ES5 syntax, local region search, provider fallback, stale request cancellation, region boundary membership, deterministic ranking, minimum report support, date-line placement, and safe SVG icons. Browser smoke checks validate the actual form controls and region navigation. Automated tests and desktop browser checks do not replace physical old-phone testing.

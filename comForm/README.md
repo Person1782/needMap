@@ -10,7 +10,23 @@ npm run build     # comForm/dist
 npm run preview   # http://127.0.0.1:4173
 ```
 
-`build.mjs` verifies all browser source and the minified bundle parse as ES5. The HTML, JavaScript and CSS total about 26 KB uncompressed, or about 10 KB with gzip (plus the small favicon). Hosting must enable compression to achieve the compressed transfer size. Development serves separate source scripts; production combines them. No modern JavaScript polyfill bundle is required.
+`build.mjs` verifies all browser source and the minified bundle parse as ES5. The HTML, JavaScript and CSS total about 30 KB uncompressed, or about 11 KB with gzip (plus the small favicon). Hosting must enable compression to achieve the compressed transfer size. Development serves separate source scripts; production combines them. No modern JavaScript polyfill bundle is required.
+
+## Connection modes and the Map page
+
+The complete report fields remain available in both modes. Automatic mode uses available browser hints: data saving, effective 2G/3G, estimated downlink below 1.5 Mbps, round-trip time of at least 500 ms, memory of 2 GB or less, or two or fewer logical processors. Wi-Fi by itself is not evidence of a fast connection. These are conservative product heuristics, not measured device performance. The [Network Information API](https://developer.mozilla.org/en-US/docs/Web/API/NetworkInformation) is unavailable in some major browsers; no browser or operating-system sniffing is used.
+
+The form also checks already-downloaded document/script/stylesheet timings (2.5 seconds or more) and a submission that takes at least 8 seconds. It performs no speed-test requests, downloads no map assets, and transmits none of these device hints. With no usable hints, the lightweight complete form remains available; users can always select **Slow connection mode**. That choice is remembered separately from drafts on this device, or for the current visit if storage is blocked. Selecting **Automatic** restores automatic detection.
+
+After a confirmed successful submission, a fast-mode visit opens the Map page. Slow mode stays on the received-report confirmation with an explicit **Open the Map page** link. Any slow condition observed while a report is sending keeps that submission on the confirmation, even if the connection improves before completion. Offline and failed requests never redirect or count as successful; reconnecting never sends a draft automatically.
+
+For development, run the Map app separately on port 5174; the form on port 5173 automatically links there. Preview uses the matching ports 4173 and 4174. Production defaults to `/map/` on the form's origin. This repository does not configure hosting for that path: host the built Map app there or configure its actual HTTPS destination when building the form:
+
+```sh
+NEEDMAP_MAP_URL=https://map.example.org/ npm run build
+```
+
+The setting accepts an HTTPS URL or a root-relative path and applies to both automatic navigation and the explicit map link. No report coordinates or private fields are included in the navigation URL. A separately hosted form must set this value before deployment.
 
 ## Location and privacy
 
@@ -30,6 +46,6 @@ The retry reference is saved before the network request. Every attempt reads tha
 
 The client avoids ES modules, Promise, fetch, Web Crypto requirements, CSS Grid and CSS custom properties. It needs ES5 JavaScript, JSON, DOM event handling, and cross-origin XMLHttpRequest. No-JavaScript browsers can read the instructions but cannot submit. HTTPS and a browser capable of negotiating current Firebase TLS are required; some very old phones cannot meet those requirements. Device location may be unavailable or denied, in which case place search remains available.
 
-Automated tests cover validation and private-data filters, rounded locations, denied/replaced/stale location requests, place-result selection, slow/offline failures, retry after reload, blocked local storage, authentication/schema/timestamp payloads, lost acknowledgements, and ES5 syntax. The unit tests use mocked requests. Seven additional checks passed against isolated Firebase Auth and Firestore emulators with the repository rules: anonymous submission, server timestamps, duplicate prevention across reloads, lost-acknowledgement recovery, conflicting-record rejection, and rejection of unauthenticated or schema-invalid writes.
+Automated tests cover validation and private-data filters, rounded locations, denied/replaced/stale location requests, place-result selection, automatic and manual connection modes, unavailable capability hints, slow/offline failures, mode changes during submission, confirmed-only navigation, retry after reload, blocked local storage, authentication/schema/timestamp payloads, lost acknowledgements, and ES5 syntax. The unit tests use mocked requests. Seven additional checks previously passed against isolated Firebase Auth and Firestore emulators with the repository rules: anonymous submission, server timestamps, duplicate prevention across reloads, lost-acknowledgement recovery, conflicting-record rejection, and rejection of unauthenticated or schema-invalid writes.
 
-The production form and place search were also checked in Chrome, including a 320-pixel-wide viewport. No production reports were submitted. Physical old-phone compatibility and production Firebase write/rules integration remain unverified.
+The earlier production form and place search were checked in Chrome, including a 320-pixel-wide viewport. The new adaptive behavior is covered by the automated tests above; physical old-phone compatibility and production Firebase write/rules integration remain unverified. No production reports were submitted for this change.

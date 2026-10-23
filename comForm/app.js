@@ -15,15 +15,25 @@
   var placeInput = byId("place-query");
   var searchStatus = byId("place-search-status");
   var searchResults = byId("place-results");
+  var modeSelect = byId("connection-mode");
+  var modeStatus = byId("mode-status");
+  var mapLinkContainer = byId("map-link-container");
   var fieldNames = ["category", "severity", "summary"];
   var model = root.NeedMapForm;
-  if (!root.JSON || !root.XMLHttpRequest || !root.addEventListener || !model || !root.NeedMapNetwork) {
+  if (!root.JSON || !root.XMLHttpRequest || !root.addEventListener || !model || !root.NeedMapNetwork || !root.NeedMapAdaptive) {
     statusMessage.textContent = "This browser cannot send the form. Please open this page in another browser.";
     return;
   }
   var storageKey = "needmap-report-draft-v2";
   var location = null;
   var submitting = false;
+  var preference = "auto";
+  var mode;
+  var observedSlow = false;
+  var submissionStay = false;
+  var modeStorage;
+  var modeStorageKey = "needmap-connection-mode-v1";
+  var destination = root.NeedMapAdaptive.mapUrl(form.getAttribute("data-map-url"), root.location);
   var locationRequest = 0;
   var locating = false;
   var searchRequest = 0;
@@ -34,6 +44,27 @@
     draft = JSON.parse(storage.getItem(storageKey) || "null");
     if (!draft || !draft.savedAt || new Date().getTime() - draft.savedAt > 7 * 86400000) { draft = null; storage.removeItem(storageKey); }
   } catch (error) { storage = null; draft = null; }
+  try {
+    modeStorage = root.localStorage;
+    if (modeStorage.getItem(modeStorageKey) === "slow") preference = "slow";
+  } catch (error) { modeStorage = null; }
+  modeSelect.value = preference;
+  byId("map-link").href = destination;
+  mapLinkContainer.hidden = true;
+  function updateMode() {
+    mode = root.NeedMapAdaptive.detect(navigator, root.performance, preference, observedSlow);
+    if (submitting && mode.slow) submissionStay = true;
+    document.body.setAttribute("data-connection-mode", mode.slow ? "slow" : "full");
+    byId("mode-label").textContent = mode.slow ? "Slow connection mode" : "Complete community form";
+    modeStatus.textContent = mode.slow ? mode.reason + " All report fields are available. After confirmation, you will stay here and can open the map yourself." : "After your report is confirmed, the Map page will open automatically. Choose slow connection mode to stay here.";
+    if (submitting && submissionStay && !mode.slow) modeStatus.textContent = "Conditions have improved. This report will still keep you here after confirmation; you can open the map yourself.";
+    if (!modeStorage) byId("mode-preference-note").textContent = "Your choice applies to this visit. This browser cannot save the preference.";
+  }
+  modeSelect.addEventListener("change", function () {
+    preference = modeSelect.value === "slow" ? "slow" : "auto";
+    try { if (modeStorage) modeStorage.setItem(modeStorageKey, preference); } catch (error) { modeStorage = null; }
+    updateMode();
+  });
   var backend = root.NeedMapNetwork.createClient(root.NeedMapConfig);
   var submissions = model.createSubmissionManager({
     createId: model.createId,
@@ -197,6 +228,7 @@
     clearErrors();
     location = null;
     submissions.reset();
+    mapLinkContainer.hidden = true;
     setStatus("");
     setLocationStatus("No location added yet.");
     try { if (storage) storage.removeItem(storageKey); } catch (error) { storage = null; }
@@ -206,6 +238,7 @@
   form.addEventListener("submit", function (event) {
     event.preventDefault();
     if (submitting) return;
+    mapLinkContainer.hidden = true;
     clearErrors();
     var result = model.validateReport(values());
     if (!result.report) { setStatus(""); showErrors(result.errors); return; }
@@ -215,6 +248,8 @@
       statusMessage.focus();
       return;
     }
+    updateMode();
+    submissionStay = mode.slow;
     submitting = true;
     cancelLocationRequest();
     clearSearch();
@@ -222,16 +257,26 @@
     form.setAttribute("aria-busy", "true");
     submitButton.textContent = "Submitting…";
     setStatus("Submitting your report. Keep this page open until confirmation appears.");
+    var startedAt = new Date().getTime();
+    var modeTimer = root.setTimeout(function () { observedSlow = true; updateMode(); }, 8000);
     var slowTimer = root.setTimeout(function () { setStatus("Still waiting for confirmation. Keep this page open. If the request times out, you can retry without creating a duplicate."); }, 15000);
     submissions.submit(result.report, function (error, reference) {
       root.clearTimeout(slowTimer);
+      root.clearTimeout(modeTimer);
+      if (new Date().getTime() - startedAt >= 8000) observedSlow = true;
+      updateMode();
       submitting = false;
       lockForm(false);
       form.removeAttribute("aria-busy");
       submitButton.textContent = "Submit report";
       if (!error) {
         form.reset();
-        setStatus("Report received. Reference " + reference.slice(0, 8).toUpperCase() + ". It is available for review in the demonstration workspace.", "success");
+        mapLinkContainer.hidden = false;
+        setStatus("Report received. Reference " + reference.slice(0, 8).toUpperCase() + ". " + (submissionStay ? "Your report has been submitted. You can stay here or open the Map page when you are ready." : "Opening the Map page…"), "success");
+        if (!submissionStay) {
+          try { root.location.assign(destination); }
+          catch (navigationError) { setStatus("Report received. Reference " + reference.slice(0, 8).toUpperCase() + ". Use the link below to open the Map page.", "success"); }
+        }
       } else {
         saveDraft();
         var unavailable = error.status === 403 || error.code === "OPERATION_NOT_ALLOWED";
@@ -240,9 +285,12 @@
       statusMessage.focus();
     });
   });
-  function updateConnectionStatus() { byId("connection-status").hidden = navigator.onLine !== false; }
+  function updateConnectionStatus() { byId("connection-status").hidden = navigator.onLine !== false; updateMode(); }
   root.addEventListener("online", updateConnectionStatus);
   root.addEventListener("offline", updateConnectionStatus);
+  root.addEventListener("load", updateMode);
+  var connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  if (connection && connection.addEventListener) connection.addEventListener("change", updateMode);
   root.addEventListener("beforeunload", function (event) { if (submitting) { event.preventDefault(); event.returnValue = ""; } });
   if (draft) {
     fieldNames.forEach(function (name) { if (typeof draft[name] === "string") byId(name).value = draft[name].slice(0, name === "summary" ? 280 : 40); });

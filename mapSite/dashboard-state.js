@@ -1,7 +1,3 @@
-export function normalizeView(value) {
-  return ["plan", "decisions"].includes(value) ? "plan" : "explore";
-}
-
 export function normalizeReport(id, data) {
   const coordinate = (value) => (typeof value === "number" || typeof value === "string") && String(value).trim()
     ? Number(value) : NaN;
@@ -25,21 +21,4 @@ export function filterReports(reports, { query = "", category = "all", urgency =
 
 export function reportSnapshotKey(reports) {
   return JSON.stringify([...reports].sort((a, b) => a.id.localeCompare(b.id)));
-}
-
-export function bindViewTabs(tabs, onSelect) {
-  tabs.forEach((tab, index) => {
-    tab.addEventListener("click", () => onSelect(tab.dataset.view));
-    tab.addEventListener("keydown", (event) => {
-      let next;
-      if (event.key === "ArrowRight") next = (index + 1) % tabs.length;
-      else if (event.key === "ArrowLeft") next = (index - 1 + tabs.length) % tabs.length;
-      else if (event.key === "Home") next = 0;
-      else if (event.key === "End") next = tabs.length - 1;
-      else return;
-      event.preventDefault();
-      onSelect(tabs[next].dataset.view);
-      tabs[next].focus();
-    });
-  });
 }

@@ -3,6 +3,10 @@ import { pointInGeometry } from "./regions.js";
 const EARTH_RADIUS_KM = 6371;
 
 export const MIN_CLUSTER_SIZE = 2;
+export const MAX_SERVICE_LOCATIONS = 3;
+// Nearby reports should not produce several effectively identical map pins.
+export const MIN_LOCATION_SEPARATION_KM = 0.25;
+const MIN_SPLIT_IMPROVEMENT = 0.25;
 
 export const severityWeights = {
   low: 1,
@@ -27,12 +31,38 @@ function longitudeDifference(longitude, reference) {
   return ((longitude - reference + 540) % 360) - 180;
 }
 
+function compareText(first, second) {
+  return first < second ? -1 : first > second ? 1 : 0;
+}
+
+function reportKey(signal) {
+  return JSON.stringify([
+    typeof signal.id === "string" ? signal.id : "",
+    signal.latitude, signal.longitude, signal.severity || "", signal.summary || "",
+  ]);
+}
+
+function geographicDistance(first, second) {
+  const latitudeDifference = toRadians(second.latitude - first.latitude);
+  const longitudeDelta = toRadians(longitudeDifference(second.longitude, first.longitude));
+  const haversine = Math.sin(latitudeDifference / 2) ** 2 +
+    Math.cos(toRadians(first.latitude)) * Math.cos(toRadians(second.latitude)) *
+    Math.sin(longitudeDelta / 2) ** 2;
+  return 2 * EARTH_RADIUS_KM * Math.asin(Math.sqrt(Math.min(1, Math.max(0, haversine))));
+}
+
 function groupSignalsByRegionAndCategory(signals) {
   const groups = new Map();
 
-  signals.forEach((signal) => {
+  const seenReports = new Set();
+  signals.filter(validSignal)
+    .sort((first, second) => compareText(reportKey(first), reportKey(second)))
+    .forEach((signal) => {
     if (!validSignal(signal) || !signal.region?.id || !signal.region.geometry ||
         !pointInGeometry(signal.longitude, signal.latitude, signal.region.geometry)) return;
+    const identity = typeof signal.id === "string" && signal.id ? `id:${signal.id}` : reportKey(signal);
+    if (seenReports.has(identity)) return;
+    seenReports.add(identity);
     const category = typeof signal.category === "string" && signal.category.trim()
       ? signal.category.trim() : "other";
     const key = `${signal.region.id}:${category}`;
@@ -47,6 +77,96 @@ function groupSignalsByRegionAndCategory(signals) {
   });
 
   return [...groups.values()];
+}
+
+function clusterPosition(cluster) {
+  return constrainPositionToRegion(weightedGeometricMedian(cluster.signals), cluster);
+}
+
+function placementCost(cluster, position) {
+  return cluster.signals.reduce((sum, signal) =>
+    sum + signalWeight(signal) * geographicDistance(signal, position), 0);
+}
+
+function clusterSignature(cluster) {
+  return JSON.stringify(cluster.signals.map((signal) =>
+    typeof signal.id === "string" && signal.id ? `id:${signal.id}` : reportKey(signal)).sort(compareText));
+}
+
+function locationId(cluster) {
+  // Two independent 32-bit hashes keep IDs compact and independent of input order.
+  const signature = clusterSignature(cluster);
+  let first = 2166136261;
+  let second = 5381;
+  for (let index = 0; index < signature.length; index += 1) {
+    const code = signature.charCodeAt(index);
+    first = Math.imul(first ^ code, 16777619);
+    second = Math.imul(second, 33) ^ code;
+  }
+  return `${(first >>> 0).toString(36)}-${(second >>> 0).toString(36)}`;
+}
+
+function bestSupportedSplit(cluster, minimumSize) {
+  if (cluster.signals.length < minimumSize * 2) return null;
+  const originalCost = placementCost(cluster, clusterPosition(cluster));
+  if (originalCost < 0.000001) return null;
+  const referenceLongitude = cluster.signals[0].longitude;
+  const axes = [
+    (signal) => signal.latitude,
+    (signal) => longitudeDifference(signal.longitude, referenceLongitude),
+  ];
+  let best;
+  for (const value of axes) {
+    const ordered = [...cluster.signals].sort((first, second) =>
+      value(first) - value(second) || compareText(reportKey(first), reportKey(second)));
+    const gaps = [];
+    for (let index = minimumSize; index <= ordered.length - minimumSize; index += 1) {
+      const gap = value(ordered[index]) - value(ordered[index - 1]);
+      if (gap > 0) gaps.push({ index, gap });
+    }
+    // Bound work on older devices: evaluate the strongest gaps and a balanced cut.
+    const cuts = new Set(gaps.sort((first, second) =>
+      second.gap - first.gap || first.index - second.index).slice(0, 4).map(({ index }) => index));
+    const midpoint = Math.floor(ordered.length / 2);
+    if (value(ordered[midpoint]) > value(ordered[midpoint - 1])) cuts.add(midpoint);
+    for (const index of cuts) {
+      const parts = [ordered.slice(0, index), ordered.slice(index)]
+        .map((signals) => ({ ...cluster, signals }));
+      const positions = parts.map(clusterPosition);
+      if (geographicDistance(positions[0], positions[1]) < MIN_LOCATION_SEPARATION_KM) continue;
+      const cost = parts.reduce((sum, part, partIndex) => sum + placementCost(part, positions[partIndex]), 0);
+      const improvement = originalCost - cost;
+      if (improvement / originalCost < MIN_SPLIT_IMPROVEMENT) continue;
+      const signature = parts.map(clusterSignature).sort(compareText).join("::");
+      if (!best || improvement > best.improvement + 0.000001 ||
+          (Math.abs(improvement - best.improvement) <= 0.000001 && signature < best.signature)) {
+        best = { parts, improvement, signature };
+      }
+    }
+  }
+  return best;
+}
+
+function supportedLocations(group, minimumSize) {
+  const clusters = [group];
+  while (clusters.length < MAX_SERVICE_LOCATIONS) {
+    let selected;
+    clusters.forEach((cluster, index) => {
+      const split = bestSupportedSplit(cluster, minimumSize);
+      if (!split) return;
+      // A new split must remain distinct from every existing location as well.
+      const otherPositions = clusters.filter((_, candidateIndex) => candidateIndex !== index).map(clusterPosition);
+      if (split.parts.some((part) => otherPositions.some((position) =>
+        geographicDistance(clusterPosition(part), position) < MIN_LOCATION_SEPARATION_KM))) return;
+      if (!selected || split.improvement > selected.improvement + 0.000001 ||
+          (Math.abs(split.improvement - selected.improvement) <= 0.000001 && split.signature < selected.signature)) {
+        selected = { ...split, index };
+      }
+    });
+    if (!selected) break;
+    clusters.splice(selected.index, 1, ...selected.parts);
+  }
+  return clusters;
 }
 
 export function weightedGeometricMedian(signals) {
@@ -128,7 +248,7 @@ export function inferServiceNeed(candidate) {
     { pattern: /\b(gas|fuel|petrol|refuel|gasoline)\b/, facilityType: "Gas station" },
     { pattern: /\b(bus|public transit|transit stop|no car|shuttle|ride)\b/, facilityType: "Transit stop or shuttle hub" },
     { pattern: /\b(pharmacy|medicine|prescription)\b/, facilityType: "Pharmacy" },
-    { pattern: /\b(doctor|clinic|medical|health care|healthcare)\b/, facilityType: "Community health clinic" },
+    { pattern: /\b(doctor|clinic|hospital|medical|health care|healthcare|meditation)\b/, facilityType: "Community health clinic" },
     { pattern: /\b(grocery|groceries|fresh food|supermarket)\b/, facilityType: "Grocery store" },
     { pattern: /\b(food pantry|food bank|meals|hungry)\b/, facilityType: "Food distribution point" },
     { pattern: /\b(wifi|wi-fi|internet|broadband)\b/, facilityType: "Public internet access point" },
@@ -137,6 +257,9 @@ export function inferServiceNeed(candidate) {
   const defaults = {
     transportation: "Transit access hub",
     healthcare: "Community health clinic",
+    medication_access: "Pharmacy",
+    education: "School or education center",
+    roads: "Road access improvements",
     food: "Food access center",
     water: "Water and sanitation service point",
     broadband: "Public internet access point",
@@ -144,7 +267,8 @@ export function inferServiceNeed(candidate) {
     other: "Community service center",
   };
   const match = rules.find((rule) => rule.pattern.test(text));
-  const facilityType = match?.facilityType ||
+  const refinedCategory = ["medication_access", "education", "roads"].includes(candidate.category);
+  const facilityType = (refinedCategory ? defaults[candidate.category] : match?.facilityType) ||
     (Object.hasOwn(defaults, candidate.category) ? defaults[candidate.category] : null) ||
     "Community service center";
   const severityCounts = candidate.signals.reduce(
@@ -182,7 +306,7 @@ export function inferServiceNeed(candidate) {
     rationale: decisionSummary,
     decisionSummary,
     needAnalysis: `The local fallback found ${severityCounts.high} high, ${severityCounts.medium} medium, and ${severityCounts.low} low urgency reports in the same named region and category. Repeated reports indicate a pattern worth validating through community outreach and service-capacity data.`,
-    placementRationale: `The suggested point is the urgency-weighted geographic median of the cited reports, constrained to the verified boundary of ${candidate.region.name}. High urgency reports receive three times the placement weight of low urgency reports, reducing aggregate distance to the strongest reported needs.`,
+    placementRationale: `This is location ${candidate.locationRank || 1} of ${candidate.locationCount || 1} supported locations for this service category in ${candidate.region.name}. A spatial heuristic separates report groups only when each has at least two reports, locations are at least 250 meters apart, and splitting reduces weighted straight-line distance by at least 25%. Each point is an approximate urgency-weighted geographic median constrained to the verified region boundary. Locations are ranked by urgency score, then report count. This does not establish a globally optimal or build-ready site.`,
     priority,
     serviceComponents: [
       `Core ${facilityType.toLowerCase()} capacity sized after local demand validation`,
@@ -249,28 +373,33 @@ export function buildRecommendations(
   signals,
   { minimumSize = MIN_CLUSTER_SIZE } = {},
 ) {
-  const size = Number.isInteger(minimumSize) && minimumSize > 0 ? minimumSize : MIN_CLUSTER_SIZE;
+  const size = Number.isInteger(minimumSize) && minimumSize >= MIN_CLUSTER_SIZE ? minimumSize : MIN_CLUSTER_SIZE;
   return groupSignalsByRegionAndCategory(Array.isArray(signals) ? signals : [])
     .filter((cluster) => cluster.signals.length >= size)
-    .map((cluster) => {
-      const position = constrainPositionToRegion(
-        weightedGeometricMedian(cluster.signals),
-        cluster,
-      );
-      const urgencyScore = cluster.signals.reduce(
-        (sum, signal) => sum + signalWeight(signal),
-        0,
-      );
-      const candidate = {
-        id: `${cluster.region.id}:${cluster.category}`,
+    .flatMap((group) => {
+      const recommendationGroupId = `${group.region.id}:${group.category}`;
+      const clusters = supportedLocations(group, size);
+      return clusters.map((cluster) => ({
+        id: clusters.length === 1 ? recommendationGroupId : `${recommendationGroupId}:location-${locationId(cluster)}`,
+        recommendationGroupId,
         category: cluster.category,
         region: cluster.region,
-        signals: cluster.signals,
-        position,
-        urgencyScore,
-      };
-
-      return { ...candidate, analysis: inferServiceNeed(candidate) };
+        signals: [...cluster.signals].sort((first, second) => compareText(reportKey(first), reportKey(second))),
+        position: clusterPosition(cluster),
+        urgencyScore: cluster.signals.reduce((sum, signal) => sum + signalWeight(signal), 0),
+        locationCount: clusters.length,
+        placementMethod: "report-cluster-weighted-median",
+      }))
+        .sort(compareRecommendations)
+        .map((candidate, index) => {
+          const ranked = { ...candidate, locationRank: index + 1 };
+          return { ...ranked, analysis: inferServiceNeed(ranked) };
+        });
     })
-    .sort((first, second) => second.urgencyScore - first.urgencyScore);
+    .sort(compareRecommendations);
+}
+
+function compareRecommendations(first, second) {
+  return second.urgencyScore - first.urgencyScore ||
+    second.signals.length - first.signals.length || compareText(first.id, second.id);
 }

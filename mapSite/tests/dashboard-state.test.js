@@ -1,13 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFile } from 'node:fs/promises';
-import { normalizeView, normalizeReport, filterReports, reportSnapshotKey, bindViewTabs } from '../dashboard-state.js';
+import { normalizeReport, filterReports, reportSnapshotKey } from '../dashboard-state.js';
 
 const report = (id, fields = {}) => ({ id, latitude: 37, longitude: -122, category: 'water', severity: 'high', summary: 'Water access needed', region: { name: 'Fremont' }, ...fields });
-test('old saved links open one of the two real workspaces', () => {
-  for (const value of ['', 'map', 'data', 'explore', 'unknown']) assert.equal(normalizeView(value), 'explore');
-  for (const value of ['decisions', 'plan']) assert.equal(normalizeView(value), 'plan');
-});
 test('incoming invalid coordinates do not become map reports at zero', () => {
   for (const value of [null, undefined, '', ' ', [], false, NaN, 100]) assert.equal(normalizeReport('bad', { latitude: value, longitude: 1 }), null);
   assert.equal(normalizeReport('zero', { latitude: 0, longitude: '0', severity: 'bogus' }).severity, 'unknown');
@@ -20,18 +16,15 @@ test('search, category, urgency, and viewport filters combine without altering r
   assert.equal(reportSnapshotKey(reports), reportSnapshotKey([...reports].reverse()));
   assert.notEqual(reportSnapshotKey(reports), reportSnapshotKey([report('a', { summary: 'Changed need' })]));
 });
-test('keyboard navigation wraps between the two actual HTML tabs', async () => {
+test('map and analysis share region navigation without legacy planner or estimate controls', async () => {
   const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
-  const views = [...html.matchAll(/data-view="([^"]+)"/g)].map(match => match[1]);
-  assert.deepEqual(views, ['explore', 'plan']);
-  let selected;
-  const tabs = views.map(view => ({ dataset: { view }, handlers: {}, addEventListener(type, fn) { this.handlers[type] = fn; }, focus() { this.focused = true; } }));
-  bindViewTabs(tabs, view => { selected = view; });
-  for (const [index, key, expected] of [[0, 'ArrowLeft', 'plan'], [1, 'ArrowRight', 'explore'], [1, 'Home', 'explore'], [0, 'End', 'plan']]) {
-    tabs[index].handlers.keydown({ key, preventDefault() {} });
-    assert.equal(selected, expected);
-    assert.ok(tabs.find(tab => tab.dataset.view === expected).focused);
-  }
+  assert.doesNotMatch(html, /id="plan-view"/);
+  assert.match(html, /id="analysis-view"/);
+  assert.match(html, /id="analysis-category"/);
+  assert.match(html, /id="explore-view"/);
+  assert.doesNotMatch(html, /service-plans|planning-workspace|cost and impact|estimates|refresh-analysis/);
+  assert.match(html, /id="change-region"/);
+  assert.match(html, /id="region-search"/);
 });
 test('dashboard hooks resolve and removed staff/alert/confidence interfaces are absent', async () => {
   const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');

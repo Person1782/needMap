@@ -1,19 +1,21 @@
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import "./planning.css";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js";
 import { CustomProvider, initializeAppCheck } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app-check.js";
 import { collection, getFirestore, onSnapshot } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
 import { buildRecommendations } from "./analysis.js";
-import { analyzeWithGemini } from "./gemini-analysis.js";
-import { analysisFailureMessage } from "./analysis-status.js";
-import { createAnalysisCoordinator } from "./analysis-coordinator.js";
 import { enrichSignalsWithRegions } from "./regions.js";
 import { loadNearbyServices } from "./existing-services.js";
-import { createPlanningWorkspace } from "./planning-workspace.js";
-import { getPlanningReference } from "./planning-references.js";
-import { normalizeView, normalizeReport, filterReports, reportSnapshotKey, bindViewTabs } from "./dashboard-state.js";
+import { normalizeReport, filterReports, reportSnapshotKey } from "./dashboard-state.js";
+import { createRegionNavigation, regionContains, WORLD_REGION } from "./region-navigation.js";
+import { createRegionPicker } from "./region-picker.js";
+import { serviceIconSvg } from "./service-icons.js";
+import { ANALYSIS_CATEGORIES, categoryForReport } from "./analysis-model.js";
+import { createAnalysisWorkspace } from "./analysis-workspace.js";
+import { createReportLocationMap } from "./report-location-map.js";
+import { reviewComplaints } from "./analysis-ai.js";
+import "./analysis.css";
 
 const firebaseApp = initializeApp(firebaseConfig);
 if (import.meta.env.DEV && import.meta.env.VITE_FIREBASE_APPCHECK_DEBUG_TOKEN) {
@@ -25,92 +27,66 @@ if (import.meta.env.DEV && import.meta.env.VITE_FIREBASE_APPCHECK_DEBUG_TOKEN) {
 }
 const db = getFirestore(firebaseApp);
 const $ = (selector) => document.querySelector(selector);
-const tabs = [...document.querySelectorAll("[data-view]")];
 const status = $("#status");
 const liveDot = $("#live-dot");
-const exploreView = $("#explore-view");
-const planView = $("#plan-view");
 const reportList = $("#report-list");
 const search = $("#report-search");
 const category = $("#category-filter");
 const urgency = $("#urgency-filter");
 const viewport = $("#viewport-filter");
-const analysisStatus = $("#analysis-status");
-const progress = $("#analysis-progress");
-const refreshButton = $("#refresh-analysis");
 const mapMessage = $("#map-message");
-const map = L.map("map", { maxBounds: [[-85, -180], [85, 180]], maxBoundsViscosity: 1, minZoom: 2 }).setView([37.7749, -122.4194], 10);
+const map = L.map("map", { maxBounds: [[-85, -180], [85, 180]], maxBoundsViscosity: 1, minZoom: 2 }).setView([20, 0], 2);
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-  maxZoom: 19, noWrap: true, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>',
+  maxZoom: 19, noWrap: true, bounds: [[-85.051129, -180], [85.051129, 180]], attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>',
 }).addTo(map);
 const reportsLayer = L.layerGroup().addTo(map);
 const candidatesLayer = L.layerGroup().addTo(map);
 const servicesLayer = L.layerGroup().addTo(map);
-const regionLayer = L.layerGroup().addTo(map);
+const selectedRegionLayer = L.layerGroup().addTo(map);
 const colors = { low: "#2f8a69", medium: "#d28b27", high: "#c34e42", unknown: "#526575" };
 let reports = [];
 let recommendations = [];
-let activeView = "explore";
+let selectedRegion = WORLD_REGION;
 let snapshotKey = "";
 let regionRevision = 0;
 let regionController;
 let resolving = false;
-let firstView = true;
 let serviceRevision = 0;
 let renderFrame;
-const planner = createPlanningWorkspace({ root: $("#planning-workspace"), onShowRecommendation: showCandidate, getPlanningReference });
-
-const coordinator = createAnalysisCoordinator({
-  analyze: (batch, options) => analyzeWithGemini(firebaseApp, batch, options),
-  onUpdate(items) {
-    recommendations = items;
-    planner.updateRecommendations(items);
-    renderCandidates();
-  },
-  onProgress({ running, processed, total, analyzed, failed, error }) {
-    refreshButton.disabled = running || resolving || !recommendations.length;
-    progress.hidden = !running;
-    progress.value = total ? processed / total * 100 : 0;
-    analysisStatus.textContent = running
-      ? `Reviewing report evidence · ${processed} of ${total} service candidates complete…`
-      : failed
-        ? `${analysisFailureMessage(error)} ${analyzed} of ${total} candidates were reviewed this time; earlier or report-based evidence is retained for the others.`
-        : `Evidence reviewed for all ${total} service candidates. Select one below to build a plan.`;
-  },
-  onError(error) { console.error("NeedMap analysis:", error); },
-});
-
+let connectionFailed = false;
+let reportsReady = false;
+const analysisWorkspace = createAnalysisWorkspace({ firebaseApp, reviewComplaints, createReportMap: (container, report) => createReportLocationMap(L, container, report) });
+function updateAnalysis() {
+  analysisWorkspace.update({ region: selectedRegion, reports: regionReports(), reportsReady, connectionFailed });
+}
 function element(tag, text, className) {
   const node = document.createElement(tag);
   if (text !== undefined) node.textContent = text;
   if (className) node.className = className;
   return node;
 }
-function label(value) { return String(value || "other").replaceAll("_", " "); }
-function setView(value) {
-  activeView = normalizeView(value);
-  exploreView.hidden = activeView !== "explore";
-  planView.hidden = activeView !== "plan";
-  planner.setActive(activeView === "plan");
-  tabs.forEach((tab) => {
-    const selected = tab.dataset.view === activeView;
-    tab.classList.toggle("active", selected);
-    tab.setAttribute("aria-selected", String(selected));
-    tab.tabIndex = selected ? 0 : -1;
-  });
-  const hash = `#${activeView}`;
-  if (window.location.hash !== hash) window.history.replaceState(null, "", hash);
-  if (activeView === "explore") requestAnimationFrame(() => map.invalidateSize());
-  else if (!resolving) coordinator.run();
+function label(value) { return ANALYSIS_CATEGORIES.find((entry) => entry.id === value)?.label || String(value || "other").replaceAll("_", " "); }
+function iconElement(category, detail) {
+  const icon = element("span", undefined, "service-icon");
+  icon.setAttribute("aria-hidden", "true");
+  // Only fixed, locally defined SVG paths are inserted; report text is never HTML.
+  icon.innerHTML = serviceIconSvg(category, detail);
+  return icon;
+}
+function regionReports() {
+  return reports.filter((report) => regionContains(selectedRegion, report.latitude, report.longitude))
+    .map((report) => ({ ...report, category: categoryForReport(report) }));
 }
 function reportPopup(report) {
   const content = element("div", undefined, "report-popup");
-  content.append(element("strong", label(report.category)), element("p", report.summary), element("small", `${label(report.severity)} urgency · ${report.region?.name || "Region loading"} · Approximate location`));
+  const heading = element("strong", undefined, "service-heading");
+  heading.append(iconElement(report.category), element("span", label(report.category)));
+  content.append(heading, element("p", report.summary), element("small", `${label(report.severity)} urgency · ${report.region?.name || "Approximate map area"} · Approximate location`));
   return content;
 }
 function selectedReports() {
   const bounds = map.getBounds();
-  return filterReports(reports, {
+  return filterReports(regionReports(), {
     query: search.value, category: category.value, urgency: urgency.value,
     contains: viewport.checked ? (report) => bounds.contains([report.latitude, report.longitude]) : undefined,
   });
@@ -119,16 +95,19 @@ function renderReports() {
   const selected = selectedReports();
   $("#report-count").textContent = selected.length;
   $("#urgent-count").textContent = selected.filter((report) => report.severity === "high").length;
-  $("#report-scope").textContent = `${selected.length} of ${reports.length} reports${viewport.checked ? " in this map area" : " across all regions"}.`;
+  $("#report-scope").textContent = `${selected.length} of ${regionReports().length} reports in ${selectedRegion.name}${viewport.checked ? " · limited to the map area" : ""}.`;
   reportsLayer.clearLayers();
   reportList.replaceChildren();
   if (!selected.length) reportList.append(element("p", reports.length ? "No reports match these filters." : "Community reports will appear here when they arrive.", "empty-state"));
   selected.forEach((report) => {
-    const marker = L.circleMarker([report.latitude, report.longitude], { radius: 7, weight: 2, color: "#fff", fillColor: colors[report.severity], fillOpacity: .92 }).bindPopup(() => reportPopup(report)).addTo(reportsLayer);
+    const icon = L.divIcon({ className: "", html: `<span class="report-marker" style="background:${colors[report.severity] || colors.unknown}" aria-hidden="true">${serviceIconSvg(report.category)}</span>`, iconSize: [26, 26], iconAnchor: [13, 13] });
+    L.marker([report.latitude, report.longitude], { icon, title: `${label(report.category)} · ${label(report.severity)} urgency` }).bindPopup(() => reportPopup(report)).addTo(reportsLayer);
     const card = element("button", undefined, "report-card");
     card.type = "button";
     const heading = element("span", undefined, "report-card-heading");
-    heading.append(element("strong", label(report.category)), element("span", label(report.severity), `urgency-tag ${report.severity}`));
+    const title = element("strong", undefined, "service-heading");
+    title.append(iconElement(report.category), element("span", label(report.category)));
+    heading.append(title, element("span", label(report.severity), `urgency-tag ${report.severity}`));
     card.append(heading, element("span", report.summary || "No description provided.", "report-copy"), element("small", report.region?.name || "Locating region…"));
     card.addEventListener("click", () => {
       map.setView([report.latitude, report.longitude], 14);
@@ -140,39 +119,27 @@ function renderReports() {
 }
 function refreshCategories() {
   const previous = category.value;
-  const categories = [...new Set(reports.map((report) => report.category))].sort();
+  const categories = [...new Set(regionReports().map((report) => report.category))].sort();
   category.replaceChildren(new Option("All services", "all"), ...categories.map((name) => new Option(label(name), name)));
   category.value = categories.includes(previous) ? previous : "all";
 }
 function candidatePopup(candidate) {
   const content = element("div", undefined, "report-popup");
-  content.append(element("strong", candidate.analysis.facilityType), element("p", candidate.analysis.decisionSummary || candidate.analysis.rationale));
-  const plan = element("button", "Build a plan", "primary-button");
-  plan.type = "button";
-  plan.addEventListener("click", () => { planner.selectRecommendation(candidate.id); setView("plan"); });
+  const heading = element("strong", undefined, "service-heading");
+  heading.append(iconElement(candidate.category, candidate.analysis.facilityType), element("span", candidate.analysis.facilityType));
+  content.append(heading, element("p", `Suggested location ${candidate.locationRank || 1} of ${candidate.locationCount || 1} · ${candidate.signals.length} supporting reports`), element("p", candidate.analysis.decisionSummary || candidate.analysis.rationale));
   const services = element("button", "Find nearby existing services", "text-button");
   services.type = "button";
   services.addEventListener("click", () => showServices(candidate));
-  content.append(plan, services);
+  content.append(element("small", "Report-based suggestions ranked by urgency and demand. Local site checks are still needed."), services);
   return content;
 }
 function renderCandidates() {
   candidatesLayer.clearLayers();
   recommendations.forEach((candidate) => {
-    const icon = L.divIcon({ className: "", html: '<span class="candidate-marker" aria-hidden="true">✦</span>', iconSize: [30, 30], iconAnchor: [15, 15] });
-    L.marker([candidate.position.latitude, candidate.position.longitude], { icon, title: candidate.analysis.facilityType }).bindPopup(() => candidatePopup(candidate)).addTo(candidatesLayer);
-  });
-}
-function showCandidate(candidate) {
-  setView("explore");
-  regionLayer.clearLayers();
-  if (candidate.region?.geometry) L.geoJSON(candidate.region.geometry, { style: { color: "#005ea8", weight: 2, fillOpacity: .07 } }).addTo(regionLayer);
-  $("#layer-candidates").checked = true;
-  candidatesLayer.addTo(map);
-  regionLayer.addTo(map);
-  requestAnimationFrame(() => {
-    map.setView([candidate.position.latitude, candidate.position.longitude], 13);
-    L.popup().setLatLng([candidate.position.latitude, candidate.position.longitude]).setContent(candidatePopup(candidate)).openOn(map);
+    const rank = [1, 2, 3].includes(candidate.locationRank) ? candidate.locationRank : 1;
+    const icon = L.divIcon({ className: "", html: `<span class="candidate-marker" aria-hidden="true">${serviceIconSvg(candidate.category, candidate.analysis.facilityType)}<b>${rank}</b></span>`, iconSize: [36, 36], iconAnchor: [18, 18] });
+    L.marker([candidate.position.latitude, candidate.position.longitude], { icon, title: `${candidate.analysis.facilityType} · suggested location ${rank}` }).bindPopup(() => candidatePopup(candidate)).addTo(candidatesLayer);
   });
 }
 async function showServices(candidate) {
@@ -194,20 +161,18 @@ async function showServices(candidate) {
   }
 }
 function updateCandidates() {
-  const candidates = buildRecommendations(reports);
-  coordinator.replace(candidates);
-  refreshButton.disabled = resolving || !candidates.length;
-  analysisStatus.textContent = candidates.length
-    ? `${candidates.length} report-based service candidates are ready. Evidence review runs when you open Plan.`
-    : resolving ? "Finding the regions for community reports…" : "A service candidate needs at least two reports in the same region and category.";
-  progress.hidden = true;
-  if (activeView === "plan" && !resolving && candidates.length) coordinator.run();
+  const scoped = regionReports();
+  // An explicitly selected boundary defines the service-planning area.
+  const candidates = buildRecommendations(selectedRegion.geometry ? scoped.map((report) => ({ ...report, region: selectedRegion })) : scoped);
+  recommendations = candidates;
+  renderCandidates();
+  const candidateStatus = $("#candidate-status");
+  candidateStatus.textContent = candidates.length
+    ? `${candidates.length} proposed service locations. Numbered icons show up to three locations per service.`
+    : resolving && !selectedRegion.geometry ? "Finding locations for proposed services…" : "Proposed services need at least two reports in the same region and category.";
+  if (connectionFailed) candidateStatus.textContent += " Reports may be out of date while the connection is unavailable.";
 }
 
-bindViewTabs(tabs, setView);
-window.addEventListener("hashchange", () => setView(window.location.hash.slice(1)));
-$("#open-plan").addEventListener("click", () => setView("plan"));
-refreshButton.addEventListener("click", () => coordinator.run({ force: true }));
 [search, category, urgency, viewport].forEach((control) => control.addEventListener("input", renderReports));
 $("#fit-reports").addEventListener("click", () => {
   viewport.checked = false;
@@ -217,7 +182,7 @@ $("#fit-reports").addEventListener("click", () => {
 });
 $("#layer-reports").addEventListener("change", (event) => event.target.checked ? reportsLayer.addTo(map) : reportsLayer.removeFrom(map));
 $("#layer-candidates").addEventListener("change", (event) => {
-  [candidatesLayer, regionLayer].forEach((layer) => event.target.checked ? layer.addTo(map) : layer.removeFrom(map));
+  event.target.checked ? candidatesLayer.addTo(map) : candidatesLayer.removeFrom(map);
 });
 map.on("moveend zoomend", () => { if (viewport.checked) renderReports(); });
 const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => {
@@ -225,34 +190,76 @@ const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserv
   renderFrame = requestAnimationFrame(() => map.invalidateSize({ pan: false }));
 });
 observer?.observe($("#map"));
-setView(window.location.hash.slice(1));
+if (["#plan", "#decisions"].includes(window.location.hash)) window.history.replaceState(null, "", "#explore-view");
+function showPage() {
+  const analyzing = window.location.hash.startsWith("#analysis");
+  // Preserve the current Analysis view when the skip link targets it.
+  if (analyzing && !$("#analysis-view").hidden) return;
+  $("#explore-view").hidden = analyzing;
+  $("#analysis-view").hidden = !analyzing;
+  for (const [id, active] of [["#map-tab", !analyzing], ["#analysis-tab", analyzing]]) {
+    if (active) $(id).setAttribute("aria-current", "page"); else $(id).removeAttribute("aria-current");
+  }
+  document.querySelector(".skip-link").href = analyzing ? "#analysis-view" : "#explore-view";
+  document.querySelector(".skip-link").textContent = analyzing ? "Skip to analysis" : "Skip to map and reports";
+  document.title = analyzing ? "NeedMap | Regional Analysis" : "NeedMap | Community Map";
+  updateAnalysis(); analysisWorkspace.setVisible(analyzing);
+  if (!analyzing) requestAnimationFrame(() => map.invalidateSize({ pan: false }));
+}
+window.addEventListener("hashchange", showPage);
+showPage();
+
+const regionNavigation = createRegionNavigation({
+  onChange(region) {
+    selectedRegion = region;
+    serviceRevision += 1;
+    servicesLayer.clearLayers();
+    selectedRegionLayer.clearLayers();
+    map.closePopup();
+    mapMessage.hidden = true;
+    viewport.checked = false;
+    $("#current-region").textContent = region.label || region.name;
+    $("#map-region-label").textContent = region.name === "Worldwide" ? "Worldwide community map" : region.name;
+    if (region.geometry) L.geoJSON(region.geometry, { style: { color: "#005ea8", weight: 2, fillOpacity: .025 }, interactive: false }).addTo(selectedRegionLayer);
+    if (region.bounds) map.fitBounds(region.bounds, { padding: [35, 35], maxZoom: 11, animate: false });
+    else map.setView([20, 0], 2, { animate: false });
+    refreshCategories();
+    renderReports();
+    updateCandidates();
+    updateAnalysis();
+    regionPicker.close();
+  },
+  onStatus({ state, message }) {
+    $("#region-status").textContent = message;
+    $("#region-action-status").textContent = message;
+    $("#region-action-status").hidden = state === "ready";
+  },
+});
+const regionPicker = createRegionPicker({ navigation: regionNavigation });
+regionNavigation.initialize();
 
 const unsubscribe = onSnapshot(collection(db, "incomingSignals"), (snapshot) => {
+  reportsReady = true;
+  connectionFailed = false;
   const incoming = [];
   snapshot.forEach((document) => { const report = normalizeReport(document.id, document.data()); if (report) incoming.push(report); });
   const nextKey = reportSnapshotKey(incoming);
-  if (nextKey === snapshotKey) return;
+  if (nextKey === snapshotKey) { updateAnalysis(); return; }
   snapshotKey = nextKey;
   regionController?.abort();
   regionController = new AbortController();
   const revision = ++regionRevision;
   serviceRevision += 1;
   servicesLayer.clearLayers();
-  regionLayer.clearLayers();
   mapMessage.hidden = true;
   reports = incoming;
   resolving = reports.length > 0;
-  planner.updateSignals(reports);
   refreshCategories();
   renderReports();
   updateCandidates();
+  updateAnalysis();
   liveDot.className = "live-dot connected";
   status.textContent = resolving ? `Finding regions · 0/${reports.length}` : "Live · no reports yet";
-  if (firstView && reports.length) {
-    const median = (values) => [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)];
-    map.setView([median(reports.map((report) => report.latitude)), median(reports.map((report) => report.longitude))], 10, { animate: false });
-    firstView = false;
-  }
   if (!reports.length) return;
   enrichSignalsWithRegions(reports, {
     signal: regionController.signal,
@@ -263,7 +270,6 @@ const unsubscribe = onSnapshot(collection(db, "incomingSignals"), (snapshot) => 
     resolving = false;
     const missing = reports.filter((report) => !report.region).length;
     status.textContent = missing ? `Live · ${missing} region${missing === 1 ? "" : "s"} unavailable` : `Live · ${reports.length} reports`;
-    planner.updateSignals(reports);
     renderReports();
     updateCandidates();
   }).catch((error) => {
@@ -277,15 +283,15 @@ const unsubscribe = onSnapshot(collection(db, "incomingSignals"), (snapshot) => 
   console.error("NeedMap report connection:", error);
   regionController?.abort();
   regionRevision += 1;
-  coordinator.destroy();
   resolving = false;
-  refreshButton.disabled = true;
-  progress.hidden = true;
+  connectionFailed = true;
   status.textContent = "Connection unavailable · reload to reconnect";
   liveDot.className = "live-dot error";
-  analysisStatus.textContent = "The live connection is unavailable. Any visible reports and plans may be out of date.";
+  updateCandidates();
+  updateAnalysis();
 });
 window.addEventListener("pagehide", (event) => {
   if (event.persisted) return;
-  unsubscribe(); regionController?.abort(); coordinator.destroy(); planner.destroy(); observer?.disconnect();
+  unsubscribe(); regionController?.abort(); regionNavigation.destroy(); regionPicker.destroy(); observer?.disconnect(); analysisWorkspace.destroy();
+  window.removeEventListener("hashchange", showPage);
 });
