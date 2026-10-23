@@ -2,156 +2,97 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta
-      name="description"
-      content="NeedMap Community is a lightweight anonymous service-access reporting form."
-    />
-    <title>NeedMap Community</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Share an anonymous service-access concern with NeedMap. A small, text-only form for slow connections." />
+    <meta name="theme-color" content="#15344a" />
+    <title>Report a concern | NeedMap Community</title>
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
-
   <body>
-    <main class="page-shell">
-      <section class="form-card" aria-labelledby="page-title">
-        <div class="brand-row">
-          <span class="brand-mark" aria-hidden="true">N</span>
-          <span class="brand-name">NeedMap Community</span>
-        </div>
-
-        <p class="eyebrow">Anonymous community signal</p>
-
-        <h1 id="page-title">Share a service-access concern</h1>
-
-        <p class="intro">
-          Help local organizations understand possible access needs in your
-          community. This form is not for emergencies.
-        </p>
-
-        <aside class="emergency-note" aria-label="Emergency notice">
-          <strong>Emergency?</strong> Call your local emergency number now.
-          NeedMap cannot provide emergency help.
-        </aside>
-
-        <aside class="privacy-note" aria-label="Privacy information">
-          <strong>Demo privacy notice.</strong> Do not include your name,
-          address, phone number, email, medical diagnosis, or personal
-          emergency details. For this pitch demo, map coordinates may be
-          entered manually or approximated from your device.
-        </aside>
-
-        <form id="signal-form" novalidate>
-          <label for="category">What type of concern is this?</label>
-          <select id="category" name="category" required>
-            <option value="">Choose a category</option>
-            <option value="healthcare">Healthcare or pharmacy access</option>
-            <option value="water">Water or sanitation</option>
-            <option value="transportation">Transportation access</option>
-            <option value="emergency_response">Emergency-response access</option>
-            <option value="food">Food access</option>
-            <option value="broadband">Internet or broadband access</option>
-            <option value="other">Other essential service</option>
-          </select>
-
-          <label for="severity">How urgent does this seem?</label>
-          <select id="severity" name="severity" required>
-            <option value="">Choose urgency</option>
-            <option value="low">Low — ongoing concern</option>
-            <option value="medium">Medium — affects access regularly</option>
-            <option value="high">High — needs timely follow-up</option>
-          </select>
-
-          <label>Location for the demo map</label>
-
-          <button
-            id="location-button"
-            class="secondary-button"
-            type="button"
-          >
-            Use my approximate map area
-          </button>
-
-          <p
-            id="location-status"
-            class="location-status"
-            role="status"
-            aria-live="polite"
-          >
-            Optional: Use your approximate map area, or enter demo coordinates
-            manually below.
-          </p>
-
-          <div class="coordinate-grid">
-            <div>
-              <label for="latitude">Demo latitude</label>
-              <input
-                id="latitude"
-                name="latitude"
-                type="number"
-                inputmode="decimal"
-                step="any"
-                min="-90"
-                max="90"
-                placeholder="Example: 37.7749"
-              />
-            </div>
-
-            <div>
-              <label for="longitude">Demo longitude</label>
-              <input
-                id="longitude"
-                name="longitude"
-                type="number"
-                inputmode="decimal"
-                step="any"
-                min="-180"
-                max="180"
-                placeholder="Example: -122.4194"
-              />
-            </div>
-          </div>
-
-          <p class="field-help">
-            For this demo, enter latitude and longitude to place the report on
-            the dashboard map. Do not enter a home address or someone else’s
-            precise location.
-          </p>
-
-          <label for="summary">
-            Brief description
-          </label>
-
-          <textarea
-            id="summary"
-            name="summary"
-            rows="4"
-            maxlength="280"
-            required
-            placeholder="Example: Difficulty reaching a pharmacy during evening hours."
-          ></textarea>
-
-          <p class="field-help">
-            Please do not include names, addresses, phone numbers, emails, or
-            details that could identify a person.
-          </p>
-
-          <button type="submit">Submit anonymous signal</button>
-
-          <p
-            id="form-status"
-            class="form-status"
-            role="status"
-            aria-live="polite"
-          ></p>
+    <a class="skip-link" href="#main-content">Skip to report form</a>
+    <div class="demo-banner">Demonstration · Not an official government service</div>
+    <header class="site-header"><div class="header-inner"><a class="brand" href="./">NeedMap</a><span class="brand-subtitle">Community reporting</span><span class="lite-tag">Low-data form</span></div></header>
+    <main class="page-shell" id="main-content" tabindex="-1">
+      <p class="eyebrow">A concern today. Better planning tomorrow.</p>
+      <h1>What could be easier to reach?</h1>
+      <p class="intro">Tell us about a service your community needs. No account, photos or downloads required.</p>
+      <p class="privacy-note"><strong>Keep it anonymous.</strong> Reports are public. Leave out names, contact details, home addresses and medical information. Locations are rounded to an approximate map area.</p>
+      <section class="form-card" aria-labelledby="form-heading">
+        <h2 id="form-heading">Your community report</h2>
+        <p class="field-help">All three sections are required. This form submits demonstration data.</p>
+        <noscript><p class="notice">JavaScript is needed to send a report. Enable it and reload this page. The form uses a small script without any large libraries.</p></noscript>
+        <p id="loading-status" class="notice" role="status">Loading the form. If this message remains, reload when your connection improves or try another browser.</p>
+        <p id="connection-status" class="notice" role="status" hidden>You are offline. You can keep writing. Reconnect and select Submit report when ready.</p>
+        <form id="signal-form" method="post" novalidate>
+          <div id="error-summary" class="error-summary" tabindex="-1" aria-labelledby="error-heading" hidden><h3 id="error-heading">Check the following fields</h3><ul id="error-list"></ul></div>
+          <fieldset id="form-fields" class="form-fields">
+            <legend class="sr-only">Report details</legend>
+            <section class="form-section" aria-labelledby="concern-heading">
+              <h3 id="concern-heading"><span>01</span> Service concern</h3>
+              <label for="category">Service category</label>
+              <select id="category" name="category" aria-describedby="category-error" required>
+                <option value="">Select a service</option>
+                <option value="healthcare">Healthcare or pharmacy</option>
+                <option value="water">Water or sanitation</option>
+                <option value="transportation">Transportation</option>
+                <option value="emergency_response">Emergency-response access</option>
+                <option value="food">Food access</option>
+                <option value="broadband">Internet or broadband</option>
+                <option value="other">Other essential service</option>
+              </select>
+              <p class="field-error" id="category-error"></p>
+              <label for="severity">How much does this affect access?</label>
+              <select id="severity" name="severity" aria-describedby="severity-help severity-error" required>
+                <option value="">Select an urgency level</option>
+                <option value="low">Low — an ongoing concern</option>
+                <option value="medium">Medium — regularly affects access</option>
+                <option value="high">High — needs timely review</option>
+              </select>
+              <p class="field-help" id="severity-help">For planning only. Reports do not trigger an emergency response.</p>
+              <p class="field-error" id="severity-error"></p>
+            </section>
+            <section class="form-section" aria-labelledby="location-heading">
+              <h3 id="location-heading"><span>02</span> Approximate location</h3>
+              <p class="field-help" id="location-help">Near the concern? Let your phone find the area. Your precise location stays on your device. Device accuracy may vary.</p>
+              <button id="location-button" class="secondary-button" type="button" aria-describedby="location-help location-error">Use my location</button>
+              <button id="clear-location" class="text-button" type="button">Clear location</button>
+              <p id="location-status" class="location-status" role="status" aria-live="polite">No location added yet.</p>
+              <p id="location-error" class="field-error"></p>
+              <div class="place-search">
+                <label for="place-query">Or find a nearby town or neighbourhood</label>
+                <p class="field-help" id="place-help">Include the region or country. Search selects the approximate centre of a place. Search text goes to OpenStreetMap; it is not included in your report. Avoid home addresses.</p>
+                <input id="place-query" type="search" maxlength="120" autocomplete="off" placeholder="Town, region or country" aria-describedby="place-help" data-search-url="https://nominatim.openstreetmap.org/search" />
+                <button id="place-search-button" class="secondary-button" type="button">Find place</button>
+                <p id="place-search-status" class="field-help" role="status" aria-live="polite"></p>
+                <ul id="place-results" class="place-results" aria-label="Matching places"></ul>
+                <p class="attribution">Place search: <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</a>.</p>
+              </div>
+            </section>
+            <section class="form-section" aria-labelledby="description-heading">
+              <h3 id="description-heading"><span>03</span> Describe the concern</h3>
+              <label for="summary">What makes the service hard to reach?</label>
+              <p class="field-help" id="summary-help">Use general details, without personal information. Maximum 280 characters.</p>
+              <textarea id="summary" name="summary" rows="4" maxlength="280" aria-describedby="summary-help summary-error" required placeholder="The nearest pharmacy is hard to reach by bus in the evening."></textarea>
+              <p class="field-error" id="summary-error"></p>
+              <p class="character-count" id="summary-count">0 / 280</p>
+            </section>
+            <p id="draft-status" class="field-help" role="status">Your draft is saved on this phone for 7 days. Clear form removes it. Nothing is sent until you submit.</p>
+            <div class="submit-actions"><button id="submit-button" type="submit" disabled>Submit report</button><button class="text-button" type="reset">Clear form</button></div>
+            <p class="field-help">Your report will be publicly visible in the demonstration workspace. It does not request a direct response.</p>
+          </fieldset>
+          <p id="form-status" class="form-status" role="status" aria-live="polite" aria-atomic="true" tabindex="-1"></p>
         </form>
-
-        <p class="footer-note">
-          This is a synthetic pitch demonstration. Reports identify possible
-          areas for review, not confirmed service gaps.
-        </p>
       </section>
+      <p class="emergency-note"><strong>Need emergency help?</strong> Contact your local emergency service. This form is not monitored for emergencies.</p>
     </main>
-
-    <script type="module" src="./app.js"></script>
+    <footer class="site-footer">NeedMap Community · Better-informed community planning</footer>
+    <!-- form-scripts-start -->
+    <script defer src="./firebase-config.js"></script>
+    <script defer src="./form-model.js"></script>
+    <script defer src="./firebase-submit.js"></script>
+    <script defer src="./place-search.js"></script>
+    <script defer src="./app.js"></script>
+    <!-- form-scripts-end -->
   </body>
 </html>

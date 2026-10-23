@@ -1,5 +1,5 @@
 const DEFAULT_ENDPOINT = "https://overpass-api.de/api/interpreter";
-const CACHE_PREFIX = "needmap.services.v2:";
+const CACHE_PREFIX = "needmap.services.v3:";
 const CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 25000;
 
@@ -43,16 +43,18 @@ const CATEGORY_FILTERS = {
 };
 
 function validCoordinate(value, minimum, maximum) {
+  if ((typeof value !== "number" && typeof value !== "string") ||
+      (typeof value === "string" && !value.trim())) return null;
   const number = Number(value);
   return Number.isFinite(number) && number >= minimum && number <= maximum
     ? number
     : null;
 }
 
-function cacheKey(category, latitude, longitude, radiusMeters) {
+function cacheKey(category, latitude, longitude, radiusMeters, endpoint) {
   // Four decimals keeps candidates roughly 11 m apart at the equator. A coarser
   // key can incorrectly reuse services from a different neighborhood.
-  return `${CACHE_PREFIX}${category}:${latitude.toFixed(4)}:${longitude.toFixed(4)}:${radiusMeters}`;
+  return `${CACHE_PREFIX}${endpoint}:${category}:${latitude.toFixed(4)}:${longitude.toFixed(4)}:${radiusMeters}`;
 }
 
 function readCache(key) {
@@ -60,7 +62,10 @@ function readCache(key) {
     const entry = JSON.parse(localStorage.getItem(key));
     if (!entry || !Number.isFinite(entry.savedAt) || entry.savedAt > Date.now() ||
         Date.now() - entry.savedAt > CACHE_MAX_AGE_MS ||
-        !Array.isArray(entry.services)) return null;
+        !Array.isArray(entry.services) || !entry.services.every((service) =>
+          service && validCoordinate(service.latitude, -90, 90) !== null &&
+          validCoordinate(service.longitude, -180, 180) !== null &&
+          typeof service.id === "string" && typeof service.name === "string")) return null;
     return entry.services;
   } catch {
     return null;
@@ -82,7 +87,8 @@ export function buildOverpassQuery(category, latitude, longitude, radiusMeters =
   if (lat === null || lon === null) {
     throw new TypeError("A valid candidate coordinate is required.");
   }
-  const filters = CATEGORY_FILTERS[category] || CATEGORY_FILTERS.other;
+  const filters = Object.hasOwn(CATEGORY_FILTERS, category)
+    ? CATEGORY_FILTERS[category] : CATEGORY_FILTERS.other;
   const statements = filters.flatMap((filter) => [
     `node(around:${radius},${lat},${lon})${filter};`,
     `way(around:${radius},${lat},${lon})${filter};`,
@@ -102,6 +108,8 @@ export function parseOverpassServices(payload) {
   const seen = new Set();
   return payload.elements.flatMap((element) => {
     if (!element || typeof element !== "object") return [];
+    if (!["node", "way", "relation"].includes(element.type) ||
+        !Number.isSafeInteger(element.id) || element.id <= 0) return [];
     const latitude = validCoordinate(element.lat ?? element.center?.lat, -90, 90);
     const longitude = validCoordinate(element.lon ?? element.center?.lon, -180, 180);
     if (latitude === null || longitude === null) return [];
@@ -138,7 +146,8 @@ export async function loadNearbyServices(
   if (latitude === null || longitude === null) {
     throw new TypeError("The recommendation does not have a valid position.");
   }
-  const category = recommendation.category || "other";
+  const category = Object.hasOwn(CATEGORY_FILTERS, recommendation.category)
+    ? recommendation.category : "other";
   const radius = Math.round(Math.max(250, Math.min(20000, Number(radiusMeters) || 5000)));
   let endpointUrl;
   try {
@@ -149,7 +158,7 @@ export async function loadNearbyServices(
   if (!["https:", "http:"].includes(endpointUrl.protocol)) {
     throw new TypeError("The OpenStreetMap service endpoint must use HTTP or HTTPS.");
   }
-  const key = cacheKey(category, latitude, longitude, radius);
+  const key = cacheKey(category, latitude, longitude, radius, endpointUrl.href);
   const cached = force ? null : readCache(key);
   if (cached) return { services: cached, source: "cache", radiusMeters: radius };
 
@@ -180,6 +189,11 @@ export async function loadNearbyServices(
       payload = await response.json();
     } catch {
       throw new Error("OpenStreetMap returned an unreadable service response.");
+    }
+    if (!payload || !Array.isArray(payload.elements) || payload.remark) {
+      // Overpass can return HTTP 200 with a timeout or memory-limit remark.
+      // Never record incomplete results as an absence of nearby services.
+      throw new Error("The service inventory could not be completed. Try again shortly.");
     }
     const services = parseOverpassServices(payload);
     writeCache(key, services);

@@ -8,12 +8,16 @@ const MAX_SUMMARY_LENGTH = 500;
 const MAX_DETAIL_LENGTH = 900;
 const MAX_LIST_ITEM_LENGTH = 320;
 const MAX_LIST_ITEMS = 6;
-const MODEL_NAMES = ["gemini-3.8-flash", "gemini-3.1-flash-lite"];
+const ANALYSIS_TIMEOUT_MS = 60000;
+const MODEL_NAMES = ["gemini-3.8-flash", "gemini-3.5-flash-lite"];
 
 function cleanText(value, maximumLength) {
   if (typeof value !== "string") return "";
-
-  return value.trim().replaceAll(/\s+/g, " ").slice(0, maximumLength);
+  const text = value.trim().replaceAll(/\s+/g, " ");
+  if (text.length <= maximumLength) return text;
+  const clipped = text.slice(0, maximumLength - 1);
+  const lastSpace = clipped.lastIndexOf(" ");
+  return `${lastSpace > maximumLength * 0.75 ? clipped.slice(0, lastSpace) : clipped}…`;
 }
 
 const DATA_MARKER = "NEEDMAP_DATA:";
@@ -142,7 +146,6 @@ function normalizeInsight(insight, candidate, reportCatalog) {
   const decisionSummary = cleanText(insight.decisionSummary, MAX_DETAIL_LENGTH);
   const needAnalysis = cleanText(insight.needAnalysis, MAX_DETAIL_LENGTH);
   const placementRationale = cleanText(insight.placementRationale, MAX_DETAIL_LENGTH);
-  const confidence = Number(insight.confidence);
   const evidence = normalizeEvidence(insight.evidence, reportCatalog);
   const allowedPriorities = new Set(["critical", "high", "medium", "emerging"]);
   const requestedPriority = cleanText(insight.priority, 20).toLowerCase();
@@ -152,8 +155,7 @@ function normalizeInsight(insight, candidate, reportCatalog) {
     !decisionSummary ||
     !needAnalysis ||
     !placementRationale ||
-    !Number.isFinite(confidence) ||
-    (candidate.reports.length && !evidence.length)
+    evidence.length < Math.min(2, candidate.reports.length)
   ) return null;
 
   return {
@@ -184,7 +186,6 @@ function normalizeInsight(insight, candidate, reportCatalog) {
         totalReports: candidate.reportCount,
       },
     ),
-    confidence: Math.min(1, Math.max(0, confidence)),
     source: "Gemini",
   };
 }
@@ -207,11 +208,101 @@ function validateSummaryCitations(summary, candidates) {
   return summary;
 }
 
-export async function analyzeWithGemini(firebaseApp, recommendations, { onText } = {}) {
+function validateModelResult(generatedText, recommendations, candidates, reportCatalogs) {
+  if (!generatedText.trim()) throw new Error("The analysis response was empty.");
+  const { summary, payload } = parseModelOutput(generatedText);
+  if (!summary || !Array.isArray(payload?.recommendations)) {
+    throw new Error("The analysis response was incomplete.");
+  }
+  validateSummaryCitations(summary, candidates);
+  const rawInsights = new Map();
+  const expectedIds = new Set(recommendations.map((recommendation) => recommendation.id));
+  for (const insight of payload.recommendations) {
+    if (!insight || !expectedIds.has(insight.candidateId) || rawInsights.has(insight.candidateId)) {
+      throw new Error("The analysis response did not match the requested locations.");
+    }
+    rawInsights.set(insight.candidateId, insight);
+  }
+  const results = recommendations.map((recommendation, index) => {
+    const analysis = normalizeInsight(rawInsights.get(recommendation.id), candidates[index], reportCatalogs[index]);
+    if (!analysis) throw new Error("The analysis response was missing supported report evidence.");
+    return { ...recommendation, analysis };
+  });
+  return { recommendations: results, summary };
+}
+
+function isModelScopedQuotaFailure(error, modelName) {
+  const details = error?.customErrorData?.errorDetails;
+  if (!Array.isArray(details)) return false;
+  const quotaFailures = details.filter(
+    (detail) => detail?.["@type"] === "type.googleapis.com/google.rpc.QuotaFailure",
+  );
+  return quotaFailures.length > 0 && quotaFailures.every((failure) =>
+    Array.isArray(failure.violations) && failure.violations.length > 0 &&
+    failure.violations.every((violation) => violation?.quotaDimensions?.model === modelName));
+}
+
+async function readModelResponse(model, prompt, { onText, modelName, signal }) {
+  signal?.throwIfAborted();
+  const requestController = new AbortController();
+  let active = true;
+  let timeout;
+  let abort;
+  const stopped = new Promise((_, reject) => {
+    const stop = (error) => {
+      requestController.abort(error);
+      reject(error);
+    };
+    timeout = setTimeout(() => stop(new Error("Detailed analysis timed out.")), ANALYSIS_TIMEOUT_MS);
+    abort = () => stop(signal.reason || new DOMException("Analysis cancelled.", "AbortError"));
+    signal?.addEventListener("abort", abort, { once: true });
+  });
+  const response = (async () => {
+    const result = await model.generateContentStream(prompt, {
+      signal: requestController.signal,
+      timeout: ANALYSIS_TIMEOUT_MS,
+    });
+    const aggregateResponse = result.response ? Promise.resolve(result.response) : null;
+    // The SDK reads an aggregate response alongside the stream. Observe it even
+    // when cancellation wins before the SDK returns, then propagate it below.
+    aggregateResponse?.catch(() => {});
+    if (!active) return "";
+    const streamText = (async () => {
+      let text = "";
+      onText?.("", { reset: true, modelName });
+      for await (const chunk of result.stream) {
+        if (!active) break;
+        const content = chunk.text();
+        if (!content) continue;
+        text += content;
+        onText?.(content, { modelName });
+      }
+      return text;
+    })();
+    const [text, finalResponse] = await Promise.all([streamText, aggregateResponse]);
+    if (!active) return "";
+    return typeof finalResponse?.text === "function" ? finalResponse.text() : text;
+  })();
+  try {
+    return await Promise.race([response, stopped]);
+  } finally {
+    active = false;
+    clearTimeout(timeout);
+    signal?.removeEventListener("abort", abort);
+    requestController.abort();
+  }
+}
+
+export async function analyzeWithGemini(firebaseApp, recommendations, {
+  onText, signal, candidateOffset = 0,
+} = {}) {
+  signal?.throwIfAborted();
+  if (!recommendations.length) return { recommendations: [], summary: "" };
   const ai = getAI(firebaseApp, { backend: new GoogleAIBackend() });
-  const reportCatalogs = recommendations.map(buildReportCatalog);
+  const reportCatalogs = recommendations.map((recommendation, index) =>
+    buildReportCatalog(recommendation, candidateOffset + index));
   const candidates = recommendations.map((recommendation, index) =>
-    candidatePayload(recommendation, index, reportCatalogs[index]));
+    candidatePayload(recommendation, candidateOffset + index, reportCatalogs[index]));
   const prompt = [
     "You are a civic-needs analyst helping a community map.",
     "For every candidate below, identify the single most appropriate service or facility and produce a detailed, decision-ready assessment.",
@@ -221,72 +312,43 @@ export async function analyzeWithGemini(firebaseApp, recommendations, { onText }
     "Do not invent demographic facts that are null or missing.",
     "Do not use or infer identities, addresses, coordinates, or personal details.",
     "Distinguish observed report evidence from planning judgments. Do not claim that reports prove total population demand.",
+    "Describe uncertainty through evidence limits and missing information; do not assign a numerical certainty score.",
     "Cite evidence using only the supplied evidenceId values, such as [C1-R1]. Never invent a citation, report, statistic, or quote.",
     "Return exactly two sections in this order:",
     "NEEDMAP_SUMMARY:",
     "A public-facing briefing organized with short headings and bullet points: Placement overview, Regional recommendations, Evidence, and Uncertainties. Make it easy to scan rather than a large paragraph. Cite material claims with supplied labels. Explain conclusions without exposing private chain-of-thought or hidden step-by-step reasoning.",
     "NEEDMAP_DATA:",
     "Then provide valid JSON with this exact shape:",
-    '{"recommendations":[{"candidateId":"string","facilityType":"string","priority":"critical|high|medium|emerging","decisionSummary":"clear recommendation and central finding","needAnalysis":"detailed synthesis of the reported need","placementRationale":"why this region and the urgency-weighted placement method fit the evidence","serviceComponents":["specific capability"],"expectedImpact":["measurable or observable outcome"],"implementationSteps":["practical next step"],"risksAndMitigations":[{"risk":"constraint or uncertainty","mitigation":"how to validate or reduce it"}],"limitations":["evidence limitation"],"confidence":0.0,"evidence":[{"evidenceId":"exact supplied evidenceId","relevance":"how this report supports the recommendation"}]}]}',
-    "Include every candidateId exactly once. Confidence must be a number from 0 to 1. Supply 3 to 6 concrete bullets for serviceComponents, expectedImpact, and implementationSteps when the evidence supports them. Cite at least two distinct reports in evidence when two are available. Every evidenceId must exactly match an evidenceId supplied for that candidate.",
+    '{"recommendations":[{"candidateId":"string","facilityType":"string","priority":"critical|high|medium|emerging","decisionSummary":"clear recommendation and central finding","needAnalysis":"detailed synthesis of the reported need","placementRationale":"why this region and the urgency-weighted placement method fit the evidence","serviceComponents":["specific capability"],"expectedImpact":["measurable or observable outcome"],"implementationSteps":["practical next step"],"risksAndMitigations":[{"risk":"constraint or uncertainty","mitigation":"how to validate or reduce it"}],"limitations":["evidence limitation"],"evidence":[{"evidenceId":"exact supplied evidenceId","relevance":"how this report supports the recommendation"}]}]}',
+    "Include every candidateId exactly once. Supply 3 to 6 concrete bullets for serviceComponents, expectedImpact, and implementationSteps when the evidence supports them. Cite at least two distinct reports in evidence when two are available. Every evidenceId must exactly match an evidenceId supplied for that candidate.",
     JSON.stringify({ candidates }),
   ].join("\n\n");
 
-  let generatedText;
   let lastError;
 
   for (const modelName of MODEL_NAMES) {
     try {
+      signal?.throwIfAborted();
       const model = getGenerativeModel(ai, { model: modelName });
-      const result = await model.generateContentStream(prompt);
-      let attemptText = "";
-      onText?.("", { reset: true, modelName });
-
-      for await (const chunk of result.stream) {
-        const text = chunk.text();
-        if (!text) continue;
-        attemptText += text;
-        onText?.(text, { modelName });
-      }
-
-      generatedText = attemptText;
-      break;
+      const generatedText = await readModelResponse(model, prompt, { onText, modelName, signal });
+      return validateModelResult(generatedText, recommendations, candidates, reportCatalogs);
     } catch (error) {
+      signal?.throwIfAborted();
+      const status = error?.customErrorData?.status;
+      const message = String(error?.message);
+      if ([401, 403].includes(status) || /\b40[13]\b/i.test(message)) {
+        throw error;
+      }
+      const quotaLimited = status === 429 ||
+        /\b429\b|too many requests|resource.exhausted|quota exceeded/i.test(message);
+      // Only explicit model-specific quota violations permit another model.
+      // Shared project limits and unidentified 429s must stop immediately.
+      if (quotaLimited && !isModelScopedQuotaFailure(error, modelName)) {
+        throw error;
+      }
       lastError = error;
     }
   }
 
-  if (!generatedText) throw lastError;
-
-  const parsed = parseModelOutput(generatedText);
-  const summary = validateSummaryCitations(parsed.summary, candidates);
-  const { payload } = parsed;
-
-  if (!Array.isArray(payload.recommendations)) {
-    throw new Error("Gemini response was missing recommendations.");
-  }
-
-  const rawInsights = new Map(
-    payload.recommendations
-      .filter((insight) => insight && typeof insight.candidateId === "string")
-      .map((insight) => [insight.candidateId, insight]),
-  );
-  const insights = new Map(
-    recommendations.map((recommendation, index) => [
-      recommendation.id,
-      normalizeInsight(
-        rawInsights.get(recommendation.id),
-        candidates[index],
-        reportCatalogs[index],
-      ),
-    ]).filter(([, insight]) => insight),
-  );
-
-  return {
-    recommendations: recommendations.map((recommendation) => ({
-      ...recommendation,
-      analysis: insights.get(recommendation.id) || recommendation.analysis,
-    })),
-    summary,
-  };
+  throw lastError || new Error("Detailed analysis is unavailable.");
 }

@@ -33,6 +33,50 @@ const WRITE_ROLES = new Set(["analyst", "moderator", "admin"]);
 const WORKFLOW_STATUSES = ["new", "reviewing", "approved", "rejected", "pilot", "built"];
 const MAX_DUPLICATE_SCAN_REPORTS = 400;
 
+function isRecord(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function boundedNumber(value, minimum, maximum, fallback) {
+  const number = typeof value === "number" || (typeof value === "string" && value.trim())
+    ? Number(value)
+    : NaN;
+  return Number.isFinite(number) ? Math.min(maximum, Math.max(minimum, number)) : fallback;
+}
+
+function validPosition(value) {
+  if (!isRecord(value)) return null;
+  const latitude = boundedNumber(value.latitude, -Infinity, Infinity, NaN);
+  const longitude = boundedNumber(value.longitude, -Infinity, Infinity, NaN);
+  return Number.isFinite(latitude) && Number.isFinite(longitude) &&
+    Math.abs(latitude) <= 90 && Math.abs(longitude) <= 180 ? { latitude, longitude } : null;
+}
+
+function normalizeWorkflows(records) {
+  return Object.fromEntries(Object.entries(isRecord(records) ? records : {}).flatMap(([id, record]) => {
+    if (!isRecord(record)) return [];
+    return [[id, {
+      ...record,
+      status: WORKFLOW_STATUSES.includes(record.status) ? record.status : "new",
+      owner: safeText(record.owner).slice(0, 80),
+      note: safeText(record.note).slice(0, 600),
+    }]];
+  }));
+}
+
+function normalizeModeration(records) {
+  return Object.fromEntries(Object.entries(isRecord(records) ? records : {}).filter(([, record]) =>
+    isRecord(record) && ["approved", "duplicate", "hidden"].includes(record.status)));
+}
+
+function normalizeOutcomes(records) {
+  return (Array.isArray(records) ? records : []).filter((record) => isRecord(record) &&
+    typeof record.recommendationId === "string" &&
+    ["better", "same", "worse"].includes(record.accessChange) &&
+    Number.isInteger(record.rating) && record.rating >= 1 && record.rating <= 5 &&
+    typeof record.note === "string");
+}
+
 function safeText(value, fallback = "") {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }
@@ -54,11 +98,14 @@ function safeDocumentId(value) {
 
 function timestampMilliseconds(value) {
   try {
-    if (typeof value?.toDate === "function") return value.toDate().getTime();
+    if (typeof value?.toDate === "function") return timestampMilliseconds(value.toDate());
     if (value && typeof value === "object" && Number.isFinite(value.seconds)) {
       return value.seconds * 1000;
     }
-    const date = value instanceof Date ? value : new Date(value);
+    if (value === null || value === undefined || value === "") return 0;
+    const date = value instanceof Date ? value : new Date(
+      typeof value === "number" && Math.abs(value) < 1e11 ? value * 1000 : value,
+    );
     return Number.isNaN(date.getTime()) ? 0 : date.getTime();
   } catch {
     return 0;
@@ -87,22 +134,21 @@ function defaultLocalState() {
 function loadLocalState() {
   try {
     const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY));
-    if (!parsed || typeof parsed !== "object") return defaultLocalState();
+    if (!isRecord(parsed)) return defaultLocalState();
     const defaults = defaultLocalState();
     return {
       ...defaults,
-      ...parsed,
-      workflows: parsed.workflows && typeof parsed.workflows === "object"
-        ? parsed.workflows
-        : {},
-      moderation: parsed.moderation && typeof parsed.moderation === "object"
-        ? parsed.moderation
-        : {},
-      outcomes: Array.isArray(parsed.outcomes) ? parsed.outcomes : [],
+      mode: parsed.mode === "local" ? "local" : "readonly",
+      workflows: normalizeWorkflows(parsed.workflows),
+      moderation: normalizeModeration(parsed.moderation),
+      outcomes: normalizeOutcomes(parsed.outcomes),
       acknowledgedAlerts: Array.isArray(parsed.acknowledgedAlerts)
-        ? parsed.acknowledgedAlerts
+        ? parsed.acknowledgedAlerts.filter((id) => typeof id === "string").slice(-500)
         : [],
-      settings: { ...defaults.settings, ...(parsed.settings || {}) },
+      settings: {
+        highUrgencyThreshold: Math.round(boundedNumber(parsed.settings?.highUrgencyThreshold, 1, 100, defaults.settings.highUrgencyThreshold)),
+        trendRatio: boundedNumber(parsed.settings?.trendRatio, 1, 10, defaults.settings.trendRatio),
+      },
     };
   } catch {
     return defaultLocalState();
@@ -131,7 +177,7 @@ function createMetric(label, value) {
 }
 
 function workflowFor(state, recommendationId) {
-  return state.workflows[recommendationId] || {
+  return (Object.hasOwn(state.workflows, recommendationId) ? state.workflows[recommendationId] : null) || {
     status: "new",
     owner: "",
     note: "",
@@ -148,7 +194,7 @@ function priorityRank(priority) {
 }
 
 function recommendationSignals(recommendation) {
-  return Array.isArray(recommendation?.signals) ? recommendation.signals : [];
+  return Array.isArray(recommendation?.signals) ? recommendation.signals.filter(isRecord) : [];
 }
 
 function uniqueRecommendationReports(recommendations) {
@@ -172,7 +218,8 @@ function downloadText(filename, text, type) {
   document.body.append(link);
   link.click();
   link.remove();
-  URL.revokeObjectURL(url);
+  // Allow the browser to start the download before releasing its URL.
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function coverageRadiusMeters(mode, minutes) {
@@ -195,6 +242,14 @@ function serviceSearchRadiusMeters(recommendation) {
     return 10000;
   }
   return 5000;
+}
+
+function serviceLookupKey(recommendation) {
+  return JSON.stringify([
+    recommendation?.position?.latitude, recommendation?.position?.longitude,
+    recommendation?.category, recommendation?.analysis?.facilityType,
+    serviceSearchRadiusMeters(recommendation),
+  ]);
 }
 
 export function createDecisionWorkspace({
@@ -286,7 +341,26 @@ export function createDecisionWorkspace({
     unsubscribers: [],
     detailMap: null,
     initializedDetailRecommendationId: "",
+    accessVersion: 0,
+    subscriptionVersion: 0,
+    accessMessage: "",
+    destroyed: false,
+    workflowDrafts: new Map(),
+    outcomeDrafts: new Map(),
+    pendingWrites: new Set(),
+    writeErrors: new Map(),
+    signingIn: false,
   };
+
+  const removeEventListeners = [];
+  function listen(target, eventName, handler) {
+    target.addEventListener(eventName, handler);
+    removeEventListeners.push(() => target.removeEventListener(eventName, handler));
+  }
+
+  function writeKey(kind, id) {
+    return JSON.stringify([state.mode, state.user?.uid, kind, id]);
+  }
 
   const serviceLayer = L.layerGroup();
   const coverageLayer = L.layerGroup();
@@ -294,6 +368,7 @@ export function createDecisionWorkspace({
   if (elements.layerCoverage?.checked) coverageLayer.addTo(map);
 
   function canWrite(kind = "workflow") {
+    if (state.destroyed) return false;
     if (state.mode === "local") return true;
     if (state.mode !== "staff") return false;
     if (kind === "moderation") return ["moderator", "admin"].includes(state.role);
@@ -306,7 +381,7 @@ export function createDecisionWorkspace({
       workflows: localWorkspace.workflows,
       moderation: localWorkspace.moderation,
       outcomes: localWorkspace.outcomes,
-      acknowledgedAlerts: [...state.acknowledgedAlerts],
+      acknowledgedAlerts: [...state.acknowledgedAlerts].slice(-500),
       settings: state.settings,
     });
   }
@@ -315,10 +390,16 @@ export function createDecisionWorkspace({
     state.workflows = {};
     state.moderation = {};
     state.outcomes = [];
+    state.workflowDrafts.clear();
+    state.outcomeDrafts.clear();
+    state.writeErrors.clear();
     onModerationChanged?.({});
   }
 
   function activateLocalWorkspace() {
+    state.workflowDrafts.clear();
+    state.outcomeDrafts.clear();
+    state.writeErrors.clear();
     state.workflows = { ...localWorkspace.workflows };
     state.moderation = { ...localWorkspace.moderation };
     state.outcomes = [...localWorkspace.outcomes];
@@ -326,16 +407,17 @@ export function createDecisionWorkspace({
   }
 
   function closeRealtimeSubscriptions() {
+    state.subscriptionVersion += 1;
     state.unsubscribers.forEach((unsubscribe) => unsubscribe());
     state.unsubscribers = [];
   }
 
-  function updateAccessUi(message = "") {
+  function updateAccessUi(message = state.accessMessage) {
     elements.accessBanner.className = "decision-access-banner";
     if (state.mode === "staff") {
       elements.accessBanner.classList.add("staff");
       const accessDescription = canWrite("workflow")
-        ? "Authorized changes are written to Firebase."
+        ? "Authorized changes are shared with your team."
         : "This staff role has shared read-only access.";
       elements.accessBanner.textContent = message ||
         `Shared staff workspace enabled · ${state.role}. ${accessDescription}`;
@@ -349,7 +431,7 @@ export function createDecisionWorkspace({
       elements.accessBanner.textContent = message ||
         "Device-local planner mode · saved only in this browser, not shared or secure.";
       elements.staffRole.textContent = "Local planner";
-      elements.staffStatus.textContent = "Device-local demo mode is active. Firebase data is not changed.";
+      elements.staffStatus.textContent = "Local planning is active. Decisions are saved only in this browser.";
       elements.staffFields.hidden = Boolean(state.user);
       elements.staffSignOut.hidden = !state.user;
       elements.localDemoButton.textContent = state.user
@@ -357,11 +439,11 @@ export function createDecisionWorkspace({
         : "Return to read-only mode";
     } else {
       elements.accessBanner.textContent = message ||
-        "Planning controls are read only. Sign in as staff or enable device-local demo mode to save decisions.";
+        "Planning controls are read only. Sign in as staff or enable local planning to save decisions.";
       elements.staffRole.textContent = "Read only";
       elements.staffStatus.textContent = state.user
         ? "This account does not have an active NeedMap staff role."
-        : "Sign in with a Firebase staff account. Access is verified against the staff profile stored for that user.";
+        : "Sign in with your staff account. Your assigned role determines which changes you can make.";
       elements.staffFields.hidden = false;
       elements.staffSignOut.hidden = !state.user;
       elements.localDemoButton.textContent = "Enable device-local planner";
@@ -373,7 +455,7 @@ export function createDecisionWorkspace({
     if (code.includes("invalid-credential") || code.includes("wrong-password") ||
         code.includes("user-not-found")) return "Email or password was not accepted.";
     if (code.includes("operation-not-allowed")) {
-      return "Email/password sign-in is not enabled in this Firebase project yet.";
+      return "Staff sign-in is not available. Contact your administrator.";
     }
     if (code.includes("too-many-requests")) return "Too many attempts. Wait a moment and try again.";
     return safeText(error?.message, "Staff sign-in failed.");
@@ -381,46 +463,76 @@ export function createDecisionWorkspace({
 
   function subscribeStaffCollections() {
     closeRealtimeSubscriptions();
+    const version = state.subscriptionVersion;
+    const userId = state.user?.uid;
+    const isCurrent = () => !state.destroyed && state.mode === "staff" &&
+      state.subscriptionVersion === version && state.user?.uid === userId;
     const subscribe = (name, onData) => {
       const unsubscribe = onSnapshot(collection(db, name), (snapshot) => {
+        if (!isCurrent()) return;
         onData(snapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() })));
       }, (error) => {
+        if (!isCurrent()) return;
         console.error(`NeedMap ${name} listener error:`, error);
-        updateAccessUi(`Signed in, but Firebase denied access to ${name}. Deploy the included staff security rules.`);
+        state.accessMessage = "Shared planning data could not be loaded. Check your connection or contact your administrator.";
+        if (String(error?.code).includes("permission-denied")) {
+          closeRealtimeSubscriptions();
+          state.mode = "readonly";
+          state.role = "viewer";
+          state.accessMessage = "Shared planning access is no longer available. Contact your administrator to verify your staff role.";
+          clearSharedWorkspace();
+          render();
+        } else {
+          updateAccessUi();
+        }
       });
       state.unsubscribers.push(unsubscribe);
     };
     subscribe("recommendationReviews", (records) => {
-      state.workflows = Object.fromEntries(records.map((record) => [record.candidateId, record]));
+      state.workflows = normalizeWorkflows(Object.fromEntries(records
+        .filter((record) => typeof record.candidateId === "string")
+        .map((record) => [record.candidateId, record])));
       render();
     });
     subscribe("reportModeration", (records) => {
-      state.moderation = Object.fromEntries(records.map((record) => [record.reportId, record]));
+      state.moderation = normalizeModeration(Object.fromEntries(records
+        .filter((record) => typeof record.reportId === "string")
+        .map((record) => [record.reportId, record])));
       onModerationChanged?.(state.moderation);
       renderQualityQueue();
+      renderTrend();
+      recalculateAlerts();
     });
     subscribe("outcomeFeedback", (records) => {
-      state.outcomes = records;
+      state.outcomes = normalizeOutcomes(records);
       renderDetail();
     });
   }
 
   async function resolveStaffAccess(user) {
+    if (state.destroyed) return;
+    const version = ++state.accessVersion;
+    closeRealtimeSubscriptions();
     state.user = user;
-    if (!user) {
-      closeRealtimeSubscriptions();
-      if (state.mode !== "local") {
-        state.mode = "readonly";
-        state.role = "viewer";
-        clearSharedWorkspace();
-      }
+    state.accessMessage = "";
+    // Local planning is an explicit preference, including across a page reload.
+    // Auth callbacks must not silently replace local drafts with shared records.
+    if (state.mode === "local") {
       updateAccessUi();
       render();
       return;
     }
+    state.mode = "readonly";
+    state.role = "viewer";
+    clearSharedWorkspace();
+    updateAccessUi();
+    render();
+    if (!user) return;
+    const isCurrent = () => !state.destroyed && version === state.accessVersion &&
+      auth.currentUser?.uid === user.uid && state.mode !== "local";
     try {
       const profileSnapshot = await getDoc(doc(db, "staffProfiles", user.uid));
-      if (auth.currentUser?.uid !== user.uid) return;
+      if (!isCurrent()) return;
       const profile = profileSnapshot.exists() ? profileSnapshot.data() : null;
       const role = safeText(profile?.role).toLowerCase();
       if (profile?.active === true && STAFF_ROLES.has(role)) {
@@ -428,20 +540,11 @@ export function createDecisionWorkspace({
         state.role = role;
         clearSharedWorkspace();
         subscribeStaffCollections();
-      } else if (state.mode !== "local") {
-        state.mode = "readonly";
-        state.role = "viewer";
-        clearSharedWorkspace();
       }
     } catch (error) {
-      if (auth.currentUser?.uid !== user.uid) return;
+      if (!isCurrent()) return;
       console.error("NeedMap staff profile error:", error);
-      if (state.mode !== "local") {
-        state.mode = "readonly";
-        state.role = "viewer";
-        clearSharedWorkspace();
-      }
-      updateAccessUi("Signed in, but the staff profile could not be verified. Check Firebase rules and the staffProfiles document.");
+      state.accessMessage = "Your staff access could not be verified. Check your connection or contact your administrator.";
       render();
       return;
     }
@@ -468,10 +571,11 @@ export function createDecisionWorkspace({
 
   function renderTrend() {
     const periods = Number(elements.trendRange.value) || 12;
-    const trend = aggregateTimeTrends(state.signals, {
+    const trend = aggregateTimeTrends(planningSignals(), {
       bucket: "month",
       lookbackPeriods: periods,
       comparisonPeriods: Math.min(3, Math.floor(periods / 2)),
+      endDate: new Date(),
     });
     elements.trendChart.replaceChildren();
     const maximum = Math.max(1, ...trend.series.map((entry) => entry.urgencyScore));
@@ -483,7 +587,9 @@ export function createDecisionWorkspace({
       bar.title = `${entry.label}: ${entry.reportCount} reports, urgency score ${entry.urgencyScore}`;
       const label = createElement("span", "", new Date(entry.start).toLocaleDateString(undefined, {
         month: "short",
+        timeZone: "UTC",
       }));
+      label.title = entry.label;
       wrapper.append(count, bar, label);
       elements.trendChart.append(wrapper);
     });
@@ -497,8 +603,18 @@ export function createDecisionWorkspace({
       : "No reports with usable timestamps are available for trend analysis.";
   }
 
+  function alertAcknowledgementKey(alert) {
+    return `${alert.id}:${alert.revision}`;
+  }
+
+  function planningSignals() {
+    return state.signals.filter((report) => !["hidden", "duplicate"].includes(
+      state.moderation[report.id]?.status ?? report.moderationStatus,
+    ));
+  }
+
   function activeAlerts() {
-    return state.alerts.filter((alert) => !state.acknowledgedAlerts.has(alert.id));
+    return state.alerts.filter((alert) => !state.acknowledgedAlerts.has(alertAcknowledgementKey(alert)));
   }
 
   function renderAlerts() {
@@ -523,7 +639,7 @@ export function createDecisionWorkspace({
       const acknowledge = createElement("button", "compact-button", "Acknowledge");
       acknowledge.type = "button";
       acknowledge.addEventListener("click", () => {
-        state.acknowledgedAlerts.add(alert.id);
+        state.acknowledgedAlerts.add(alertAcknowledgementKey(alert));
         persistLocalState();
         renderAlerts();
       });
@@ -533,10 +649,10 @@ export function createDecisionWorkspace({
   }
 
   function recalculateAlerts() {
-    state.alerts = evaluateNeedAlerts(state.signals, {
+    state.alerts = evaluateNeedAlerts(planningSignals(), {
       minimumHighUrgencyReports: Number(state.settings.highUrgencyThreshold) || 3,
       spikePercent: Math.max(0, ((Number(state.settings.trendRatio) || 1.5) - 1) * 100),
-      trendOptions: { bucket: "week", lookbackPeriods: 8, comparisonPeriods: 2 },
+      trendOptions: { bucket: "week", lookbackPeriods: 8, comparisonPeriods: 2, endDate: new Date() },
     });
     renderAlerts();
   }
@@ -574,6 +690,14 @@ export function createDecisionWorkspace({
       elements.scenarioComparison.append(createElement("div", "alerts-empty", "Add at least one recommendation to compare scenarios."));
       return;
     }
+    if (selected.length > 1 && selected.some((item) =>
+      item.category !== selected[0].category || item.region?.id !== selected[0].region?.id)) {
+      elements.scenarioComparison.append(createElement(
+        "div", "alerts-empty",
+        "These recommendations serve different regions or service needs. Select options in the same region and service category to compare coverage. Review each recommendation's evidence before allocating resources.",
+      ));
+      return;
+    }
     const reports = uniqueRecommendationReports(selected);
     const hasComparableServiceInventory = selected.every((item) =>
       Array.isArray(state.servicesByRecommendation.get(item.id)?.services));
@@ -583,7 +707,7 @@ export function createDecisionWorkspace({
       candidate: recommendation.position,
       serviceType: recommendation.analysis?.facilityType,
       existingServices: state.servicesByRecommendation.get(recommendation.id)?.services || [],
-      feasibilityScore: (recommendation.analysis?.confidence || 0.5) * 100,
+      feasibilityScore: boundedNumber(recommendation.analysis?.confidence, 0, 1, 0.5) * 100,
     })), reports, {
       coverageMode: elements.scenarioMode.value,
       coverageThresholdMinutes: 15,
@@ -616,7 +740,7 @@ export function createDecisionWorkspace({
       elements.scenarioComparison.append(createElement(
         "span",
         "scenario-winner",
-        `Best supported option: ${result.ranked[0].name}`,
+        `${reports.length ? "Highest model score" : "Preliminary score; no report coverage evidence"}: ${result.ranked[0].name}`,
       ));
     }
   }
@@ -764,7 +888,7 @@ export function createDecisionWorkspace({
         fillColor: "#2166a5",
         fillOpacity: 0.95,
         weight: 1.5,
-      }).bindTooltip(`${safeText(service.name, "Mapped service")} · ${categoryLabel(service.type)}`, {
+      }).bindTooltip(createElement("span", "", `${safeText(service.name, "Mapped service")} · ${categoryLabel(service.type)}`), {
         direction: "top",
       }).addTo(serviceLayer);
     });
@@ -784,7 +908,7 @@ export function createDecisionWorkspace({
   }
 
   function initializeDetailMap(container, recommendation) {
-    if (!state.visible || !container.isConnected || !container.offsetWidth) return;
+    if (state.destroyed || !state.visible || !container.isConnected || !container.offsetWidth) return;
     if (state.detailMap) state.detailMap.remove();
     const detailMap = L.map(container, {
       attributionControl: true,
@@ -793,7 +917,7 @@ export function createDecisionWorkspace({
     });
     state.detailMap = detailMap;
     state.initializedDetailRecommendationId = recommendation.id;
-    const signals = recommendationSignals(recommendation);
+    const signals = recommendationSignals(recommendation).filter((signal) => validPosition(signal));
     const bounds = L.latLngBounds([
       ...signals.map((signal) => [signal.latitude, signal.longitude]),
       [recommendation.position.latitude, recommendation.position.longitude],
@@ -852,7 +976,7 @@ export function createDecisionWorkspace({
         fillColor: colors[signal.severity] || "#426f91",
         fillOpacity: 0.95,
         weight: 1.5,
-      }).bindTooltip(`${signal.severity || "unknown"} urgency report`)
+      }).bindTooltip(createElement("span", "", `${safeText(signal.severity, "unknown")} urgency report`))
         .addTo(detailMap);
     });
     const serviceState = state.servicesByRecommendation.get(recommendation.id);
@@ -863,7 +987,7 @@ export function createDecisionWorkspace({
         fillColor: "#2166a5",
         fillOpacity: 0.95,
         weight: 1.5,
-      }).bindTooltip(service.name).addTo(detailMap);
+      }).bindTooltip(createElement("span", "", safeText(service.name, "Mapped service"))).addTo(detailMap);
     });
     const icon = L.divIcon({
       className: "",
@@ -968,7 +1092,7 @@ export function createDecisionWorkspace({
     const section = createElement("section", "detail-section detail-evidence");
     section.append(createElement("h4", "", "Cited report evidence"));
     const suppliedEvidence = Array.isArray(recommendation.analysis?.evidence)
-      ? recommendation.analysis.evidence
+      ? recommendation.analysis.evidence.filter(isRecord)
       : [];
     const evidence = suppliedEvidence.length
       ? suppliedEvidence
@@ -994,6 +1118,8 @@ export function createDecisionWorkspace({
 
   function createWorkflowSection(recommendation) {
     const workflow = workflowFor(state, recommendation.id);
+    const draft = state.workflowDrafts.get(recommendation.id) || workflow;
+    const key = writeKey("workflow", recommendation.id);
     const section = createElement("section", "detail-section workflow-panel");
     section.append(createElement("h4", "", "Recommendation workflow"));
     const form = createElement("form", "workflow-form");
@@ -1007,12 +1133,12 @@ export function createDecisionWorkspace({
       option.textContent = statusValue[0].toUpperCase() + statusValue.slice(1);
       statusSelect.append(option);
     });
-    statusSelect.value = workflow.status || "new";
+    statusSelect.value = draft.status || "new";
     statusLabel.append(statusSelect);
     const ownerLabel = document.createElement("label");
     ownerLabel.append(createElement("span", "", "Owner"));
     const ownerInput = document.createElement("input");
-    ownerInput.value = workflow.owner || "";
+    ownerInput.value = draft.owner || "";
     ownerInput.maxLength = 80;
     ownerInput.placeholder = "Team or staff owner";
     ownerLabel.append(ownerInput);
@@ -1021,21 +1147,30 @@ export function createDecisionWorkspace({
     const noteInput = document.createElement("textarea");
     noteInput.rows = 3;
     noteInput.maxLength = 600;
-    noteInput.value = workflow.note || "";
+    noteInput.value = draft.note || "";
     noteInput.placeholder = "Record why the status changed and what happens next…";
+    [statusSelect, ownerInput, noteInput].forEach((control) => { control.disabled = !canWrite("workflow"); });
     noteLabel.append(noteInput);
     grid.append(statusLabel, ownerLabel, noteLabel);
     const actions = createElement("div", "workflow-actions");
     const save = createElement("button", "primary-button", "Save workflow");
     save.type = "submit";
-    save.disabled = !canWrite("workflow");
-    const hint = createElement("span", "write-hint", canWrite("workflow")
+    save.disabled = !canWrite("workflow") || state.pendingWrites.has(key);
+    const hint = createElement("span", "write-hint", state.writeErrors.get(key) || (canWrite("workflow")
       ? `Last updated ${formatDateTime(workflow.updatedAt)}`
-      : "Enable staff or device-local planner access to save.");
+      : "Enable staff or device-local planner access to save."));
+    hint.setAttribute("role", "status");
     actions.append(save, hint);
     form.append(grid, actions);
+    form.addEventListener("input", () => state.workflowDrafts.set(recommendation.id, {
+      status: statusSelect.value, owner: ownerInput.value, note: noteInput.value,
+    }));
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
+      if (save.disabled) return;
+      const accessVersion = state.accessVersion;
+      const submittedDraft = state.workflowDrafts.get(recommendation.id);
+      state.writeErrors.delete(key);
       save.disabled = true;
       hint.textContent = "Saving…";
       try {
@@ -1044,12 +1179,19 @@ export function createDecisionWorkspace({
           owner: ownerInput.value.trim(),
           note: noteInput.value.trim(),
         });
+        if (state.destroyed || accessVersion !== state.accessVersion) return;
+        if (state.workflowDrafts.get(recommendation.id) === submittedDraft) {
+          state.workflowDrafts.delete(recommendation.id);
+        }
         hint.textContent = "Saved.";
       } catch (error) {
+        if (state.destroyed || accessVersion !== state.accessVersion) return;
         console.error("NeedMap workflow save error:", error);
         hint.textContent = safeText(error?.message, "Could not save the workflow.");
+        state.writeErrors.set(key, hint.textContent);
       } finally {
         save.disabled = !canWrite("workflow");
+        if (!state.destroyed && accessVersion === state.accessVersion && !form.isConnected) renderDetail();
       }
     });
     section.append(form);
@@ -1057,6 +1199,8 @@ export function createDecisionWorkspace({
   }
 
   function createOutcomesSection(recommendation) {
+    const draft = state.outcomeDrafts.get(recommendation.id);
+    const key = writeKey("outcome", recommendation.id);
     const section = createElement("section", "detail-section outcomes-panel");
     section.append(createElement("h4", "", "Community outcomes and feedback"));
     const outcomes = state.outcomes.filter((item) => item.recommendationId === recommendation.id);
@@ -1085,6 +1229,7 @@ export function createDecisionWorkspace({
       change.append(option);
     });
     changeLabel.append(change);
+    if (draft) change.value = draft.accessChange;
     const ratingLabel = document.createElement("label");
     ratingLabel.append(createElement("span", "", "Usefulness rating"));
     const rating = document.createElement("select");
@@ -1095,6 +1240,7 @@ export function createDecisionWorkspace({
       rating.append(option);
     });
     ratingLabel.append(rating);
+    if (draft) rating.value = String(draft.rating);
     const noteLabel = document.createElement("label");
     noteLabel.append(createElement("span", "", "Observed result"));
     const note = document.createElement("textarea");
@@ -1102,16 +1248,25 @@ export function createDecisionWorkspace({
     note.rows = 3;
     note.maxLength = 500;
     note.placeholder = "What changed after the pilot or service opened?";
+    note.value = draft?.note || "";
+    [change, rating, note].forEach((control) => { control.disabled = !canWrite("workflow"); });
     noteLabel.append(note);
     const save = createElement("button", "secondary-button", "Record outcome");
     save.type = "submit";
-    save.disabled = !canWrite("workflow");
-    const feedback = createElement("span", "write-hint", "");
+    save.disabled = !canWrite("workflow") || state.pendingWrites.has(key);
+    const feedback = createElement("span", "write-hint", state.writeErrors.get(key) || "");
     feedback.setAttribute("role", "status");
     feedback.setAttribute("aria-live", "polite");
     form.append(changeLabel, ratingLabel, noteLabel, save, feedback);
+    form.addEventListener("input", () => state.outcomeDrafts.set(recommendation.id, {
+      accessChange: change.value, rating: Number(rating.value), note: note.value,
+    }));
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
+      if (save.disabled) return;
+      const accessVersion = state.accessVersion;
+      const submittedDraft = state.outcomeDrafts.get(recommendation.id);
+      state.writeErrors.delete(key);
       save.disabled = true;
       feedback.textContent = "Saving…";
       try {
@@ -1120,13 +1275,20 @@ export function createDecisionWorkspace({
           rating: Number(rating.value),
           note: note.value.trim(),
         });
-        note.value = "";
+        if (state.destroyed || accessVersion !== state.accessVersion) return;
+        if (state.outcomeDrafts.get(recommendation.id) === submittedDraft) {
+          state.outcomeDrafts.delete(recommendation.id);
+          note.value = "";
+        }
         feedback.textContent = "Outcome recorded.";
       } catch (error) {
+        if (state.destroyed || accessVersion !== state.accessVersion) return;
         console.error("NeedMap outcome save error:", error);
         feedback.textContent = safeText(error?.message, "Could not save the outcome.");
+        state.writeErrors.set(key, feedback.textContent);
       } finally {
         save.disabled = !canWrite("workflow");
+        if (!state.destroyed && accessVersion === state.accessVersion && !form.isConnected) renderDetail();
       }
     });
     section.append(list, form);
@@ -1134,6 +1296,7 @@ export function createDecisionWorkspace({
   }
 
   function renderDetail() {
+    if (state.destroyed) return;
     if (state.detailMap) {
       state.detailMap.remove();
       state.detailMap = null;
@@ -1188,7 +1351,7 @@ export function createDecisionWorkspace({
     const mapCopy = createElement("div", "decision-map-copy");
     mapCopy.append(
       createElement("strong", "", `${recommendation.position.latitude.toFixed(4)}, ${recommendation.position.longitude.toFixed(4)}`),
-      createElement("p", "", "Purple star is the urgency-weighted candidate. Dots are reports, blue markers are loaded existing services, and dashed rings are estimated travel-time bands."),
+      createElement("p", "", "The star marks the candidate location. Dots show reports, blue markers show loaded existing services, and dashed rings show estimated travel-time bands."),
       actions,
     );
     mapGrid.append(mapContainer, mapCopy);
@@ -1230,11 +1393,15 @@ export function createDecisionWorkspace({
   }
 
   async function loadServices(recommendation) {
-    state.servicesByRecommendation.set(recommendation.id, { loading: true });
+    if (state.destroyed) return;
+    const request = { ...state.servicesByRecommendation.get(recommendation.id), loading: true, error: "" };
+    state.servicesByRecommendation.set(recommendation.id, request);
+    const isCurrent = () => !state.destroyed && state.servicesByRecommendation.get(recommendation.id) === request;
     renderDetail();
     try {
       const radiusMeters = serviceSearchRadiusMeters(recommendation);
       const result = await loadNearbyServices(recommendation, { radiusMeters });
+      if (!isCurrent()) return;
       const searchRadiusKm = result.radiusMeters / 1000;
       const gap = scoreExistingServiceGap(recommendation.position, result.services, {
         serviceType: recommendation.analysis?.facilityType || categoryLabel(recommendation.category),
@@ -1247,10 +1414,10 @@ export function createDecisionWorkspace({
         gap,
         loadedAt: new Date().toISOString(),
       });
-      updateMainMapLayers(recommendation);
       renderScenarioComparison();
       renderDetail();
     } catch (error) {
+      if (!isCurrent()) return;
       console.error("NeedMap existing-service lookup error:", error);
       state.servicesByRecommendation.set(recommendation.id, {
         error: safeText(error?.message, "Existing services could not be loaded."),
@@ -1275,10 +1442,10 @@ export function createDecisionWorkspace({
       updatedBy: state.user?.uid || "local-demo",
     };
     if (state.mode === "local") {
-      state.workflows[recommendation.id] = {
-        ...record,
-        updatedAt: new Date().toISOString(),
-      };
+      state.workflows = { ...state.workflows, [recommendation.id]: {
+        ...record, updatedAt: new Date().toISOString(),
+      } };
+      state.workflowDrafts.delete(recommendation.id);
       localWorkspace.workflows = { ...state.workflows };
       persistLocalState();
       renderDecisionList();
@@ -1286,15 +1453,22 @@ export function createDecisionWorkspace({
       renderMetrics();
       return;
     }
-    await setDoc(
-      doc(db, "recommendationReviews", safeDocumentId(recommendation.id)),
-      { ...record, updatedAt: serverTimestamp() },
-      { merge: true },
-    );
+    const key = writeKey("workflow", recommendation.id);
+    if (state.pendingWrites.has(key)) throw new Error("This workflow is already being saved.");
+    state.pendingWrites.add(key);
+    try {
+      await setDoc(
+        doc(db, "recommendationReviews", safeDocumentId(recommendation.id)),
+        { ...record, updatedAt: serverTimestamp() },
+        { merge: true },
+      );
+    } finally {
+      state.pendingWrites.delete(key);
+    }
   }
 
   async function saveModeration(report, status, quality, duplicate) {
-    if (!canWrite("moderation")) return;
+    if (!canWrite("moderation")) throw new Error("Moderator or local planner access is required.");
     const record = {
       reportId: String(report.id),
       status,
@@ -1309,7 +1483,7 @@ export function createDecisionWorkspace({
       updatedBy: state.user?.uid || "local-demo",
     };
     if (state.mode === "local") {
-      state.moderation[report.id] = { ...record, updatedAt: new Date().toISOString() };
+      state.moderation = { ...state.moderation, [report.id]: { ...record, updatedAt: new Date().toISOString() } };
       localWorkspace.moderation = { ...state.moderation };
       persistLocalState();
       onModerationChanged?.(state.moderation);
@@ -1332,7 +1506,7 @@ export function createDecisionWorkspace({
       accessChange: ["better", "same", "worse"].includes(values.accessChange)
         ? values.accessChange
         : "same",
-      rating: Math.max(1, Math.min(5, Number(values.rating) || 3)),
+      rating: Math.round(boundedNumber(values.rating, 1, 5, 3)),
       note: values.note.slice(0, 500),
       authorUid: state.user?.uid || "local-demo",
     };
@@ -1343,14 +1517,22 @@ export function createDecisionWorkspace({
         createdAt: new Date().toISOString(),
       });
       localWorkspace.outcomes = [...state.outcomes];
+      state.outcomeDrafts.delete(recommendation.id);
       persistLocalState();
       renderDetail();
       return;
     }
-    await addDoc(collection(db, "outcomeFeedback"), {
-      ...record,
-      createdAt: serverTimestamp(),
-    });
+    const key = writeKey("outcome", recommendation.id);
+    if (state.pendingWrites.has(key)) throw new Error("This outcome is already being saved.");
+    state.pendingWrites.add(key);
+    try {
+      await addDoc(collection(db, "outcomeFeedback"), {
+        ...record,
+        createdAt: serverTimestamp(),
+      });
+    } finally {
+      state.pendingWrites.delete(key);
+    }
   }
 
   function exportCsv() {
@@ -1377,7 +1559,7 @@ export function createDecisionWorkspace({
         owner: workflow.owner,
         note: workflow.note,
         evidence: (Array.isArray(recommendation.analysis?.evidence)
-          ? recommendation.analysis.evidence
+          ? recommendation.analysis.evidence.filter(isRecord)
           : []).map((item) =>
           `[${item.citation || item.evidenceId}] ${item.summary}`).join(" | "),
       };
@@ -1418,24 +1600,26 @@ export function createDecisionWorkspace({
       // Invalid or blocked session storage should not stop alerts from rendering.
     }
     activeAlerts().forEach((alert) => {
-      if (notified.has(alert.id)) return;
+      const key = alertAcknowledgementKey(alert);
+      if (notified.has(key)) return;
       try {
         new Notification(`NeedMap: ${alert.priority} signal`, {
           body: `${alert.regionName} · ${categoryLabel(alert.category)} · ${alert.reportCount} reports`,
         });
-        notified.add(alert.id);
+        notified.add(key);
       } catch {
         // Notifications can be blocked by browser or operating-system policy.
       }
     });
     try {
-      sessionStorage.setItem("needmap.notifiedAlerts", JSON.stringify([...notified]));
+      sessionStorage.setItem("needmap.notifiedAlerts", JSON.stringify([...notified].slice(-500)));
     } catch {
       // Notifications still work when session storage is unavailable.
     }
   }
 
   function render() {
+    if (state.destroyed) return;
     if (!state.selectedRecommendationId ||
         !state.recommendations.some((item) => item.id === state.selectedRecommendationId)) {
       state.selectedRecommendationId = state.recommendations[0]?.id || "";
@@ -1455,34 +1639,43 @@ export function createDecisionWorkspace({
     updateAccessUi();
   }
 
-  elements.decisionSearch.addEventListener("input", () => {
+  listen(elements.decisionSearch, "input", () => {
     state.search = elements.decisionSearch.value;
     renderDecisionList();
   });
-  elements.trendRange.addEventListener("change", renderTrend);
-  elements.scenarioA.addEventListener("change", renderScenarioComparison);
-  elements.scenarioB.addEventListener("change", renderScenarioComparison);
-  elements.scenarioMode.addEventListener("change", () => {
+  listen(elements.trendRange, "change", renderTrend);
+  listen(elements.scenarioA, "change", renderScenarioComparison);
+  listen(elements.scenarioB, "change", renderScenarioComparison);
+  listen(elements.scenarioMode, "change", () => {
     state.coverageMode = elements.scenarioMode.value;
     renderScenarioComparison();
     renderDetail();
   });
-  elements.qualityFilter.addEventListener("change", renderQualityQueue);
-  elements.exportCsv.addEventListener("click", exportCsv);
-  elements.exportBrief.addEventListener("click", () => window.print());
-  elements.staffButton.addEventListener("click", () => {
+  listen(elements.qualityFilter, "change", renderQualityQueue);
+  listen(elements.exportCsv, "click", exportCsv);
+  listen(elements.exportBrief, "click", () => window.print());
+  listen(elements.staffButton, "click", () => {
     if (!elements.staffDialog.open) elements.staffDialog.showModal();
   });
-  elements.alertsButton.addEventListener("click", () => {
+  listen(elements.alertsButton, "click", () => {
     if (!elements.alertsDialog.open) elements.alertsDialog.showModal();
   });
   document.querySelectorAll("[data-close-dialog]").forEach((button) => {
-    button.addEventListener("click", () => {
+    listen(button, "click", () => {
       document.querySelector(`#${button.dataset.closeDialog}`)?.close();
     });
   });
-  elements.staffForm.addEventListener("submit", async (event) => {
+  listen(elements.staffForm, "submit", async (event) => {
     event.preventDefault();
+    if (state.signingIn) return;
+    state.signingIn = true;
+    if (state.mode === "local") {
+      state.mode = "readonly";
+      state.role = "viewer";
+      clearSharedWorkspace();
+      persistLocalState();
+      render();
+    }
     elements.staffStatus.textContent = "Signing in and verifying staff access…";
     try {
       await signInWithEmailAndPassword(
@@ -1493,9 +1686,11 @@ export function createDecisionWorkspace({
       elements.staffPassword.value = "";
     } catch (error) {
       elements.staffStatus.textContent = friendlyAuthError(error);
+    } finally {
+      state.signingIn = false;
     }
   });
-  elements.staffSignOut.addEventListener("click", async () => {
+  listen(elements.staffSignOut, "click", async () => {
     elements.staffStatus.textContent = "Signing out…";
     try {
       await signOut(auth);
@@ -1503,16 +1698,19 @@ export function createDecisionWorkspace({
       elements.staffStatus.textContent = safeText(error?.message, "Could not sign out.");
     }
   });
-  elements.localDemoButton.addEventListener("click", async () => {
+  listen(elements.localDemoButton, "click", async () => {
+    state.accessVersion += 1;
+    state.accessMessage = "";
     closeRealtimeSubscriptions();
     if (state.mode === "local") {
+      state.mode = "readonly";
+      state.role = "viewer";
+      clearSharedWorkspace();
+      persistLocalState();
       if (state.user) {
         await resolveStaffAccess(state.user);
         return;
       }
-      state.mode = "readonly";
-      state.role = "viewer";
-      clearSharedWorkspace();
     } else {
       state.mode = "local";
       state.role = "local planner";
@@ -1524,23 +1722,21 @@ export function createDecisionWorkspace({
   });
   elements.alertHighThreshold.value = String(state.settings.highUrgencyThreshold);
   elements.alertTrendThreshold.value = String(state.settings.trendRatio);
-  elements.alertHighThreshold.addEventListener("change", () => {
-    state.settings.highUrgencyThreshold = Math.min(
-      100,
-      Math.max(1, Number(elements.alertHighThreshold.value) || 3),
-    );
+  listen(elements.alertHighThreshold, "change", () => {
+    state.settings.highUrgencyThreshold = Math.round(boundedNumber(elements.alertHighThreshold.value, 1, 100, 3));
     elements.alertHighThreshold.value = String(state.settings.highUrgencyThreshold);
     persistLocalState();
     recalculateAlerts();
     notifyNewAlerts();
   });
-  elements.alertTrendThreshold.addEventListener("change", () => {
-    state.settings.trendRatio = Number(elements.alertTrendThreshold.value) || 1.5;
+  listen(elements.alertTrendThreshold, "change", () => {
+    state.settings.trendRatio = boundedNumber(elements.alertTrendThreshold.value, 1, 10, 1.5);
+    elements.alertTrendThreshold.value = String(state.settings.trendRatio);
     persistLocalState();
     recalculateAlerts();
     notifyNewAlerts();
   });
-  elements.notificationButton.addEventListener("click", async () => {
+  listen(elements.notificationButton, "click", async () => {
     if (!("Notification" in window)) {
       elements.notificationButton.textContent = "Notifications unsupported";
       elements.notificationButton.disabled = true;
@@ -1556,11 +1752,11 @@ export function createDecisionWorkspace({
       elements.notificationButton.textContent = "Notifications were not enabled";
     }
   });
-  elements.layerServices.addEventListener("change", () => {
+  listen(elements.layerServices, "change", () => {
     if (elements.layerServices.checked) serviceLayer.addTo(map);
     else serviceLayer.removeFrom(map);
   });
-  elements.layerCoverage.addEventListener("change", () => {
+  listen(elements.layerCoverage, "change", () => {
     if (elements.layerCoverage.checked) coverageLayer.addTo(map);
     else coverageLayer.removeFrom(map);
   });
@@ -1570,7 +1766,8 @@ export function createDecisionWorkspace({
 
   return {
     updateSignals(signals) {
-      state.signals = Array.isArray(signals) ? signals : [];
+      if (state.destroyed) return;
+      state.signals = Array.isArray(signals) ? signals.filter(isRecord) : [];
       recalculateAlerts();
       notifyNewAlerts();
       renderTrend();
@@ -1578,14 +1775,27 @@ export function createDecisionWorkspace({
       renderMetrics();
     },
     updateRecommendations(recommendations) {
+      if (state.destroyed) return;
+      const previousKeys = new Map(state.recommendations.map((item) => [item.id, serviceLookupKey(item)]));
       state.recommendations = Array.isArray(recommendations)
-        ? recommendations.slice().sort((first, second) =>
+        ? [...new Map(recommendations.flatMap((item) => {
+          const position = validPosition(item?.position);
+          const id = safeText(item?.id);
+          return position && id ? [[id, { ...item, id, position }]] : [];
+        })).values()].sort((first, second) =>
             priorityRank(analysisPriority(second)) - priorityRank(analysisPriority(first)) ||
             second.urgencyScore - first.urgencyScore)
         : [];
+      const currentKeys = new Map(state.recommendations.map((item) => [item.id, serviceLookupKey(item)]));
+      for (const id of state.servicesByRecommendation.keys()) {
+        if (!currentKeys.has(id) || currentKeys.get(id) !== previousKeys.get(id)) {
+          state.servicesByRecommendation.delete(id);
+        }
+      }
       render();
     },
     setVisible(visible) {
+      if (state.destroyed) return;
       state.visible = Boolean(visible);
       if (state.visible) render();
       else if (state.detailMap) {
@@ -1597,6 +1807,10 @@ export function createDecisionWorkspace({
       return { ...state.moderation };
     },
     destroy() {
+      if (state.destroyed) return;
+      state.destroyed = true;
+      state.accessVersion += 1;
+      removeEventListeners.forEach((removeListener) => removeListener());
       closeRealtimeSubscriptions();
       unsubscribeAuth();
       if (state.detailMap) state.detailMap.remove();

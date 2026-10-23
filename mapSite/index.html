@@ -1,301 +1,65 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="NeedMap live community signal map." />
-    <title>NeedMap Dashboard</title>
-    <link rel="stylesheet" href="./styles.css" />
-  </head>
-  <body>
-    <header class="topbar">
-      <div class="brand-block">
-        <p class="eyebrow">NeedMap dashboard</p>
-        <h1>Community signals</h1>
-      </div>
-      <nav class="view-switcher" aria-label="Dashboard sections" role="tablist">
-        <button class="view-tab active" type="button" data-view="map" role="tab" aria-controls="map-view" aria-selected="true">Map</button>
-        <button class="view-tab" type="button" data-view="decisions" role="tab" aria-controls="decisions-view" aria-selected="false">Decisions</button>
-        <button class="view-tab" type="button" data-view="data" role="tab" aria-controls="data-view" aria-selected="false">Data</button>
-      </nav>
-      <div class="header-actions">
-        <button id="alerts-button" class="header-icon-button" type="button" aria-haspopup="dialog">
-          Alerts <span id="alerts-count" class="header-count" hidden>0</span>
-        </button>
-        <button id="staff-button" class="header-account-button" type="button" aria-haspopup="dialog">
-          <span id="staff-role">Read only</span>
-        </button>
-        <div class="status-wrap">
-          <span id="live-dot" class="live-dot" aria-hidden="true"></span>
-          <span id="status" role="status" aria-live="polite">Connecting…</span>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=1200" />
+  <meta name="theme-color" content="#15344a" />
+  <meta name="description" content="Explore community needs and plan the services that could help." />
+  <title>NeedMap | Explore & Plan</title>
+  <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <a class="skip-link" href="#workspace-navigation">Skip to workspace</a>
+  <header class="topbar">
+    <div class="brand-block">
+      <svg class="brand-mark" viewBox="0 0 40 40" fill="none" aria-hidden="true"><path d="M5 32V8h8l14 24h8V8M13 8v24M27 8v24" stroke="currentColor" stroke-width="2.5"/><path d="M3 37h34" stroke="#d9b86c" stroke-width="3"/></svg>
+      <div><p class="eyebrow">NeedMap</p><h1>From community needs to better services.</h1></div>
+    </div>
+    <span class="header-note">Community service planning</span>
+  </header>
+  <div class="workspace-bar">
+    <nav id="workspace-navigation" class="view-switcher" aria-label="Dashboard sections" role="tablist" tabindex="-1">
+      <button id="tab-explore" class="view-tab active" type="button" data-view="explore" role="tab" aria-controls="explore-view" aria-selected="true" tabindex="0">Explore</button>
+      <button id="tab-plan" class="view-tab" type="button" data-view="plan" role="tab" aria-controls="plan-view" aria-selected="false" tabindex="-1">Plan</button>
+    </nav>
+    <div class="status-wrap"><span id="live-dot" class="live-dot" aria-hidden="true"></span><span id="status" role="status">Connecting…</span></div>
+  </div>
+  <main class="workspace-content">
+    <section id="explore-view" class="site-view explore-view" role="tabpanel" aria-labelledby="tab-explore" tabindex="0">
+      <aside class="explore-panel">
+        <p class="eyebrow">Listen to the community</p>
+        <h2>Where help is needed</h2>
+        <p class="intro">Explore reports, find patterns, and turn a service need into a plan.</p>
+        <div class="explore-metrics"><div><strong id="report-count">0</strong><span>reports shown</span></div><div><strong id="urgent-count">0</strong><span>high urgency</span></div></div>
+        <button id="open-plan" class="primary-button" type="button">Explore service plans <span aria-hidden="true">→</span></button>
+        <div class="report-filters">
+          <label for="report-search">Search reports</label><input id="report-search" type="search" placeholder="Need, place, or service…" autocomplete="off" />
+          <div class="filter-row"><label>Service<select id="category-filter"><option value="all">All services</option></select></label><label>Urgency<select id="urgency-filter"><option value="all">All levels</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select></label></div>
+          <label class="check-label"><input id="viewport-filter" type="checkbox" /> Only reports in this map area</label>
         </div>
-      </div>
-    </header>
-
-    <main id="map-view" class="site-view" role="tabpanel">
-      <div id="map" aria-label="Map of community reports"></div>
-      <aside class="analysis-panel" aria-labelledby="analysis-title">
-        <p class="eyebrow">Placement analysis</p>
-        <h2 id="analysis-title">Recommended services</h2>
-        <p class="analysis-intro">
-          Verified region boundaries group the reports. Gemini evaluates the
-          need using urgency, rurality, density, and report summaries.
-        </p>
-        <button id="analyze-button" type="button" disabled>Analyze signals</button>
-        <div id="analysis-progress" class="analysis-progress" hidden aria-live="polite">
-          <div class="analysis-progress-track" aria-hidden="true"><span id="analysis-progress-bar"></span></div>
-          <p id="analysis-progress-label">Preparing grouped signals…</p>
-        </div>
-        <p id="analysis-status" class="analysis-status" role="status" aria-live="polite">
-          Waiting for reports…
-        </p>
-        <section id="generation-panel" class="generation-panel" hidden aria-label="Live Gemini decision summary">
-          <p class="generation-title">Live Gemini decision summary</p>
-          <p id="generation-text" class="generation-text" aria-live="polite"></p>
-        </section>
-        <div id="recommendations" class="recommendations"></div>
-        <p class="analysis-note">
-          Candidate locations require review of roads, parcels, zoning,
-          existing services, cost, and safety before use.
-        </p>
-        <details class="method-card">
-          <summary>How NeedMap makes this recommendation</summary>
-          <ol>
-            <li>Reports in the same category are grouped by a named administrative polygon, not a fixed radius.</li>
-            <li>Region size, place type, available population density, and rurality determine the geographic context.</li>
-            <li>Urgency is weighted locally: low = 1, medium = 2, high = 3.</li>
-            <li>A weighted geographic median proposes the candidate point and is constrained to the verified region shape.</li>
-            <li>Gemini receives the verified region facts plus grouped category, count, urgency, and summary text.</li>
-          </ol>
-          <p>It is decision support, not a final site selection. A human must confirm feasibility.</p>
-          <h3>Sources used</h3>
-          <ul>
-            <li>Community reports in the Firebase <code>incomingSignals</code> collection.</li>
-            <li><a href="https://firebase.google.com/docs/ai-logic/get-started?platform=web" target="_blank" rel="noreferrer">Firebase AI Logic</a> and <a href="https://firebase.google.com/docs/ai-logic/generate-text" target="_blank" rel="noreferrer">Gemini text generation</a>.</li>
-            <li><a href="https://leafletjs.com/" target="_blank" rel="noreferrer">Leaflet</a> with <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> map tiles.</li>
-            <li><a href="https://nominatim.org/" target="_blank" rel="noreferrer">OpenStreetMap Nominatim</a> for cached region names, boundaries, and available population tags, following its <a href="https://operations.osmfoundation.org/policies/nominatim/" target="_blank" rel="noreferrer">usage policy</a>.</li>
-          </ul>
-        </details>
+        <div class="report-list-heading"><h3>Community reports</h3><button id="fit-reports" class="text-button" type="button">Show all on map</button></div>
+        <p id="report-scope" class="muted" role="status">Waiting for reports…</p>
+        <div id="report-list" class="report-list"></div>
       </aside>
-      <aside class="summary-card" aria-label="Map summary">
-        <strong id="signal-count">0</strong>
-        <span>reports in view</span>
-      </aside>
-      <aside id="map-layer-control" class="map-layer-control" aria-label="Map layers">
-        <strong>Layers</strong>
-        <label><input id="layer-reports" type="checkbox" checked /> Reports</label>
-        <label><input id="layer-recommendations" type="checkbox" checked /> Recommendations</label>
-        <label><input id="layer-services" type="checkbox" checked /> Existing services</label>
-        <label><input id="layer-coverage" type="checkbox" checked /> Coverage</label>
-      </aside>
-    </main>
-
-    <section id="decisions-view" class="decisions-view site-view" role="tabpanel" aria-labelledby="decisions-title" hidden>
-      <div class="decision-shell">
-        <header class="decision-header">
-          <div>
-            <p class="eyebrow">Planning workspace</p>
-            <h2 id="decisions-title">Turn signals into decisions</h2>
-            <p id="decision-updated-at">Waiting for placement analysis…</p>
-          </div>
-          <div class="decision-header-actions">
-            <button id="export-csv-button" class="secondary-button" type="button">Export CSV</button>
-            <button id="export-brief-button" class="primary-button" type="button">Print / save PDF</button>
-          </div>
-        </header>
-
-        <div id="decision-access-banner" class="decision-access-banner" role="status">
-          Planning controls are read only. Sign in as staff or enable device-local demo mode to save decisions.
-        </div>
-
-        <section id="decision-alert-strip" class="decision-alert-strip" aria-label="Active alerts" hidden></section>
-        <div id="decision-metrics" class="decision-metrics" aria-label="Decision summary"></div>
-
-        <div class="decision-insight-grid">
-          <section class="decision-panel" aria-labelledby="trend-title">
-            <header class="panel-heading">
-              <div><p class="eyebrow">Demand over time</p><h3 id="trend-title">Signal trend</h3></div>
-              <select id="trend-range" aria-label="Trend period">
-                <option value="6">6 months</option>
-                <option value="12" selected>12 months</option>
-              </select>
-            </header>
-            <div id="trend-chart" class="trend-chart"></div>
-            <p id="trend-summary" class="panel-note">Waiting for dated reports…</p>
-          </section>
-
-          <section class="decision-panel" aria-labelledby="scenario-title">
-            <header class="panel-heading">
-              <div><p class="eyebrow">Compare options</p><h3 id="scenario-title">Scenario comparison</h3></div>
-            </header>
-            <div class="scenario-controls">
-              <label>Option A<select id="scenario-a"></select></label>
-              <label>Option B<select id="scenario-b"></select></label>
-              <label>Travel mode<select id="scenario-mode"><option value="walk">Walk</option><option value="transit" selected>Transit</option><option value="drive">Drive</option></select></label>
-            </div>
-            <div id="scenario-comparison" class="scenario-comparison"></div>
-          </section>
-        </div>
-
-        <div class="decision-layout">
-          <aside class="decision-master" aria-labelledby="decision-list-title">
-            <div class="decision-list-heading">
-              <div><p class="eyebrow">Ranked queue</p><h3 id="decision-list-title">Recommendations</h3></div>
-              <span id="decision-filter-summary">0 items</span>
-            </div>
-            <label class="decision-search">
-              <span>Search decisions</span>
-              <input id="decision-search" type="search" placeholder="Facility, region, or category…" />
-            </label>
-            <div id="decision-list" class="decision-list"></div>
-          </aside>
-
-          <article id="decision-detail" class="decision-detail" aria-live="polite">
-            <div class="decision-empty">Select a recommendation to inspect its coverage, evidence, workflow, and outcomes.</div>
-          </article>
-        </div>
-
-        <section class="decision-panel quality-panel" aria-labelledby="quality-title">
-          <header class="panel-heading">
-            <div><p class="eyebrow">Data integrity</p><h3 id="quality-title">Report quality review</h3></div>
-            <select id="quality-filter" aria-label="Quality review filter">
-              <option value="all">All flagged reports</option>
-              <option value="duplicate">Possible duplicates</option>
-              <option value="low_quality">Low quality</option>
-              <option value="moderated">Reviewed</option>
-            </select>
-          </header>
-          <p class="panel-note">Potential duplicates are suggestions for staff review and are never removed automatically.</p>
-          <div id="quality-queue" class="quality-queue"></div>
-        </section>
+      <div class="map-stage">
+        <div id="map" aria-label="Map of community reports"></div>
+        <div class="map-caption"><strong>Explore the evidence</strong><span>Locations are approximate</span></div>
+        <div id="map-message" class="map-message" role="status" hidden></div>
+        <aside class="map-layer-control" aria-label="Map layers"><strong>Show on map</strong><label><input id="layer-reports" type="checkbox" checked /> Reports</label><label><input id="layer-candidates" type="checkbox" checked /> Proposed services</label></aside>
+        <div class="map-legend" aria-label="Report urgency"><strong>Urgency</strong><span><i class="low"></i>Low</span><span><i class="medium"></i>Medium</span><span><i class="high"></i>High</span><span><b>✦</b>Proposed service</span></div>
       </div>
     </section>
-
-    <section id="data-view" class="data-view site-view" role="tabpanel" aria-labelledby="data-title" hidden>
-      <div class="data-shell">
-        <header class="data-header">
-          <div>
-            <p class="eyebrow">All report data</p>
-            <h2 id="data-title">Report data by region</h2>
-            <p>Every valid report in Firebase, grouped into named geographic regions with their real boundary shapes.</p>
-          </div>
-          <button id="return-to-map" class="secondary-button" type="button">Return to map</button>
-        </header>
-
-        <div class="data-metrics" aria-label="All report data summary">
-          <article><strong id="data-report-count">0</strong><span>reports</span></article>
-          <article><strong id="data-region-count">0</strong><span>regions</span></article>
-          <article><strong id="data-high-count">0</strong><span>high urgency</span></article>
-          <article><strong id="data-category-count">0</strong><span>categories</span></article>
-        </div>
-
-        <section id="data-analysis" class="selection-analysis" aria-labelledby="data-analysis-title" aria-busy="false">
-          <header class="selection-analysis-header">
-            <div>
-              <p class="eyebrow">Automatic placement analysis</p>
-              <h2 id="data-analysis-title">What should go where</h2>
-              <p id="data-analysis-status" role="status" aria-live="polite">
-                Waiting for named regions and report data…
-              </p>
-            </div>
-            <span class="auto-analysis-badge"><span aria-hidden="true"></span>Runs automatically</span>
-          </header>
-
-          <div id="data-analysis-progress" class="data-analysis-progress" hidden>
-            <div class="data-analysis-progress-track" aria-hidden="true">
-              <span id="data-analysis-progress-bar"></span>
-            </div>
-            <p id="data-analysis-progress-label">Preparing regional candidates…</p>
-          </div>
-
-          <div id="data-analysis-overview" class="analysis-overview" hidden></div>
-          <div id="data-analysis-summary" class="analysis-summary-strip" hidden></div>
-          <div id="data-analysis-results" class="placement-briefs"></div>
-
-          <p class="analysis-method-note">
-            Candidate points use an urgency-weighted geographic median constrained to the verified region boundary.
-            Gemini identifies the service and organizes the decision evidence; every report citation below is resolved
-            back to the exact Firebase summary supplied to the model.
-          </p>
-        </section>
-
-        <div class="source-data-heading">
-          <div>
-            <p class="eyebrow">Source evidence</p>
-            <h2>Reports by region</h2>
-          </div>
-          <p>Search and filter the report records used by the dashboard.</p>
-        </div>
-
-        <div class="data-toolbar" aria-label="Filter report data">
-          <label>
-            <span>Search summaries</span>
-            <input id="data-search" type="search" placeholder="Search report text…" autocomplete="off" />
-          </label>
-          <label>
-            <span>Category</span>
-            <select id="data-category-filter">
-              <option value="all">All categories</option>
-            </select>
-          </label>
-          <label>
-            <span>Urgency</span>
-            <select id="data-severity-filter">
-              <option value="all">All urgency levels</option>
-              <option value="high">High</option>
-              <option value="medium">Medium</option>
-              <option value="low">Low</option>
-            </select>
-          </label>
-        </div>
-
-        <div class="data-scope-row">
-          <p id="data-scope-status" role="status" aria-live="polite">Waiting for reports…</p>
-          <p>Region lookups are cached and limited to one request per second under the <a href="https://operations.osmfoundation.org/policies/nominatim/" target="_blank" rel="noreferrer">Nominatim usage policy</a>.</p>
-        </div>
-        <div id="region-list" class="region-list"></div>
+    <section id="plan-view" class="site-view plan-view" role="tabpanel" aria-labelledby="tab-plan" tabindex="0" hidden>
+      <div class="plan-shell">
+        <header class="plan-heading"><div><p class="eyebrow">Make a practical plan</p><h2>What could change?</h2><p>Choose a service, estimate the investment, and compare life before and after.</p></div><button id="refresh-analysis" class="secondary-button" type="button" disabled>Refresh recommendations</button></header>
+        <div class="analysis-state"><p id="analysis-status" role="status">Waiting for community reports…</p><progress id="analysis-progress" max="100" value="0" hidden aria-label="Service analysis progress"></progress></div>
+        <div id="planning-workspace"></div>
+        <details class="method-card"><summary>How recommendations and estimates work</summary><p>Reports in the same category and named region form a service candidate when at least two reports are available. Urgency weights of 1, 2, and 3 help place a candidate within that region. AI can organize the supplied evidence; people still need to check the site, demand, and feasibility.</p><p>Cost and impact estimates use the assumptions shown in each plan. Report counts are not population counts. Travel comparisons are scenarios, not measured routes or guaranteed outcomes.</p><p>Map and region data: <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a>. Analysis: <a href="https://firebase.google.com/docs/ai-logic" target="_blank" rel="noreferrer">Firebase AI Logic</a>.</p></details>
       </div>
     </section>
-
-    <dialog id="staff-dialog" class="dashboard-dialog" aria-labelledby="staff-dialog-title">
-      <form id="staff-login-form" class="dialog-card">
-        <header>
-          <div><p class="eyebrow">Protected controls</p><h2 id="staff-dialog-title">Staff access</h2></div>
-          <button class="dialog-close" type="button" data-close-dialog="staff-dialog" aria-label="Close staff access">×</button>
-        </header>
-        <p id="staff-dialog-status" class="dialog-status" role="status" aria-live="polite">
-          Sign in with a Firebase staff account. Access is verified against the staff profile stored for that user.
-        </p>
-        <div id="staff-login-fields" class="staff-login-fields">
-          <label><span>Email</span><input id="staff-email" name="email" type="email" autocomplete="username" required /></label>
-          <label><span>Password</span><input id="staff-password" name="password" type="password" autocomplete="current-password" required /></label>
-          <button class="primary-button" type="submit">Sign in</button>
-        </div>
-        <button id="staff-sign-out" class="secondary-button" type="button" hidden>Sign out</button>
-        <div class="dialog-divider"><span>Local demo</span></div>
-        <p class="dialog-help">Device-local mode lets you demo workflow, moderation, outcomes, and alert settings without changing Firebase. Its data stays in this browser and is not shared or secure.</p>
-        <button id="local-demo-button" class="secondary-button" type="button">Enable device-local planner</button>
-      </form>
-    </dialog>
-
-    <dialog id="alerts-dialog" class="dashboard-dialog" aria-labelledby="alerts-dialog-title">
-      <form class="dialog-card" method="dialog">
-        <header>
-          <div><p class="eyebrow">Monitoring</p><h2 id="alerts-dialog-title">Signal alerts</h2></div>
-          <button class="dialog-close" type="submit" aria-label="Close alerts">×</button>
-        </header>
-        <div class="alert-settings">
-          <label><span>High-urgency reports</span><input id="alert-high-threshold" type="number" min="1" max="100" value="3" /></label>
-          <label><span>Trend increase</span><select id="alert-trend-threshold"><option value="1.25">25%</option><option value="1.5" selected>50%</option><option value="2">100%</option></select></label>
-          <button id="notification-button" class="secondary-button" type="button">Enable browser notifications</button>
-        </div>
-        <p class="dialog-help">Alerts are calculated from the currently loaded report data. Browser notifications only appear while this dashboard is open.</p>
-        <div id="alerts-list" class="alerts-list"></div>
-      </form>
-    </dialog>
-
-    <noscript>This map needs JavaScript to load Firebase reports.</noscript>
-
-    <script type="module" src="./app.js"></script>
-  </body>
+  </main>
+  <noscript>Enable JavaScript to explore the map and use the planner.</noscript>
+  <script type="module" src="./app.js"></script>
+</body>
 </html>

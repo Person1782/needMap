@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 5174 --strictPort",
     "build": "vite build",
-    "preview": "vite preview --host 127.0.0.1 --port 4174 --strictPort"
+    "preview": "vite preview --host 127.0.0.1 --port 4174 --strictPort",
+    "test": "node --test tests/*.test.js"
   },
   "dependencies": {
     "leaflet": "^1.9.4"

@@ -94,11 +94,12 @@ function timestampOf(value) {
     }
   }
   if (value && typeof value === "object" && Number.isFinite(value.seconds)) {
-    return value.seconds * 1000 + Math.floor((value.nanoseconds || 0) / 1e6);
+    const milliseconds = value.seconds * 1000 + Math.floor((numericValue(value.nanoseconds) ?? 0) / 1e6);
+    return Math.abs(milliseconds) <= 8.64e15 ? milliseconds : null;
   }
   if (typeof value === "number") {
     const milliseconds = Math.abs(value) < 1e11 ? value * 1000 : value;
-    return Number.isFinite(milliseconds) ? milliseconds : null;
+    return Number.isFinite(milliseconds) && Math.abs(milliseconds) <= 8.64e15 ? milliseconds : null;
   }
   if (typeof value === "string" && value.trim()) {
     const parsed = Date.parse(value);
@@ -109,7 +110,7 @@ function timestampOf(value) {
 
 function urgencyWeight(report, weights = DEFAULT_URGENCY_WEIGHTS) {
   const urgency = String(report?.severity ?? report?.urgency ?? "low").toLowerCase();
-  const weight = numericValue(weights[urgency]);
+  const weight = numericValue(weights?.[urgency]);
   return weight !== null && weight > 0 ? weight : 1;
 }
 
@@ -241,7 +242,7 @@ export function calculateCoverageMetrics(
     throw new TypeError("calculateCoverageMetrics requires a valid candidate coordinate.");
   }
   const sourceReports = Array.isArray(reports) ? reports : [];
-  const thresholds = [...new Set(thresholdsMinutes
+  const thresholds = [...new Set((Array.isArray(thresholdsMinutes) ? thresholdsMinutes : [5, 10, 20])
     .map(numericValue)
     .filter((value) => value !== null && value >= 0))]
     .sort((first, second) => first - second);
@@ -255,6 +256,11 @@ export function calculateCoverageMetrics(
       distanceKm,
       urgencyWeight: urgencyWeight(report, urgencyWeights),
       travelTimes: estimateTravelTimes(distanceKm, { profiles }),
+      // Keep unrounded values for eligibility; rounding is for display only.
+      travelMinutes: Object.fromEntries(Object.entries(profiles).map(([mode, profile]) => [
+        mode,
+        distanceKm === 0 ? 0 : distanceKm * profile.routeFactor / profile.speedKmh * 60 + profile.fixedMinutes,
+      ])),
     }];
   });
   const totalWeight = validReports.reduce(
@@ -263,10 +269,10 @@ export function calculateCoverageMetrics(
   );
 
   const modes = Object.fromEntries(Object.keys(profiles).map((mode) => {
-    const minutes = validReports.map((item) => item.travelTimes[mode].minutes);
+    const minutes = validReports.map((item) => item.travelMinutes[mode]);
     const thresholdMetrics = thresholds.map((thresholdMinutes) => {
       const covered = validReports.filter(
-        (item) => item.travelTimes[mode].minutes <= thresholdMinutes,
+        (item) => item.travelMinutes[mode] <= thresholdMinutes,
       );
       const coveredWeight = covered.reduce(
         (sum, item) => sum + item.urgencyWeight,
@@ -287,7 +293,7 @@ export function calculateCoverageMetrics(
       averageMinutes: round(average(minutes), 1),
       medianMinutes: round(median(minutes), 1),
       p90Minutes: round(percentile(minutes, 0.9), 1),
-      maximumMinutes: round(minutes.length ? Math.max(...minutes) : 0, 1),
+      maximumMinutes: round(minutes.reduce((maximum, value) => Math.max(maximum, value), 0), 1),
       thresholds: thresholdMetrics,
     }];
   }));
@@ -317,7 +323,7 @@ function normalizedText(value) {
   return String(value ?? "")
     .normalize("NFKD")
     .toLowerCase()
-    .replaceAll(/[^a-z0-9\s]/g, " ")
+    .replaceAll(/[^\p{L}\p{N}\s]/gu, " ")
     .replaceAll(/\s+/g, " ")
     .trim();
 }
@@ -337,7 +343,7 @@ function serviceText(record) {
 }
 
 function serviceTerms(serviceType, aliases = []) {
-  const supplied = [serviceType, ...aliases].map(normalizedText).filter(Boolean);
+  const supplied = [serviceType, ...(Array.isArray(aliases) ? aliases : [])].map(normalizedText).filter(Boolean);
   const expanded = new Set(supplied);
   for (const group of SERVICE_TERM_GROUPS) {
     if (group.some((term) => supplied.some(
@@ -397,7 +403,7 @@ export function scoreExistingServiceGap(
   const scarcityScore = clamp((1 - nearby.length / saturation) * 100, 0, 100);
   const gapScore = distanceScore * distanceShare +
     scarcityScore * (1 - distanceShare);
-  const bands = [...new Set(proximityBandsKm
+  const bands = [...new Set((Array.isArray(proximityBandsKm) ? proximityBandsKm : [1, 3, 5, 10])
     .map(numericValue)
     .filter((value) => value !== null && value >= 0))]
     .sort((first, second) => first - second)
@@ -451,6 +457,18 @@ function reportRegionId(report) {
   return String(report?.region?.id ?? report?.regionId ?? report?.region ?? "");
 }
 
+function reportRevision(reports) {
+  const evidence = reports.map((report) => JSON.stringify([
+    String(report.id ?? ""), timestampOf(report.submittedAt ?? report.createdAt),
+    String(report.severity ?? report.urgency ?? ""),
+  ])).sort().join("|");
+  let hash = 2166136261;
+  for (let index = 0; index < evidence.length; index += 1) {
+    hash = Math.imul(hash ^ evidence.charCodeAt(index), 16777619);
+  }
+  return `${reports.length}-${(hash >>> 0).toString(16)}`;
+}
+
 /**
  * Aggregates reports into UTC day/week/month buckets and compares the latest
  * window with its preceding window. By default the series ends at the newest
@@ -471,7 +489,7 @@ export function aggregateTimeTrends(
   } = {},
 ) {
   const period = ["day", "week", "month"].includes(bucket) ? bucket : "week";
-  const periodCount = Math.max(2, Math.floor(numericValue(lookbackPeriods) ?? 8));
+  const periodCount = clamp(Math.floor(numericValue(lookbackPeriods) ?? 8), 2, 1000);
   const comparisonCount = clamp(
     Math.floor(numericValue(comparisonPeriods) ?? 2),
     1,
@@ -488,10 +506,8 @@ export function aggregateTimeTrends(
     return timestamp === null ? [] : [{ report, timestamp }];
   });
   const explicitEnd = timestampOf(endDate);
-  const newestTimestamp = filtered.length
-    ? Math.max(...filtered.map((item) => item.timestamp))
-    : Date.now();
-  const endBucket = startOfBucket(explicitEnd ?? newestTimestamp, period);
+  const newestTimestamp = filtered.reduce((latest, item) => Math.max(latest, item.timestamp), -Infinity);
+  const endBucket = startOfBucket(explicitEnd ?? (Number.isFinite(newestTimestamp) ? newestTimestamp : Date.now()), period);
   const firstBucket = shiftBucket(endBucket, period, -(periodCount - 1));
   const series = Array.from({ length: periodCount }, (_, index) => {
     const start = shiftBucket(firstBucket, period, index);
@@ -506,7 +522,8 @@ export function aggregateTimeTrends(
   });
 
   filtered.forEach(({ report, timestamp }) => {
-    if (timestamp < firstBucket || timestamp >= series.at(-1).end) return;
+    if (timestamp < firstBucket || timestamp >= series.at(-1).end ||
+        (explicitEnd !== null && timestamp > explicitEnd)) return;
     const bucketStart = startOfBucket(timestamp, period);
     const target = series.find((entry) => entry.start === bucketStart);
     if (!target) return;
@@ -684,8 +701,8 @@ export function findPotentialDuplicates(
       );
       if (similarity.likelyDuplicate) {
         pairs.push({
-          firstReportId: String(source[firstIndex].id ?? firstIndex + 1),
-          secondReportId: String(source[secondIndex].id ?? secondIndex + 1),
+          firstReportId: String(source[firstIndex]?.id ?? firstIndex + 1),
+          secondReportId: String(source[secondIndex]?.id ?? secondIndex + 1),
           ...similarity,
         });
       }
@@ -799,16 +816,17 @@ export function compareScenarios(
   } = {},
 ) {
   const source = Array.isArray(scenarios) ? scenarios : [];
-  const costs = source.map((scenario) => numericValue(scenario.estimatedCost))
+  const costs = source.filter((scenario) => coordinatesOf(scenario?.candidate ?? scenario?.position ?? scenario))
+    .map((scenario) => numericValue(scenario?.estimatedCost))
     .filter((value) => value !== null && value >= 0);
   const minimumCost = costs.length ? Math.min(...costs) : null;
   const maximumCost = costs.length ? Math.max(...costs) : null;
-  const normalizedWeights = Object.fromEntries(Object.entries(weights)
-    .map(([key, value]) => [key, Math.max(0, numericValue(value) ?? 0)]));
+  const normalizedWeights = Object.fromEntries(["coverage", "serviceGap", "feasibility", "cost"]
+    .map((key) => [key, Math.max(0, numericValue(weights?.[key]) ?? 0)]));
   const weightTotal = Object.values(normalizedWeights).reduce((sum, value) => sum + value, 0) || 1;
 
   const evaluated = source.flatMap((scenario, index) => {
-    const candidate = scenario.candidate ?? scenario.position ?? scenario;
+    const candidate = scenario?.candidate ?? scenario?.position ?? scenario;
     if (!coordinatesOf(candidate)) return [];
     const threshold = Math.max(0, numericValue(coverageThresholdMinutes) ?? 15);
     const coverage = calculateCoverageMetrics(candidate, reports, {
@@ -828,7 +846,8 @@ export function compareScenarios(
         serviceType: scenario.serviceType ?? serviceGapOptions.serviceType ?? "",
       },
     );
-    const estimatedCost = numericValue(scenario.estimatedCost);
+    const suppliedCost = numericValue(scenario.estimatedCost);
+    const estimatedCost = suppliedCost !== null && suppliedCost >= 0 ? suppliedCost : null;
     const derivedCostScore = estimatedCost === null
       ? 50
       : minimumCost === maximumCost
@@ -901,7 +920,7 @@ function valueAtPath(record, path) {
 
 function csvValue(value, preventFormulaInjection) {
   let normalized = value;
-  if (value instanceof Date) normalized = value.toISOString();
+  if (value instanceof Date) normalized = Number.isNaN(value.getTime()) ? "" : value.toISOString();
   else if (Array.isArray(value) || (value && typeof value === "object")) {
     normalized = JSON.stringify(value);
   }
@@ -909,7 +928,7 @@ function csvValue(value, preventFormulaInjection) {
   let text = String(normalized);
   if (
     preventFormulaInjection && typeof value === "string" &&
-    /^[\t\r ]*[=+\-@]/.test(text)
+    /^[\s\uFEFF]*[=+\-@]/.test(text)
   ) {
     text = `'${text}`;
   }
@@ -975,7 +994,7 @@ function compareThreshold(actual, operator, expected) {
  * { id, metric: "path.to.value", operator: "gte", value, severity, message }.
  */
 export function evaluateAlertThresholds(metrics, rules) {
-  const sourceRules = Array.isArray(rules) ? rules : [];
+  const sourceRules = Array.isArray(rules) ? rules.filter((rule) => rule && typeof rule === "object") : [];
   const results = sourceRules.map((rule, index) => {
     const actual = valueAtPath(metrics, rule.metric);
     const operator = rule.operator || "gte";
@@ -1023,6 +1042,7 @@ export function evaluateNeedAlerts(
 ) {
   const groups = new Map();
   (Array.isArray(reports) ? reports : []).forEach((report) => {
+    if (!report || typeof report !== "object") return;
     const regionId = reportRegionId(report) || "unassigned";
     const regionName = String(report?.region?.name ?? report?.regionName ?? regionId);
     const category = String(report?.category ?? "other");
@@ -1085,7 +1105,12 @@ export function evaluateNeedAlerts(
         message: spikeMessage,
       },
     ]);
-    if (!thresholdResult.hasAlerts) return [];
+    if (trend.comparison.direction === "new" && trend.comparison.recentReportCount >= minimumReports) {
+      thresholdResult.triggered.push({
+        id: "recent-spike", severity: "high", triggered: true, message: spikeMessage,
+      });
+    }
+    if (!thresholdResult.triggered.length) return [];
     const priorityOrder = { critical: 4, high: 3, warning: 2, notice: 1 };
     const priority = thresholdResult.triggered.reduce(
       (highest, alert) => priorityOrder[alert.severity] > priorityOrder[highest]
@@ -1095,6 +1120,8 @@ export function evaluateNeedAlerts(
     );
     return [{
       id: `${group.regionId}:${group.category}`,
+      // Acknowledgements apply to this evidence, so new reports can alert again.
+      revision: reportRevision(group.reports),
       regionId: group.regionId,
       regionName: group.regionName,
       category: group.category,

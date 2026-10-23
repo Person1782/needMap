@@ -1,5 +1,6 @@
 const EARTH_RADIUS_KM = 6371;
 const REQUEST_GAP_MS = 1100;
+const REQUEST_TIMEOUT_MS = 15000;
 const CACHE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 const CACHE_PREFIX = "needmap-region-v1:";
 const REGION_ENDPOINT = (
@@ -22,7 +23,8 @@ function coordinateCacheKey(latitude, longitude, zoom) {
 function readCache(key) {
   try {
     const cached = JSON.parse(localStorage.getItem(key));
-    if (!cached || Date.now() - cached.savedAt > CACHE_MAX_AGE_MS) return null;
+    if (!cached || !Number.isFinite(cached.savedAt) || cached.savedAt > Date.now() ||
+        Date.now() - cached.savedAt > CACHE_MAX_AGE_MS) return null;
     return cached.value;
   } catch {
     return null;
@@ -37,22 +39,35 @@ function writeCache(key, value) {
   }
 }
 
-async function policyLimitedFetch(url) {
+async function policyLimitedFetch(url, signal) {
   const request = requestQueue.then(async () => {
+    signal?.throwIfAborted();
     const waitFor = REQUEST_GAP_MS - (Date.now() - lastRequestStartedAt);
     if (waitFor > 0) await delay(waitFor);
+    signal?.throwIfAborted();
     lastRequestStartedAt = Date.now();
-
-    const response = await fetch(url, {
-      headers: { Accept: "application/json" },
-      referrerPolicy: "strict-origin-when-cross-origin",
-    });
-
-    if (!response.ok) {
-      throw new Error(`Region lookup failed with status ${response.status}.`);
+    const controller = new AbortController();
+    const abort = () => controller.abort(signal.reason);
+    signal?.addEventListener("abort", abort, { once: true });
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      const response = await fetch(url, {
+        headers: { Accept: "application/json" },
+        referrerPolicy: "strict-origin-when-cross-origin",
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        throw new Error(`Region lookup failed with status ${response.status}.`);
+      }
+      const result = await response.json();
+      if (!result || typeof result !== "object" || result.error) {
+        throw new Error("Region information is temporarily unavailable.");
+      }
+      return result;
+    } finally {
+      clearTimeout(timeout);
+      signal?.removeEventListener("abort", abort);
     }
-
-    return response.json();
   });
 
   requestQueue = request.catch(() => undefined);
@@ -74,7 +89,27 @@ function pointOnSegment(point, first, second) {
   return dot <= squaredLength;
 }
 
-function pointInRing(point, ring) {
+function validRing(ring) {
+  return Array.isArray(ring) && ring.length >= 4 && ring.every((coordinate) =>
+    Array.isArray(coordinate) && Number.isFinite(coordinate[0]) &&
+    Number.isFinite(coordinate[1]) && Math.abs(coordinate[0]) <= 180 &&
+    Math.abs(coordinate[1]) <= 90);
+}
+
+function unwrapRing(ring) {
+  let previousLongitude = ring[0][0];
+  return ring.map(([longitude, latitude]) => {
+    longitude += Math.round((previousLongitude - longitude) / 360) * 360;
+    previousLongitude = longitude;
+    return [longitude, latitude];
+  });
+}
+
+function pointInRing(point, inputRing) {
+  if (!validRing(inputRing)) return false;
+  const ring = unwrapRing(inputRing);
+  const centerLongitude = ring.reduce((sum, coordinate) => sum + coordinate[0], 0) / ring.length;
+  point = [point[0] + Math.round((centerLongitude - point[0]) / 360) * 360, point[1]];
   let inside = false;
 
   for (let index = 0, previous = ring.length - 1; index < ring.length; previous = index++) {
@@ -93,12 +128,14 @@ function pointInRing(point, ring) {
 }
 
 function pointInPolygonCoordinates(point, coordinates) {
-  if (!coordinates.length || !pointInRing(point, coordinates[0])) return false;
+  if (!Array.isArray(coordinates) || !coordinates.length ||
+      !coordinates.every(validRing) || !pointInRing(point, coordinates[0])) return false;
   return !coordinates.slice(1).some((hole) => pointInRing(point, hole));
 }
 
 export function pointInGeometry(longitude, latitude, geometry) {
-  if (!geometry) return false;
+  if (!geometry || !Number.isFinite(longitude) || !Number.isFinite(latitude) ||
+      Math.abs(longitude) > 180 || Math.abs(latitude) > 90) return false;
   const point = [longitude, latitude];
 
   if (geometry.type === "Polygon") {
@@ -106,7 +143,7 @@ export function pointInGeometry(longitude, latitude, geometry) {
   }
 
   if (geometry.type === "MultiPolygon") {
-    return geometry.coordinates.some((polygon) =>
+    return Array.isArray(geometry.coordinates) && geometry.coordinates.some((polygon) =>
       pointInPolygonCoordinates(point, polygon));
   }
 
@@ -115,7 +152,7 @@ export function pointInGeometry(longitude, latitude, geometry) {
 
 function geometryComponents(geometry) {
   if (geometry?.type === "Polygon") return [geometry];
-  if (geometry?.type === "MultiPolygon") {
+  if (geometry?.type === "MultiPolygon" && Array.isArray(geometry.coordinates)) {
     return geometry.coordinates.map((coordinates) => ({
       type: "Polygon",
       coordinates,
@@ -134,7 +171,8 @@ function containingComponent(geometry, longitude, latitude) {
 }
 
 function ringAreaKm2(ring) {
-  if (ring.length < 3) return 0;
+  if (!validRing(ring)) return 0;
+  ring = unwrapRing(ring);
   const meanLatitude = ring.reduce((sum, coordinate) => sum + coordinate[1], 0) /
     ring.length * Math.PI / 180;
   const points = ring.map(([longitude, latitude]) => ({
@@ -152,7 +190,8 @@ function ringAreaKm2(ring) {
 }
 
 function polygonAreaKm2(geometry) {
-  if (geometry?.type !== "Polygon" || !geometry.coordinates.length) return null;
+  if (geometry?.type !== "Polygon" || !Array.isArray(geometry.coordinates) ||
+      !geometry.coordinates.length || !geometry.coordinates.every(validRing)) return null;
   const outerArea = ringAreaKm2(geometry.coordinates[0]);
   const holesArea = geometry.coordinates.slice(1)
     .reduce((sum, ring) => sum + ringAreaKm2(ring), 0);
@@ -171,16 +210,19 @@ function geometryBounds(geometry) {
   };
   collectCoordinates(geometry?.coordinates);
   if (!coordinates.length) return null;
-  const longitudes = coordinates.map((coordinate) => coordinate[0]);
-  const latitudes = coordinates.map((coordinate) => coordinate[1]);
-  return [
-    [Math.min(...latitudes), Math.min(...longitudes)],
-    [Math.max(...latitudes), Math.max(...longitudes)],
-  ];
+  const referenceLongitude = coordinates[0][0];
+  return coordinates.reduce((bounds, [longitude, latitude]) => {
+    longitude += Math.round((referenceLongitude - longitude) / 360) * 360;
+    bounds[0][0] = Math.min(bounds[0][0], latitude);
+    bounds[0][1] = Math.min(bounds[0][1], longitude);
+    bounds[1][0] = Math.max(bounds[1][0], latitude);
+    bounds[1][1] = Math.max(bounds[1][1], longitude);
+    return bounds;
+  }, [[Infinity, Infinity], [-Infinity, -Infinity]]);
 }
 
 function parsePopulation(value) {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "number" && Number.isFinite(value)) return value > 0 ? value : null;
   if (typeof value !== "string") return null;
   const population = Number(value.replaceAll(/[^0-9.]/g, ""));
   return Number.isFinite(population) && population > 0 ? population : null;
@@ -216,12 +258,18 @@ function normalizeResult(result, latitude, longitude, zoom) {
 
   const name = regionName(result);
   const areaKm2 = polygonAreaKm2(component.geometry);
-  const population = parsePopulation(result.extratags?.population);
-  const densityPerKm2 = population && areaKm2
-    ? population / areaKm2
+  const components = geometryComponents(result.geojson);
+  const totalAreaKm2 = components.reduce((sum, item) => sum + (polygonAreaKm2(item) || 0), 0);
+  const regionPopulation = parsePopulation(result.extratags?.population);
+  // A population for a multi-part region cannot be assigned to one island or
+  // detached component. Retain whole-region density only as context.
+  const population = components.length === 1 ? regionPopulation : null;
+  const densityPerKm2 = regionPopulation && totalAreaKm2
+    ? regionPopulation / totalAreaKm2
     : null;
   const osmType = result.osm_type || "place";
   const osmId = result.osm_id || result.place_id;
+  if (!osmId) return null;
 
   return {
     id: `${osmType}-${osmId}-${component.componentIndex}`,
@@ -233,6 +281,7 @@ function normalizeResult(result, latitude, longitude, zoom) {
     populationDate: result.extratags?.["population:date"] || null,
     areaKm2,
     densityPerKm2,
+    densityIsContextual: components.length > 1 && densityPerKm2 !== null,
     geometry: component.geometry,
     bounds: geometryBounds(component.geometry),
     lookupZoom: zoom,
@@ -268,7 +317,7 @@ function adaptiveZoom(region) {
   return 10;
 }
 
-async function lookup(latitude, longitude, zoom) {
+async function lookup(latitude, longitude, zoom, signal) {
   const cacheKey = coordinateCacheKey(latitude, longitude, zoom);
   const cached = readCache(cacheKey);
   if (cached) return cached;
@@ -286,7 +335,7 @@ async function lookup(latitude, longitude, zoom) {
     "accept-language": "en",
   });
 
-  const result = await policyLimitedFetch(url);
+  const result = await policyLimitedFetch(url, signal);
   writeCache(cacheKey, result);
   return result;
 }
@@ -296,15 +345,19 @@ function knownRegionFor(latitude, longitude) {
     pointInGeometry(longitude, latitude, region.geometry));
 }
 
-async function resolveRegion(signal) {
-  const known = knownRegionFor(signal.latitude, signal.longitude);
+async function resolveRegion(report, signal) {
+  signal?.throwIfAborted();
+  const { latitude, longitude } = report;
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude) ||
+      Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return null;
+  const known = knownRegionFor(latitude, longitude);
   if (known) return known;
 
-  const baseResult = await lookup(signal.latitude, signal.longitude, 10);
+  const baseResult = await lookup(latitude, longitude, 10, signal);
   const baseRegion = normalizeResult(
     baseResult,
-    signal.latitude,
-    signal.longitude,
+    latitude,
+    longitude,
     10,
   );
   if (!baseRegion) return null;
@@ -313,25 +366,23 @@ async function resolveRegion(signal) {
   let selectedRegion = baseRegion;
 
   if (targetZoom !== 10) {
-    const adaptiveResult = await lookup(
-      signal.latitude,
-      signal.longitude,
-      targetZoom,
-    );
-    const adaptiveRegion = normalizeResult(
-      adaptiveResult,
-      signal.latitude,
-      signal.longitude,
-      targetZoom,
-    );
-    if (adaptiveRegion) selectedRegion = adaptiveRegion;
+    try {
+      const adaptiveResult = await lookup(latitude, longitude, targetZoom, signal);
+      const adaptiveRegion = normalizeResult(adaptiveResult, latitude, longitude, targetZoom);
+      if (adaptiveRegion) selectedRegion = adaptiveRegion;
+    } catch (error) {
+      signal?.throwIfAborted();
+      // A more detailed boundary is optional; retain the verified base region.
+      console.warn("NeedMap detailed region lookup failed:", error);
+    }
   }
 
   const contextualDensity = selectedRegion.densityPerKm2 ?? baseRegion.densityPerKm2;
   const finalRegion = {
     ...selectedRegion,
     densityPerKm2: contextualDensity,
-    densityIsContextual: !selectedRegion.densityPerKm2 && Boolean(contextualDensity),
+    densityIsContextual: selectedRegion.densityIsContextual ||
+      (selectedRegion.densityPerKm2 === null && contextualDensity !== null),
     rurality: classifyRurality({
       ...selectedRegion,
       densityPerKm2: contextualDensity,
@@ -341,17 +392,19 @@ async function resolveRegion(signal) {
   return finalRegion;
 }
 
-export async function enrichSignalsWithRegions(signals, { onProgress } = {}) {
+export async function enrichSignalsWithRegions(signals, { onProgress, signal: abortSignal } = {}) {
   const enrichedSignals = [];
 
   for (let index = 0; index < signals.length; index += 1) {
+    abortSignal?.throwIfAborted();
     const signal = signals[index];
     onProgress?.(index, signals.length);
 
     try {
-      const region = await resolveRegion(signal);
+      const region = await resolveRegion(signal, abortSignal);
       enrichedSignals.push({ ...signal, region });
     } catch (error) {
+      abortSignal?.throwIfAborted();
       console.warn("NeedMap region lookup failed:", error);
       enrichedSignals.push({ ...signal, region: null });
     }

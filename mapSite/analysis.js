@@ -14,12 +14,27 @@ function toRadians(value) {
   return value * Math.PI / 180;
 }
 
+function validSignal(signal) {
+  return signal && Number.isFinite(signal.latitude) && Number.isFinite(signal.longitude) &&
+    Math.abs(signal.latitude) <= 90 && Math.abs(signal.longitude) <= 180;
+}
+
+function signalWeight(signal) {
+  return Object.hasOwn(severityWeights, signal.severity) ? severityWeights[signal.severity] : 1;
+}
+
+function longitudeDifference(longitude, reference) {
+  return ((longitude - reference + 540) % 360) - 180;
+}
+
 function groupSignalsByRegionAndCategory(signals) {
   const groups = new Map();
 
   signals.forEach((signal) => {
-    if (!signal.region?.id || !signal.region.geometry) return;
-    const category = signal.category || "other";
+    if (!validSignal(signal) || !signal.region?.id || !signal.region.geometry ||
+        !pointInGeometry(signal.longitude, signal.latitude, signal.region.geometry)) return;
+    const category = typeof signal.category === "string" && signal.category.trim()
+      ? signal.category.trim() : "other";
     const key = `${signal.region.id}:${category}`;
     if (!groups.has(key)) {
       groups.set(key, {
@@ -35,19 +50,22 @@ function groupSignalsByRegionAndCategory(signals) {
 }
 
 export function weightedGeometricMedian(signals) {
+  signals = Array.isArray(signals) ? signals.filter(validSignal) : [];
+  if (!signals.length) throw new RangeError("At least one valid report location is required.");
   const totalWeight = signals.reduce(
-    (sum, signal) => sum + (severityWeights[signal.severity] || 1),
+    (sum, signal) => sum + signalWeight(signal),
     0,
   );
   const referenceLatitude = signals.reduce(
     (sum, signal) => sum + signal.latitude,
     0,
   ) / signals.length;
-  const longitudeScale = Math.cos(toRadians(referenceLatitude));
+  const referenceLongitude = signals[0].longitude;
+  const longitudeScale = Math.max(1e-8, Math.cos(toRadians(referenceLatitude)));
   const points = signals.map((signal) => ({
-    x: toRadians(signal.longitude) * EARTH_RADIUS_KM * longitudeScale,
+    x: toRadians(longitudeDifference(signal.longitude, referenceLongitude)) * EARTH_RADIUS_KM * longitudeScale,
     y: toRadians(signal.latitude) * EARTH_RADIUS_KM,
-    weight: severityWeights[signal.severity] || 1,
+    weight: signalWeight(signal),
   }));
 
   let x = points.reduce((sum, point) => sum + point.x * point.weight, 0) / totalWeight;
@@ -57,29 +75,32 @@ export function weightedGeometricMedian(signals) {
     let weightedX = 0;
     let weightedY = 0;
     let weightSum = 0;
-    let coincidentPoint = null;
+    let coincidentWeight = 0;
+    let residualX = 0;
+    let residualY = 0;
 
     for (const point of points) {
       const distance = Math.hypot(x - point.x, y - point.y);
       if (distance < 0.000001) {
-        coincidentPoint = point;
-        break;
+        coincidentWeight += point.weight;
+        continue;
       }
 
       const adjustedWeight = point.weight / distance;
       weightedX += point.x * adjustedWeight;
       weightedY += point.y * adjustedWeight;
       weightSum += adjustedWeight;
+      residualX += (point.x - x) * adjustedWeight;
+      residualY += (point.y - y) * adjustedWeight;
     }
 
-    if (coincidentPoint) {
-      x = coincidentPoint.x;
-      y = coincidentPoint.y;
-      break;
-    }
-
-    const nextX = weightedX / weightSum;
-    const nextY = weightedY / weightSum;
+    const residualLength = Math.hypot(residualX, residualY);
+    if (!weightSum || residualLength <= coincidentWeight) break;
+    // Modified Weiszfeld update: a coincident report is only a solution when its
+    // weight balances the remaining reports. Merely hitting it is not enough.
+    const retainedWeight = coincidentWeight / residualLength;
+    const nextX = (1 - retainedWeight) * weightedX / weightSum + retainedWeight * x;
+    const nextY = (1 - retainedWeight) * weightedY / weightSum + retainedWeight * y;
     if (Math.hypot(nextX - x, nextY - y) < 0.00001) {
       x = nextX;
       y = nextY;
@@ -92,7 +113,9 @@ export function weightedGeometricMedian(signals) {
 
   return {
     latitude: y / EARTH_RADIUS_KM * 180 / Math.PI,
-    longitude: x / (EARTH_RADIUS_KM * longitudeScale) * 180 / Math.PI,
+    longitude: longitudeDifference(
+      referenceLongitude + x / (EARTH_RADIUS_KM * longitudeScale) * 180 / Math.PI, 0,
+    ),
   };
 }
 
@@ -122,7 +145,7 @@ export function inferServiceNeed(candidate) {
   };
   const match = rules.find((rule) => rule.pattern.test(text));
   const facilityType = match?.facilityType ||
-    defaults[candidate.category] ||
+    (Object.hasOwn(defaults, candidate.category) ? defaults[candidate.category] : null) ||
     "Community service center";
   const severityCounts = candidate.signals.reduce(
     (counts, signal) => ({
@@ -195,7 +218,6 @@ export function inferServiceNeed(candidate) {
       weightedScore: candidate.urgencyScore,
       totalReports: candidate.signals.length,
     },
-    confidence: match ? 0.78 : 0.55,
   };
 }
 
@@ -210,7 +232,7 @@ function constrainPositionToRegion(position, cluster) {
 
   const longitudeScale = Math.cos(toRadians(position.latitude));
   const closestSignal = cluster.signals.reduce((closest, signal) => {
-    const longitudeDistance = (signal.longitude - position.longitude) * longitudeScale;
+    const longitudeDistance = longitudeDifference(signal.longitude, position.longitude) * longitudeScale;
     const latitudeDistance = signal.latitude - position.latitude;
     const squaredDistance = longitudeDistance ** 2 + latitudeDistance ** 2;
     return !closest || squaredDistance < closest.squaredDistance
@@ -227,15 +249,16 @@ export function buildRecommendations(
   signals,
   { minimumSize = MIN_CLUSTER_SIZE } = {},
 ) {
-  return groupSignalsByRegionAndCategory(signals)
-    .filter((cluster) => cluster.signals.length >= minimumSize)
+  const size = Number.isInteger(minimumSize) && minimumSize > 0 ? minimumSize : MIN_CLUSTER_SIZE;
+  return groupSignalsByRegionAndCategory(Array.isArray(signals) ? signals : [])
+    .filter((cluster) => cluster.signals.length >= size)
     .map((cluster) => {
       const position = constrainPositionToRegion(
         weightedGeometricMedian(cluster.signals),
         cluster,
       );
       const urgencyScore = cluster.signals.reduce(
-        (sum, signal) => sum + (severityWeights[signal.severity] || 1),
+        (sum, signal) => sum + signalWeight(signal),
         0,
       );
       const candidate = {
