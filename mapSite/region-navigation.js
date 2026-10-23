@@ -344,11 +344,11 @@ export function createRegionNavigation({
       clearSavedSelection();
     }
     onChange(region, { source });
-    onStatus({ state: "ready", message: `Viewing ${region.label}.` });
+    onStatus({ state: "ready", message: `Viewing ${region.label}.`, key: "region.viewing", values: { region: region.label } });
     return region;
   };
   const detectRegion = async (operation) => {
-    onStatus({ state: "locating", message: "Finding your approximate region from your internet connection…" });
+    onStatus({ state: "locating", message: "Finding your approximate region from your internet connection…", key: "region.findingIp", values: {} });
     try {
       const location = await loadIpRegion({ fetchImpl, endpoint: ipEndpoint, signal: operation.signal });
       operation.signal.throwIfAborted();
@@ -371,11 +371,11 @@ export function createRegionNavigation({
       }
       if (!current(operation)) return null;
       apply(region, "detected");
-      onStatus({ state: "ready", message: `Approximate IP region: ${region.label}. Change Region if this is incorrect.` });
+      onStatus({ state: "ready", message: `Approximate IP region: ${region.label}. Change Region if this is incorrect.`, key: "region.ipReady", values: { region: region.label } });
       return region;
     } catch {
       if (!current(operation)) return null;
-      onStatus({ state: "error", message: `Your approximate region could not be detected. Viewing ${selected.label}; choose any region below.` });
+      onStatus({ state: "error", message: `Your approximate region could not be detected. Viewing ${selected.label}; choose any region below.`, key: "region.detectError", values: { region: selected.label } });
       return null;
     }
   };
@@ -389,7 +389,7 @@ export function createRegionNavigation({
       const operation = begin();
       const entry = readSavedSelection();
       if (entry) {
-        onStatus({ state: "loading", message: `Opening your saved region, ${entry.label}…` });
+        onStatus({ state: "loading", message: `Opening your saved region, ${entry.label}…`, key: "region.openingSaved", values: { region: entry.label } });
         try {
           const region = await resolveEntry(entry, operation);
           if (!current(operation)) return null;
@@ -409,16 +409,16 @@ export function createRegionNavigation({
       const entry = byId.get(id);
       if (!entry) return null;
       const operation = begin();
-      onStatus({ state: "loading", message: `Opening ${entry.label}…` });
+      onStatus({ state: "loading", message: `Opening ${entry.label}…`, key: "region.opening", values: { region: entry.label } });
       try {
         const region = await resolveEntry(entry, operation);
         if (!current(operation)) return null;
         apply(region, "manual");
         const children = regionSets.get(region.id) || [];
-        if (children.length) onStatus({ state: "ready", message: `Viewing all of ${region.name}. ${children.length} smaller NeedMap areas are available in Change Region.` });
+        if (children.length) onStatus({ state: "ready", message: `Viewing all of ${region.name}. ${children.length} smaller NeedMap areas are available in Change Region.`, key: "region.children", values: { region: region.name, count: children.length } });
         return region;
       } catch (error) {
-        if (current(operation)) onStatus({ state: "error", message: error.message || "Region lookup is unavailable. Your previous region is still selected." });
+        if (current(operation)) onStatus({ state: "error", message: error.message || "Region lookup is unavailable. Your previous region is still selected.", key: "region.lookupUnavailable", values: {} });
         return null;
       }
     },

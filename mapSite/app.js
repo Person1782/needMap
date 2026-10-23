@@ -21,6 +21,11 @@ import { reviewComplaints } from "./analysis-ai.js";
 import "./analysis.css";
 import { createPopulationAreaMap } from "./population-area-map.js";
 import "./population-details.css";
+import { createI18n } from "./i18n/index.js";
+import { createLanguagePicker } from "./i18n/language-picker.js";
+
+const i18n = createI18n();
+await i18n.initialize();
 
 const firebaseApp = initializeApp(firebaseConfig);
 if (import.meta.env.DEV && import.meta.env.VITE_FIREBASE_APPCHECK_DEBUG_TOKEN) {
@@ -39,7 +44,55 @@ const search = $("#report-search");
 const category = $("#category-filter");
 const urgency = $("#urgency-filter");
 const viewport = $("#viewport-filter");
+function translateStaticInterface() {
+  document.documentElement.style.setProperty("--language-direction", i18n.direction);
+  const meta = document.querySelector('meta[name="description"]'); if (meta) meta.content = i18n.t("meta.description");
+  document.querySelectorAll("[data-i18n]").forEach((item) => { item.textContent = i18n.t(item.dataset.i18n); });
+  const text = {
+    ".skip-link": "skip.map", "#change-region": "region.change", "#region-status": "region.finding", "#region-search-form label": "region.find",
+    "#region-search-form button": "region.search", "#region-search-hint": "region.hint", "#region-data-label": "region.data", "#region-boundaries-label": "region.boundaries", "#map-tab": "nav.map", "#analysis-tab": "nav.analysis",
+    ".explore-panel>.eyebrow": "explore.eyebrow", ".explore-panel>h2": "explore.title", ".explore-panel>.intro": "explore.intro",
+    ".explore-metrics>div:first-child span": "explore.reportsShown", ".explore-metrics>div:last-child span": "explore.highUrgency", "#candidate-status": "explore.waitingServices", "#report-scope": "explore.waitingReports",
+    ".report-filters>label[for=report-search]": "explore.searchLabel", ".filter-row label:first-child": "explore.service", ".filter-row label:last-child": "explore.urgency",
+    ".check-label": "explore.onlyMap", ".report-list-heading h3": "explore.communityReports", ".map-caption span": "map.approximate",
+    "#fit-reports": "map.center", ".map-layer-control strong": "map.show", ".map-layer-control label:first-of-type": "map.reports", ".map-layer-control label:last-of-type": "map.services",
+    ".map-legend strong": "urgency.label", ".map-legend span:nth-of-type(1)": "urgency.low", ".map-legend span:nth-of-type(2)": "urgency.medium", ".map-legend span:nth-of-type(3)": "urgency.high", ".map-legend span:nth-of-type(4)": "map.ranked",
+    ".analysis-heading .eyebrow": "analysis.eyebrow", "#analysis-title": "analysis.title", ".analysis-filter": "analysis.problem", "#analysis-map-title": "analysis.mapTitle",
+    "#analysis-map-note": "analysis.mapNote", ".analysis-map-legend span:nth-child(1)": "analysis.communityReports", ".analysis-map-legend span:nth-child(2)": "analysis.serviceLocations", ".analysis-map-location-note": "map.approximate",
+    "#report-comparison-title": "analysis.reportsByProblem", ".report-comparison>.analysis-note": "analysis.chartHelp", "#priority-title": "analysis.priorityTitle", ".analysis-section-heading>span": "analysis.priorityInspect", ".analysis-priorities>.analysis-note": "analysis.priorityHelp",
+  };
+  for (const [selector, key] of Object.entries(text)) {
+    const item = document.querySelector(selector); if (!item) continue;
+    if (["#change-region", "#fit-reports"].includes(selector)) {
+      for (const child of [...item.childNodes]) if (child.nodeType === 3) child.remove();
+      if (selector === "#fit-reports") item.append(document.createTextNode(i18n.t(key)));
+      else item.prepend(document.createTextNode(`${i18n.t(key)} `));
+    } else if ([".filter-row label:first-child", ".filter-row label:last-child", ".check-label", ".analysis-filter", ".map-layer-control label:first-of-type", ".map-layer-control label:last-of-type", ".map-legend span:nth-of-type(1)", ".map-legend span:nth-of-type(2)", ".map-legend span:nth-of-type(3)", ".map-legend span:nth-of-type(4)", ".analysis-map-legend span:nth-child(1)", ".analysis-map-legend span:nth-child(2)"].includes(selector)) {
+      for (const child of [...item.childNodes]) if (child.nodeType === 3) child.textContent = ` ${i18n.t(key)}`;
+    } else item.textContent = i18n.t(key);
+  }
+  const attributes = [
+    ["#region-menu", "aria-label", "region.menu"], ["#region-search", "placeholder", "region.placeholder"], ["#region-results", "aria-label", "region.results"],
+    [".page-navigation", "aria-label", "nav.label"], ["#explore-view", "aria-label", "skip.map"], ["#report-search", "placeholder", "explore.searchPlaceholder"],
+    ["#map", "aria-label", "map.community", { region: document.getElementById("current-region")?.textContent || "Worldwide" }], ["#fit-reports", "title", "map.centerTitle"], [".map-layer-control", "aria-label", "map.layers"], [".map-legend", "aria-label", "map.symbols"],
+    ["#analysis-overview-map", "aria-label", "analysis.mapLabel"], [".analysis-map-legend", "aria-label", "analysis.symbols"], ["#analysis-overview", "aria-label", "analysis.overview"],
+  ];
+  for (const [selector, attribute, key, values] of attributes) document.querySelector(selector)?.setAttribute(attribute, i18n.t(key, values));
+  search.placeholder = i18n.t("explore.searchPlaceholder");
+  const urgencyValue = urgency.value;
+  urgency.replaceChildren(new Option(i18n.t("explore.allLevels"), "all"), new Option(i18n.t("urgency.high"), "high"), new Option(i18n.t("urgency.medium"), "medium"), new Option(i18n.t("urgency.low"), "low"));
+  urgency.value = urgencyValue;
+}
+translateStaticInterface();
+const languagePicker = createLanguagePicker({ i18n });
 const map = L.map("map", { ...MAP_VIEWPORT_OPTIONS, minZoom: 2, scrollWheelZoom: true, touchZoom: true, zoomSnap: 0.25 }).setView([20, 0], 2);
+function translateMapControls() {
+  const zoomIn = document.querySelector("#map .leaflet-control-zoom-in"), zoomOut = document.querySelector("#map .leaflet-control-zoom-out");
+  for (const [control, key] of [[zoomIn, "map.zoomIn"], [zoomOut, "map.zoomOut"]]) if (control) { control.title = i18n.t(key); control.setAttribute("aria-label", i18n.t(key)); }
+  document.querySelectorAll("#map .leaflet-popup-close-button").forEach((button) => { button.title = i18n.t("map.closePopup"); button.setAttribute("aria-label", i18n.t("map.closePopup")); });
+}
+translateMapControls();
+map.on("popupopen", translateMapControls);
 const mapViewport = attachMapViewport(map);
 const detachMapZoom = attachMapZoom(map);
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
@@ -62,7 +115,11 @@ let regionController;
 let resolving = false;
 let connectionFailed = false;
 let reportsReady = false;
-const analysisWorkspace = createAnalysisWorkspace({ firebaseApp, reviewComplaints, createPopulationMap: (container, options) => createPopulationAreaMap(L, container, options), createOverviewMap: (container) => createAnalysisOverviewMap(L, container, { reportPopup, candidatePopup }), createReportMap: (container, report) => createReportLocationMap(L, container, report) });
+let connectionMessage = { key: "connection.connecting", values: {} };
+let regionMessage = { key: "region.finding", values: {} };
+function setConnectionMessage(key, values = {}) { connectionMessage = { key, values }; status.textContent = i18n.t(key, values); }
+setConnectionMessage("connection.connecting");
+const analysisWorkspace = createAnalysisWorkspace({ i18n, firebaseApp, reviewComplaints, createPopulationMap: (container, options) => createPopulationAreaMap(L, container, { ...options, i18n }), createOverviewMap: (container) => createAnalysisOverviewMap(L, container, { reportPopup, candidatePopup, i18n }), createReportMap: (container, report) => createReportLocationMap(L, container, report) });
 function updateAnalysis() {
   analysisWorkspace.update({ region: selectedRegion, reports: regionReports(), recommendations, reportsReady, connectionFailed });
 }
@@ -72,7 +129,19 @@ function element(tag, text, className) {
   if (className) node.className = className;
   return node;
 }
-function label(value) { return ANALYSIS_CATEGORIES.find((entry) => entry.id === value)?.label || String(value || "other").replaceAll("_", " "); }
+function label(value) {
+  const normalized = value === "medication_access" ? "healthcare" : value;
+  if (ANALYSIS_CATEGORIES.some((entry) => entry.id === normalized)) return i18n.t(`category.${normalized}`);
+  if (["high", "medium", "low", "unknown"].includes(normalized)) return i18n.t(`urgency.${normalized}`);
+  return String(value || i18n.t("category.other")).replaceAll("_", " ");
+}
+const facilityKeys = new Map(Object.entries({
+  "Gas station": "gasStation", "Transit stop or shuttle hub": "transitStop", Pharmacy: "pharmacy", "Community health clinic": "healthClinic",
+  "Grocery store": "grocery", "Food distribution point": "foodDistribution", "Public internet access point": "internet", "Community water station": "waterStation",
+  "Transit access hub": "transitHub", "School or education center": "education", "Road access improvements": "road", "Food access center": "foodCenter",
+  "Water and sanitation service point": "waterSanitation", "Emergency response station": "emergency", "Community service center": "community",
+}));
+function facilityLabel(value) { const key = facilityKeys.get(value); return key ? i18n.t(`facility.${key}`) : value || i18n.t("facility.community"); }
 function iconElement(category, detail) {
   const icon = element("span", undefined, "service-icon");
   icon.setAttribute("aria-hidden", "true");
@@ -99,7 +168,8 @@ function reportPopup(report) {
   const content = element("div", undefined, "report-popup");
   const heading = element("strong", undefined, "service-heading");
   heading.append(iconElement(report.category), element("span", label(report.category)));
-  content.append(heading, element("p", report.summary), element("small", `${label(report.severity)} urgency · ${report.region?.name || "Approximate map area"} · Approximate location`));
+  const copy = element("p", report.summary); copy.dir = "auto";
+  content.append(heading, copy, element("small", `${label(report.severity)} ${i18n.t("urgency.label")} · ${report.region?.name || i18n.t("map.approximateArea")} · ${i18n.t("map.approximate")}`));
   return content;
 }
 function selectedReports() {
@@ -113,17 +183,17 @@ function renderReports() {
   const selected = selectedReports();
   $("#report-count").textContent = selected.length;
   $("#urgent-count").textContent = selected.filter((report) => report.severity === "high").length;
-  $("#report-scope").textContent = `${selected.length} of ${regionReports().length} reports in ${selectedRegion.name}${viewport.checked ? " · limited to the map area" : ""}.`;
+  $("#report-scope").textContent = `${i18n.t("explore.scope", { shown: i18n.number(selected.length), total: i18n.number(regionReports().length), region: selectedRegion.name })}${viewport.checked ? i18n.t("explore.scopeMap") : ""}.`;
   // Hidden Leaflet layers do not emit marker removal events when rebuilt.
   for (const dispose of reportPopupDisposers) dispose();
   reportPopupDisposers = [];
   reportsLayer.clearLayers();
   reportList.replaceChildren();
-  if (!selected.length) reportList.append(element("p", regionReports().length ? "No reports match these filters."
-    : reportsReady ? `No reports in ${selectedRegion.name} yet.` : "Community reports will appear here when they arrive.", "empty-state"));
+  if (!selected.length) reportList.append(element("p", regionReports().length ? i18n.t("explore.noMatch")
+    : reportsReady ? i18n.t("explore.noRegion", { region: selectedRegion.name }) : i18n.t("explore.reportsLater"), "empty-state"));
   selected.forEach((report) => {
     const icon = L.divIcon({ className: "", html: `<span class="report-marker" style="background:${colors[report.severity] || colors.unknown}" aria-hidden="true">${serviceIconSvg(report.category)}</span>`, iconSize: [26, 26], iconAnchor: [13, 13] });
-    const marker = L.marker([report.latitude, report.longitude], { icon, title: `${label(report.category)} · ${label(report.severity)} urgency` }).addTo(reportsLayer);
+    const marker = L.marker([report.latitude, report.longitude], { icon, title: i18n.t("map.reportTitle", { category: label(report.category), urgency: label(report.severity) }) }).addTo(reportsLayer);
     reportPopupDisposers.push(mapPopups.register(marker, () => reportPopup(report)));
     const card = element("button", undefined, "report-card");
     card.type = "button";
@@ -131,7 +201,8 @@ function renderReports() {
     const title = element("strong", undefined, "service-heading");
     title.append(iconElement(report.category), element("span", label(report.category)));
     heading.append(title, element("span", label(report.severity), `urgency-tag ${report.severity}`));
-    card.append(heading, element("span", report.summary || "No description provided.", "report-copy"), element("small", report.region?.name || "Locating region…"));
+    const reportCopy = element("span", report.summary || i18n.t("explore.noDescription"), "report-copy"); reportCopy.dir = "auto";
+    card.append(heading, reportCopy, element("small", report.region?.name || i18n.t("explore.locating")));
     card.addEventListener("click", () => {
       map.setView([report.latitude, report.longitude], 14);
       // Map movement may rebuild markers when the viewport filter is enabled.
@@ -143,15 +214,16 @@ function renderReports() {
 function refreshCategories() {
   const previous = category.value;
   const categories = [...new Set(regionReports().map((report) => report.category))].sort();
-  category.replaceChildren(new Option("All services", "all"), ...categories.map((name) => new Option(label(name), name)));
+  category.replaceChildren(new Option(i18n.t("explore.allServices"), "all"), ...categories.map((name) => new Option(label(name), name)));
   category.value = categories.includes(previous) ? previous : "all";
 }
 function candidatePopup(candidate) {
   const content = element("div", undefined, "report-popup");
   const heading = element("strong", undefined, "service-heading");
-  heading.append(iconElement(candidate.category, candidate.analysis.facilityType), element("span", candidate.analysis.facilityType));
-  content.append(heading, element("p", `Suggested location ${candidate.locationRank || 1} of ${candidate.locationCount || 1} · ${candidate.signals.length} supporting reports`), element("p", candidate.analysis.decisionSummary || candidate.analysis.rationale));
-  content.append(element("small", "Report-based suggestions ranked by urgency and demand. Local site checks are still needed."));
+  heading.append(iconElement(candidate.category, candidate.analysis.facilityType), element("span", facilityLabel(candidate.analysis.facilityType)));
+  content.append(heading, element("p", `${i18n.t("candidate.suggested", { rank: candidate.locationRank || 1, count: candidate.locationCount || 1 })} · ${i18n.t("candidate.supporting", { count: candidate.signals.length })}`));
+  content.append(element("p", i18n.t("candidate.rationale", { count: candidate.signals.length, category: label(candidate.category), region: candidate.region?.name || selectedRegion.name, service: facilityLabel(candidate.analysis.facilityType) })));
+  content.append(element("small", i18n.t("candidate.caution")));
   return content;
 }
 function renderCandidates() {
@@ -161,7 +233,7 @@ function renderCandidates() {
   recommendations.forEach((candidate) => {
     const rank = [1, 2, 3].includes(candidate.locationRank) ? candidate.locationRank : 1;
     const icon = L.divIcon({ className: "", html: `<span class="candidate-marker" aria-hidden="true">${serviceIconSvg(candidate.category, candidate.analysis.facilityType)}<b>${rank}</b></span>`, iconSize: [36, 36], iconAnchor: [18, 18] });
-    const marker = L.marker([candidate.position.latitude, candidate.position.longitude], { icon, title: `${candidate.analysis.facilityType} · suggested location ${rank}` }).addTo(candidatesLayer);
+    const marker = L.marker([candidate.position.latitude, candidate.position.longitude], { icon, title: i18n.t("map.suggestedTitle", { type: facilityLabel(candidate.analysis.facilityType), rank }) }).addTo(candidatesLayer);
     candidatePopupDisposers.push(mapPopups.register(marker, () => candidatePopup(candidate)));
   });
 }
@@ -173,9 +245,9 @@ function updateCandidates() {
   renderCandidates();
   const candidateStatus = $("#candidate-status");
   candidateStatus.textContent = candidates.length
-    ? `${candidates.length} proposed service locations. Numbered icons show up to three locations per service.`
-    : resolving && !selectedRegion.geometry ? "Finding locations for proposed services…" : "Proposed services need at least two reports in the same region and category.";
-  if (connectionFailed) candidateStatus.textContent += " Reports may be out of date while the connection is unavailable.";
+    ? i18n.t("candidate.count", { count: i18n.number(candidates.length) })
+    : resolving && !selectedRegion.geometry ? i18n.t("candidate.finding") : i18n.t("candidate.needReports");
+  if (connectionFailed) candidateStatus.textContent += i18n.t("candidate.outdated");
   updateAnalysis();
 }
 
@@ -200,8 +272,15 @@ $("#layer-candidates").addEventListener("change", (event) => {
 });
 map.on("moveend zoomend", () => { if (viewport.checked) renderReports(); });
 if (["#plan", "#decisions"].includes(window.location.hash)) window.history.replaceState(null, "", "#explore-view");
+function translatePageShell(analyzing) {
+  const skipLink = document.querySelector(".skip-link");
+  skipLink.href = analyzing ? "#analysis-view" : "#explore-view";
+  skipLink.textContent = i18n.t(analyzing ? "skip.analysis" : "skip.map");
+  document.title = i18n.t(analyzing ? "document.analysisTitle" : "document.mapTitle");
+}
 function showPage() {
   const analyzing = window.location.hash.startsWith("#analysis");
+  translatePageShell(analyzing);
   // Preserve the current Analysis view when the skip link targets it.
   if (analyzing && !$("#analysis-view").hidden) return;
   $("#explore-view").hidden = analyzing;
@@ -209,9 +288,6 @@ function showPage() {
   for (const [id, active] of [["#map-tab", !analyzing], ["#analysis-tab", analyzing]]) {
     if (active) $(id).setAttribute("aria-current", "page"); else $(id).removeAttribute("aria-current");
   }
-  document.querySelector(".skip-link").href = analyzing ? "#analysis-view" : "#explore-view";
-  document.querySelector(".skip-link").textContent = analyzing ? "Skip to analysis" : "Skip to map and reports";
-  document.title = analyzing ? "NeedMap | Regional Analysis" : "NeedMap | Community Map";
   updateAnalysis(); analysisWorkspace.setVisible(analyzing);
   if (!analyzing) requestAnimationFrame(() => {
     if ($("#explore-view").hidden) return;
@@ -223,13 +299,14 @@ window.addEventListener("hashchange", showPage);
 showPage();
 
 const regionNavigation = createRegionNavigation({
-  onChange(region) {
+  onChange(region, { source } = {}) {
     selectedRegion = region;
+    if ((source === "detected" || source === "saved") && /^[A-Z]{2}$/.test(region.countryCode || "")) i18n.applyRegion(region.countryCode);
     selectedRegionLayer.clearLayers();
     map.closePopup();
     viewport.checked = false;
     $("#current-region").textContent = region.label || region.name;
-    $("#map-region-label").textContent = region.name === "Worldwide" ? "Worldwide community map" : region.name;
+    $("#map-region-label").textContent = i18n.t("map.community", { region: region.name });
     if (region.geometry) L.geoJSON(region.geometry, { style: { color: "#005ea8", weight: 2, fillOpacity: .025 }, interactive: false }).addTo(selectedRegionLayer);
     fitSelectedRegion();
     refreshCategories();
@@ -237,13 +314,25 @@ const regionNavigation = createRegionNavigation({
     updateCandidates();
     regionPicker.close();
   },
-  onStatus({ state, message }) {
-    $("#region-status").textContent = message;
-    $("#region-action-status").textContent = message;
+  onStatus({ state, message, key, values }) {
+    regionMessage = key ? { key, values } : { message };
+    const localized = key ? i18n.t(key, values) : message;
+    $("#region-status").textContent = localized;
+    $("#region-action-status").textContent = localized;
     $("#region-action-status").hidden = state === "ready";
   },
 });
-const regionPicker = createRegionPicker({ navigation: regionNavigation });
+const regionPicker = createRegionPicker({ navigation: regionNavigation, i18n });
+const stopLanguageSubscription = i18n.subscribe(() => {
+  translateStaticInterface();
+  translateMapControls();
+  $("#current-region").textContent = selectedRegion.label || selectedRegion.name;
+  $("#map-region-label").textContent = i18n.t("map.community", { region: selectedRegion.name });
+  const localizedRegion = regionMessage.key ? i18n.t(regionMessage.key, regionMessage.values) : regionMessage.message;
+  $("#region-status").textContent = localizedRegion; $("#region-action-status").textContent = localizedRegion;
+  status.textContent = i18n.t(connectionMessage.key, connectionMessage.values);
+  map.closePopup(); regionPicker.render(); refreshCategories(); renderReports(); updateCandidates(); showPage();
+});
 regionNavigation.initialize();
 
 const unsubscribe = onSnapshot(collection(db, "incomingSignals"), (snapshot) => {
@@ -263,24 +352,24 @@ const unsubscribe = onSnapshot(collection(db, "incomingSignals"), (snapshot) => 
   renderReports();
   updateCandidates();
   liveDot.className = "live-dot connected";
-  status.textContent = resolving ? `Finding regions · 0/${reports.length}` : "Live · no reports yet";
+  setConnectionMessage(resolving ? "connection.finding" : "connection.noReports", resolving ? { done: 0, total: reports.length } : {});
   if (!reports.length) return;
   enrichSignalsWithRegions(reports, {
     signal: regionController.signal,
-    onProgress(done, total) { if (revision === regionRevision) status.textContent = `Finding regions · ${done}/${total}`; },
+    onProgress(done, total) { if (revision === regionRevision) setConnectionMessage("connection.finding", { done, total }); },
   }).then((enriched) => {
     if (revision !== regionRevision) return;
     reports = enriched;
     resolving = false;
     const missing = reports.filter((report) => !report.region).length;
-    status.textContent = missing ? `Live · ${missing} region${missing === 1 ? "" : "s"} unavailable` : `Live · ${reports.length} reports`;
+    setConnectionMessage(missing ? "connection.regionsUnavailable" : "connection.live", { count: missing || reports.length });
     renderReports();
     updateCandidates();
   }).catch((error) => {
     if (revision !== regionRevision) return;
     console.error("NeedMap region lookup:", error);
     resolving = false;
-    status.textContent = "Live · region lookup unavailable";
+    setConnectionMessage("connection.regionUnavailable");
     updateCandidates();
   });
 }, (error) => {
@@ -289,12 +378,12 @@ const unsubscribe = onSnapshot(collection(db, "incomingSignals"), (snapshot) => 
   regionRevision += 1;
   resolving = false;
   connectionFailed = true;
-  status.textContent = "Connection unavailable · reload to reconnect";
+  setConnectionMessage("connection.unavailable");
   liveDot.className = "live-dot error";
   updateCandidates();
 });
 window.addEventListener("pagehide", (event) => {
   if (event.persisted) return;
-  unsubscribe(); regionController?.abort(); regionNavigation.destroy(); regionPicker.destroy(); mapViewport.destroy(); analysisWorkspace.destroy(); mapPopups.destroy(); detachMapZoom();
+  unsubscribe(); stopLanguageSubscription(); languagePicker.destroy(); regionController?.abort(); regionNavigation.destroy(); regionPicker.destroy(); mapViewport.destroy(); analysisWorkspace.destroy(); mapPopups.destroy(); detachMapZoom();
   window.removeEventListener("hashchange", showPage);
 });

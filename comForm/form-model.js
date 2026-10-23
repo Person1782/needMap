@@ -5,10 +5,16 @@
   var SEVERITIES = ["low", "medium", "high"];
   var SUMMARY_LIMIT = 280;
   var personalInfoPatterns = [
-    { label: "a phone number", pattern: /(?:\+?\d{1,3}[\s.-]?)?(?:\(\d{3}\)|\b\d{3})[\s.-]?\d{3}[\s.-]?\d{4}\b/ },
-    { label: "an email address", pattern: /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i },
-    { label: "a street address", pattern: /\b\d{1,5}\s+[A-Za-z0-9.\s]+\s(?:street|st|road|rd|avenue|ave|lane|ln|drive|dr|court|ct|boulevard|blvd)\b/i }
+    { key: "errorPhone", pattern: /(?:\+?\d{1,3}[\s.-]?)?(?:\(\d{3}\)|\b\d{3})[\s.-]?\d{3}[\s.-]?\d{4}\b/ },
+    { key: "errorEmail", pattern: /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i },
+    { key: "errorAddress", pattern: /\b\d{1,5}\s+[A-Za-z0-9.\s]+\s(?:street|st|road|rd|avenue|ave|lane|ln|drive|dr|court|ct|boulevard|blvd)\b/i }
   ];
+  var defaultMessages = {
+    errorCategory: "Choose a service category.", errorSeverity: "Choose an urgency level.",
+    errorSummaryRequired: "Describe the service-access concern.", errorSummaryLength: "Use 280 characters or fewer.",
+    errorPhone: "Remove the phone number before submitting.", errorEmail: "Remove the email address before submitting.",
+    errorAddress: "Remove the street address before submitting.", errorLocation: "Add your approximate location or choose a nearby place."
+  };
   function isValidLocation(latitude, longitude) {
     return typeof latitude === "number" && isFinite(latitude) && typeof longitude === "number" && isFinite(longitude)
       && latitude >= -90 && latitude <= 90 && longitude >= -180 && longitude <= 180;
@@ -21,25 +27,26 @@
     return { latitude: lat, longitude: lon, locationGridId: "grid-" + lat.toFixed(4) + "-" + lon.toFixed(4), locationPrecision: "approximate_grid_500m" };
   }
   function text(value) { return value === null || value === undefined ? "" : String(value); }
-  function validateReport(values) {
+  function validateReport(values, translate) {
+    function message(key) { return translate ? translate(key) : defaultMessages[key]; }
     var errors = {};
     var category = text(values.category);
     var severity = text(values.severity);
     var summary = text(values.summary).replace(/^\s+|\s+$/g, "");
-    if (CATEGORIES.indexOf(category) === -1) errors.category = "Choose a service category.";
-    if (SEVERITIES.indexOf(severity) === -1) errors.severity = "Choose an urgency level.";
-    if (!summary) errors.summary = "Describe the service-access concern.";
-    else if (summary.length > SUMMARY_LIMIT) errors.summary = "Use 280 characters or fewer.";
+    if (CATEGORIES.indexOf(category) === -1) errors.category = message("errorCategory");
+    if (SEVERITIES.indexOf(severity) === -1) errors.severity = message("errorSeverity");
+    if (!summary) errors.summary = message("errorSummaryRequired");
+    else if (summary.length > SUMMARY_LIMIT) errors.summary = message("errorSummaryLength");
     else {
       for (var i = 0; i < personalInfoPatterns.length; i++) {
         if (personalInfoPatterns[i].pattern.test(summary)) {
-          errors.summary = "Remove " + personalInfoPatterns[i].label + " before submitting.";
+          errors.summary = message(personalInfoPatterns[i].key);
           break;
         }
       }
     }
     var location = values.location;
-    if (!location || !isValidLocation(location.latitude, location.longitude)) errors.location = "Add your approximate location or choose a nearby place.";
+    if (!location || !isValidLocation(location.latitude, location.longitude)) errors.location = message("errorLocation");
     if (Object.keys(errors).length) return { errors: errors, report: null };
     var grid = createGridLocation(location.latitude, location.longitude);
     return { errors: errors, report: {

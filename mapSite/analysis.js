@@ -5,7 +5,6 @@ const EARTH_RADIUS_KM = 6371;
 
 export const MIN_CLUSTER_SIZE = 2;
 export const MAX_SERVICE_LOCATIONS = 3;
-// Nearby reports should not produce several effectively identical map pins.
 export const MIN_LOCATION_SEPARATION_KM = 0.25;
 const MIN_SPLIT_IMPROVEMENT = 0.25;
 

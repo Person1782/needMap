@@ -1,5 +1,8 @@
 (function (root, document, navigator) {
   "use strict";
+  var i18n = root.NeedMapI18n;
+  if (!i18n || !i18n.t) return;
+  function tr(key, parameters) { return i18n.t(key, parameters); }
   function byId(id) { return document.getElementById(id); }
   var form = byId("signal-form");
   var formFields = byId("form-fields");
@@ -18,10 +21,15 @@
   var modeSelect = byId("connection-mode");
   var modeStatus = byId("mode-status");
   var mapLinkContainer = byId("map-link-container");
+  var formStatusState = { key: "", parameters: null, type: "" };
+  var locationStatusState = { key: "noLocation", parameters: null, type: "" };
+  var draftStatusState = { key: "draftInitial", parameters: null };
+  var searchStatusState = { key: "", parameters: null };
+  var activeErrors = false;
   var fieldNames = ["category", "severity", "summary"];
   var model = root.NeedMapForm;
   if (!root.JSON || !root.XMLHttpRequest || !root.addEventListener || !model || !root.NeedMapNetwork || !root.NeedMapAdaptive) {
-    statusMessage.textContent = "This browser cannot send the form. Please open this page in another browser.";
+    statusMessage.textContent = tr("browserUnsupported");
     return;
   }
   var storageKey = "needmap-report-draft-v2";
@@ -31,9 +39,11 @@
   var mode;
   var observedSlow = false;
   var submissionStay = false;
+  var searchingNow = false;
   var modeStorage;
   var modeStorageKey = "needmap-connection-mode-v1";
-  var destination = root.NeedMapAdaptive.mapUrl(form.getAttribute("data-map-url"), root.location);
+  var baseDestination = root.NeedMapAdaptive.mapUrl(form.getAttribute("data-map-url"), root.location);
+  var destination = baseDestination;
   var locationRequest = 0;
   var locating = false;
   var searchRequest = 0;
@@ -49,16 +59,28 @@
     if (modeStorage.getItem(modeStorageKey) === "slow") preference = "slow";
   } catch (error) { modeStorage = null; }
   modeSelect.value = preference;
-  byId("map-link").href = destination;
+  function localizedMapUrl(url) {
+    var hashIndex = url.indexOf("#");
+    var hash = hashIndex === -1 ? "" : url.slice(hashIndex);
+    var base = hashIndex === -1 ? url : url.slice(0, hashIndex);
+    base = base.replace(/([?&])lang=[^&#]*(&?)/, function (_match, start, tail) { return tail ? start : ""; }).replace(/[?&]$/, "");
+    return base + (base.indexOf("?") === -1 ? "?" : "&") + "lang=" + encodeURIComponent(i18n.getLanguage()) + hash;
+  }
+  function updateDestination() {
+    destination = localizedMapUrl(baseDestination);
+    byId("map-link").href = destination;
+  }
+  updateDestination();
   mapLinkContainer.hidden = true;
   function updateMode() {
     mode = root.NeedMapAdaptive.detect(navigator, root.performance, preference, observedSlow);
     if (submitting && mode.slow) submissionStay = true;
     document.body.setAttribute("data-connection-mode", mode.slow ? "slow" : "full");
-    byId("mode-label").textContent = mode.slow ? "Slow connection mode" : "Complete community form";
-    modeStatus.textContent = mode.slow ? mode.reason + " All report fields are available. After confirmation, you will stay here and can open the map yourself." : "After your report is confirmed, the Map page will open automatically. Choose slow connection mode to stay here.";
-    if (submitting && submissionStay && !mode.slow) modeStatus.textContent = "Conditions have improved. This report will still keep you here after confirmation; you can open the map yourself.";
-    if (!modeStorage) byId("mode-preference-note").textContent = "Your choice applies to this visit. This browser cannot save the preference.";
+    byId("mode-label").textContent = tr(mode.slow ? "connectionSlow" : "modeLabelFull");
+    modeStatus.textContent = mode.slow ? tr("modeSlowDetail", { reason: tr(mode.reasonKey) }) : tr("modeFast");
+    if (submitting && submissionStay && !mode.slow) modeStatus.textContent = tr("modeImproved");
+    if (!modeStorage) byId("mode-preference-note").textContent = tr("modeNoStorage");
+    else byId("mode-preference-note").textContent = tr("preferenceRemembered");
   }
   modeSelect.addEventListener("change", function () {
     preference = modeSelect.value === "slow" ? "slow" : "auto";
@@ -72,26 +94,43 @@
     attempt: draft && draft.attempt,
     onAttempt: function () { saveDraft(); }
   });
-  var findPlace = root.NeedMapPlaceSearch(placeInput.getAttribute("data-search-url"), root.NeedMapNetwork.request);
-  function setStatus(message, type) { statusMessage.textContent = message; statusMessage.className = "form-status " + (type || ""); }
-  function setLocationStatus(message, type) { locationStatus.textContent = message; locationStatus.className = "location-status " + (type || ""); }
+  var findPlace = root.NeedMapPlaceSearch(placeInput.getAttribute("data-search-url"), root.NeedMapNetwork.request, null, tr);
+  function setStatus(key, parameters, type) {
+    formStatusState = { key: key, parameters: parameters, type: type || "" };
+    statusMessage.textContent = key ? tr(key, parameters) : "";
+    statusMessage.className = "form-status " + (type || "");
+  }
+  function setLocationStatus(key, parameters, type) {
+    locationStatusState = { key: key, parameters: parameters, type: type || "" };
+    locationStatus.textContent = key ? tr(key, parameters) : "";
+    locationStatus.className = "location-status " + (type || "");
+  }
+  function setDraftStatus(key, parameters) {
+    draftStatusState = { key: key, parameters: parameters };
+    draftStatus.textContent = tr(key, parameters);
+  }
+  function setSearchStatus(key, parameters) {
+    searchStatusState = { key: key, parameters: parameters };
+    searchStatus.textContent = key ? tr(key, parameters) : "";
+  }
   function updateCount() { byId("summary-count").textContent = summary.value.length + " / 280"; }
   function values() { return { category: byId("category").value, severity: byId("severity").value, summary: summary.value, location: location }; }
   function saveDraft() {
-    if (!storage) { draftStatus.textContent = "Keep this page open to keep your draft. Saving on this phone is unavailable."; return; }
+    if (!storage) { setDraftStatus("draftNoStorage"); return; }
     var data = values();
     data.savedAt = new Date().getTime();
     data.attempt = submissions.getAttempt();
     try {
       storage.setItem(storageKey, JSON.stringify(data));
-      draftStatus.textContent = "Draft saved on this phone for 7 days. Clear form removes it. Nothing is sent until you submit.";
+      setDraftStatus("draftSaved");
     } catch (error) {
       storage = null;
-      draftStatus.textContent = "Keep this page open to keep your draft. Saving on this phone is unavailable.";
+      setDraftStatus("draftNoStorage");
     }
   }
   function fieldTarget(name) { return byId(name === "location" ? "location-button" : name); }
   function clearErrors() {
+    activeErrors = false;
     errorSummary.hidden = true;
     while (errorList.firstChild) errorList.removeChild(errorList.firstChild);
     ["category", "severity", "summary", "location"].forEach(function (name) {
@@ -99,7 +138,7 @@
       byId(name + "-error").textContent = "";
     });
   }
-  function showErrors(errors) {
+  function showErrors(errors, focusSummary) {
     clearErrors();
     Object.keys(errors).forEach(function (name) {
       var target = fieldTarget(name);
@@ -113,36 +152,40 @@
       item.appendChild(link);
       errorList.appendChild(item);
     });
+    activeErrors = true;
     errorSummary.hidden = false;
-    errorSummary.focus();
+    if (focusSummary !== false) errorSummary.focus();
   }
   function cancelLocationRequest() {
     locationRequest++;
     locating = false;
     locationButton.disabled = submitting;
-    locationButton.textContent = "Use my location";
+    locationButton.textContent = tr("useLocation");
   }
   function clearSearch() {
     searchRequest++;
+    searchingNow = false;
     searchButton.disabled = submitting;
-    searchButton.textContent = "Find place";
+    searchButton.textContent = tr("findPlace");
     while (searchResults.firstChild) searchResults.removeChild(searchResults.firstChild);
-    searchStatus.textContent = "";
+    setSearchStatus("");
   }
-  function selectLocation(grid, message) {
+  function selectLocation(grid, messageKey, parameters) {
     cancelLocationRequest();
     clearSearch();
     location = grid;
     locationButton.removeAttribute("aria-invalid");
     byId("location-error").textContent = "";
-    setLocationStatus(message + " Only the approximate map area will be shared.", "success");
+    locationStatusState = { key: messageKey, parameters: parameters, suffix: true, type: "success" };
+    locationStatus.textContent = tr(messageKey, parameters) + " " + tr("locationSharedSuffix");
+    locationStatus.className = "location-status success";
     saveDraft();
   }
   function clearLocation() {
     cancelLocationRequest();
     clearSearch();
     location = null;
-    setLocationStatus("No location added yet.");
+    setLocationStatus("noLocation");
     saveDraft();
   }
   function requestLocation() {
@@ -152,53 +195,56 @@
     location = null;
     saveDraft();
     if (!navigator.geolocation) {
-      setLocationStatus("Location is unavailable on this device. Search for a town or neighbourhood below.", "error");
+      setLocationStatus("locationUnavailableDevice", null, "error");
       return;
     }
     var request = ++locationRequest;
     locating = true;
     locationButton.disabled = true;
-    locationButton.textContent = "Finding location…";
-    setLocationStatus("Allow location access when your browser asks. You can also search below.");
+    locationButton.textContent = tr("locationFinding");
+    setLocationStatus("locationPermissionPrompt");
     try {
       navigator.geolocation.getCurrentPosition(function (position) {
         if (request !== locationRequest || submitting) return;
-        try { selectLocation(model.createGridLocation(position.coords.latitude, position.coords.longitude), "Your approximate location is ready."); }
-        catch (error) { cancelLocationRequest(); setLocationStatus("Your device returned an invalid location. Try again or search below.", "error"); }
+        try { selectLocation(model.createGridLocation(position.coords.latitude, position.coords.longitude), "locationReady"); }
+        catch (error) { cancelLocationRequest(); setLocationStatus("locationInvalid", null, "error"); }
       }, function (error) {
         if (request !== locationRequest || submitting) return;
         cancelLocationRequest();
-        setLocationStatus(error.code === 1 ? "Location permission was denied. Enable it in browser settings or search for a nearby place below." : "Your location could not be found. Try again or search for a nearby place below.", "error");
+        setLocationStatus(error.code === 1 ? "locationDenied" : "locationNotFound", null, "error");
       }, { enableHighAccuracy: false, timeout: 12000, maximumAge: 60000 });
     } catch (error) {
       cancelLocationRequest();
-      setLocationStatus("Location is unavailable. Search for a town or neighbourhood below.", "error");
+      setLocationStatus("locationUnavailable", null, "error");
     }
   }
   function searchPlace() {
     if (submitting || searchButton.disabled) return;
     cancelLocationRequest();
     clearSearch();
-    if (navigator.onLine === false) { searchStatus.textContent = "You are offline. Reconnect to search for a place."; return; }
+    if (navigator.onLine === false) { setSearchStatus("searchOffline"); return; }
     var request = ++searchRequest;
+    searchingNow = true;
     searchButton.disabled = true;
-    searchButton.textContent = "Searching…";
-    searchStatus.textContent = "Looking for matching places…";
+    searchButton.textContent = tr("searching");
+    setSearchStatus("searchLooking");
     findPlace(placeInput.value, function (error, results) {
       if (request !== searchRequest || submitting) return;
+      searchingNow = false;
       searchButton.disabled = false;
-      searchButton.textContent = "Find place";
-      if (error) { searchStatus.textContent = error.message; return; }
-      searchStatus.textContent = results.length ? "Choose the place nearest to the concern:" : "No matching places. Add the town, region or country and try again.";
+      searchButton.textContent = tr("findPlace");
+      if (error) { setSearchStatus(error.translationKey || "placeUnavailable"); return; }
+      setSearchStatus(results.length ? "searchChoose" : "searchNone");
       results.forEach(function (result) {
         var item = document.createElement("li");
         var button = document.createElement("button");
         button.type = "button";
         button.className = "place-result";
+        button.setAttribute("dir", "auto");
         button.textContent = result.label;
         button.addEventListener("click", function () {
           if (submitting) return;
-          selectLocation(result.location, "Selected place centre: " + result.label + ", rounded for privacy.");
+          selectLocation(result.location, "selectedPlace", { place: result.label });
           locationButton.focus();
         });
         item.appendChild(button);
@@ -230,9 +276,9 @@
     submissions.reset();
     mapLinkContainer.hidden = true;
     setStatus("");
-    setLocationStatus("No location added yet.");
+    setLocationStatus("noLocation");
     try { if (storage) storage.removeItem(storageKey); } catch (error) { storage = null; }
-    draftStatus.textContent = "No draft saved. Your entries will stay on this phone until sent or cleared.";
+    setDraftStatus("draftCleared");
     root.setTimeout(updateCount, 0);
   });
   form.addEventListener("submit", function (event) {
@@ -240,11 +286,11 @@
     if (submitting) return;
     mapLinkContainer.hidden = true;
     clearErrors();
-    var result = model.validateReport(values());
+    var result = model.validateReport(values(), tr);
     if (!result.report) { setStatus(""); showErrors(result.errors); return; }
     if (navigator.onLine === false) {
       saveDraft();
-      setStatus("You are offline. Your entries are still here. Reconnect, then select Submit report.", "error");
+      setStatus("offlineSubmit", null, "error");
       statusMessage.focus();
       return;
     }
@@ -255,11 +301,11 @@
     clearSearch();
     lockForm(true);
     form.setAttribute("aria-busy", "true");
-    submitButton.textContent = "Submitting…";
-    setStatus("Submitting your report. Keep this page open until confirmation appears.");
+    submitButton.textContent = tr("submitting");
+    setStatus("submittingStatus");
     var startedAt = new Date().getTime();
     var modeTimer = root.setTimeout(function () { observedSlow = true; updateMode(); }, 8000);
-    var slowTimer = root.setTimeout(function () { setStatus("Still waiting for confirmation. Keep this page open. If the request times out, you can retry without creating a duplicate."); }, 15000);
+    var slowTimer = root.setTimeout(function () { setStatus("stillWaiting"); }, 15000);
     submissions.submit(result.report, function (error, reference) {
       root.clearTimeout(slowTimer);
       root.clearTimeout(modeTimer);
@@ -268,19 +314,19 @@
       submitting = false;
       lockForm(false);
       form.removeAttribute("aria-busy");
-      submitButton.textContent = "Submit report";
+      submitButton.textContent = tr("submitReport");
       if (!error) {
         form.reset();
         mapLinkContainer.hidden = false;
-        setStatus("Report received. Reference " + reference.slice(0, 8).toUpperCase() + ". " + (submissionStay ? "Your report has been submitted. You can stay here or open the Map page when you are ready." : "Opening the Map page…"), "success");
+        setStatus(submissionStay ? "reportReceivedStay" : "reportReceivedOpening", { reference: reference.slice(0, 8).toUpperCase() }, "success");
         if (!submissionStay) {
           try { root.location.assign(destination); }
-          catch (navigationError) { setStatus("Report received. Reference " + reference.slice(0, 8).toUpperCase() + ". Use the link below to open the Map page.", "success"); }
+          catch (navigationError) { setStatus("reportReceivedLink", { reference: reference.slice(0, 8).toUpperCase() }, "success"); }
         }
       } else {
         saveDraft();
         var unavailable = error.status === 403 || error.code === "OPERATION_NOT_ALLOWED";
-        setStatus(unavailable ? "The reporting service is temporarily unavailable. Your entries are still here. Try again later." : "Submission could not be confirmed. Your entries are still here. Check your connection and select Submit report to retry.", "error");
+        setStatus(unavailable ? "reportingUnavailable" : "submissionUnconfirmed", null, "error");
       }
       statusMessage.focus();
     });
@@ -292,14 +338,28 @@
   var connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
   if (connection && connection.addEventListener) connection.addEventListener("change", updateMode);
   root.addEventListener("beforeunload", function (event) { if (submitting) { event.preventDefault(); event.returnValue = ""; } });
+  root.addEventListener("needmap-languagechange", function () {
+    updateDestination();
+    updateMode();
+    statusMessage.textContent = formStatusState.key ? tr(formStatusState.key, formStatusState.parameters) : "";
+    statusMessage.className = "form-status " + formStatusState.type;
+    locationStatus.textContent = locationStatusState.key ? tr(locationStatusState.key, locationStatusState.parameters) + (locationStatusState.suffix ? " " + tr("locationSharedSuffix") : "") : "";
+    locationStatus.className = "location-status " + locationStatusState.type;
+    draftStatus.textContent = tr(draftStatusState.key, draftStatusState.parameters);
+    searchStatus.textContent = searchStatusState.key ? tr(searchStatusState.key, searchStatusState.parameters) : "";
+    locationButton.textContent = tr(locating ? "locationFinding" : "useLocation");
+    searchButton.textContent = tr(searchingNow ? "searching" : "findPlace");
+    submitButton.textContent = tr(submitting ? "submitting" : "submitReport");
+    if (activeErrors) showErrors(model.validateReport(values(), tr).errors, false);
+  });
   if (draft) {
     fieldNames.forEach(function (name) { if (typeof draft[name] === "string") byId(name).value = draft[name].slice(0, name === "summary" ? 280 : 40); });
     if (draft.location && model.isValidLocation(draft.location.latitude, draft.location.longitude)) {
       location = model.createGridLocation(draft.location.latitude, draft.location.longitude);
-      setLocationStatus("Your saved approximate area is ready. Update it if the concern is elsewhere.", "success");
+      setLocationStatus("savedLocation", null, "success");
     }
-    draftStatus.textContent = "Draft restored from this phone. Nothing has been sent by reopening this page.";
-  } else if (!storage) draftStatus.textContent = "Keep this page open to keep your draft. Saving on this phone is unavailable.";
+    setDraftStatus("draftRestored");
+  } else if (!storage) setDraftStatus("draftNoStorage");
   updateCount();
   updateConnectionStatus();
   byId("loading-status").hidden = true;

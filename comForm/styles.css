@@ -12,11 +12,24 @@ a:focus, button:focus, input:focus, select:focus, textarea:focus, [tabindex]:foc
 .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); }
 .demo-banner { padding: 8px 16px; text-align: center; background: #e8edf1; font-size: 12px; }
 .site-header { background: #15344a; border-bottom: 4px solid #6d91a7; color: #fff; }
-.header-inner { max-width: 720px; padding: 20px 16px; margin: 0 auto; }
+.header-inner { position: relative; max-width: 720px; min-height: 94px; padding: 20px 16px; margin: 0 auto; }
+.brand-block { padding-right: 210px; }
 .brand { color: #fff; text-decoration: none; font-size: 25px; font-weight: bold; }
 .brand:hover { color: #fff; }
 .brand-subtitle { display: inline-block; margin-left: 12px; font-size: 13px; color: #d7e3ec; }
 .lite-tag { display: block; margin-top: 6px; color: #c1d9cf; font-size: 12px; }
+.language-picker { position: absolute; z-index: 6; top: 19px; right: 16px; width: 200px; color: #203648; }
+.language-button { width: 100%; margin: 0; color: #15344a; background: #fff; border-color: #fff; }
+.language-button:hover { color: #fff; background: #154c75; }
+.language-panel { position: absolute; top: 52px; right: 0; width: 300px; padding: 12px; background: #fff; border: 1px solid #8295a4; border-radius: 3px; box-shadow: 0 4px 12px rgba(21, 52, 74, .25); }
+.language-panel input { min-height: 42px; margin-bottom: 8px; }
+.language-list { max-height: 270px; padding: 0; margin: 0; overflow-y: auto; list-style: none; }
+.language-list li { margin: 0; }
+.language-option { display: block; width: 100%; min-height: 40px; margin: 0 0 2px; padding: 8px 10px; color: #203648; background: #fff; border-color: transparent; text-align: left; font-weight: normal; }
+.language-option:hover, .language-option[aria-current="true"] { color: #15344a; background: #e3edf5; }
+.language-option[aria-current="true"] { border-color: #6d91a7; font-weight: bold; }
+[dir="rtl"] .brand-block { padding-right: 0; padding-left: 210px; }
+[dir="rtl"] .language-option { text-align: right; }
 .page-shell { max-width: 720px; margin: 0 auto; padding: 30px 16px 40px; }
 .eyebrow { margin: 0 0 10px; color: #526b7d; font-size: 11px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; }
 h1 { margin: 0; color: #15344a; font: normal 34px/1.15 Georgia, serif; }
@@ -32,6 +45,8 @@ body[data-connection-mode="slow"] .form-card { border-top-width: 1px; }
 h2 { margin: 0 0 8px; color: #15344a; font-size: 21px; }
 h3 { margin: 0 0 16px; color: #15344a; font-size: 17px; }
 h3 span { padding: 3px 5px; margin-right: 7px; color: #526b7d; background: #eef2f5; font-size: 11px; }
+h3 b { font-size: inherit; font-weight: inherit; }
+[dir="rtl"] h3 span { margin-right: 0; margin-left: 7px; }
 .form-fields { min-width: 0; margin: 0; padding: 0; border: 0; }
 .form-section { padding: 22px 0; border-top: 1px solid #dfe4e9; }
 label { display: block; margin: 16px 0 7px; font-size: 14px; font-weight: bold; }
@@ -68,4 +83,5 @@ button:disabled { opacity: .6; cursor: default; }
 .form-status.success { color: #205239; background: #edf6f0; border-color: #368353; }
 .submit-actions { border-top: 1px solid #dfe4e9; padding-top: 20px; }
 .site-footer { padding: 24px 16px; text-align: center; color: #526373; background: #e8edf1; font-size: 12px; }
-@media (max-width: 420px) { .form-card { padding: 16px 12px; } .page-shell { padding: 24px 12px; } h1 { font-size: 28px; } .brand-subtitle { display: block; margin-left: 0; } #submit-button { width: 100%; } }
+@media (max-width: 520px) { .header-inner { padding-bottom: 16px; } .brand-block, [dir="rtl"] .brand-block { padding: 0 0 14px; } .language-picker, [dir="rtl"] .language-picker { position: relative; top: auto; right: auto; left: auto; width: 100%; } .language-panel, [dir="rtl"] .language-panel { right: 0; left: auto; width: 100%; } }
+@media (max-width: 420px) { .form-card { padding: 16px 12px; } .page-shell { padding: 24px 12px; } h1 { font-size: 28px; } .brand-subtitle { display: block; margin-left: 0; } [dir="rtl"] .brand-subtitle { margin-right: 0; } #submit-button { width: 100%; } }

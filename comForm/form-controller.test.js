@@ -3,6 +3,10 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import { context, read, plain, valid } from './test-helpers.js';
 const html = read('index.html');
+const i18nSource = read('i18n.js');
+const i18nKeys = Function('return [' + i18nSource.match(/var KEYS = \[([\s\S]*?)\n  \];/)[1] + ']')();
+const i18nEnglish = Function('return [' + i18nSource.match(/var ENGLISH = \[([\s\S]*?)\n  \];/)[1] + ']')();
+const english = Object.fromEntries(i18nKeys.map((key, index) => [key, i18nEnglish[index]]));
 function mount({ write = (_id, _report, done) => done(null), online = true, saved = null, storageFailure = false, geolocation = true, search, hints = {}, preference = null, performance, mapUrl = '/map/' } = {}) {
   let focused, locationSuccess, locationFailure, timerId = 0, draft = saved, writes = 0, savedPreference = preference;
   const navigations = [];
@@ -35,12 +39,15 @@ function mount({ write = (_id, _report, done) => done(null), online = true, save
     location: { hostname: '127.0.0.1', host: '127.0.0.1:5173', port: '5173', protocol: 'http:', assign(url) { navigations.push(url); } },
     localStorage: { getItem(key) { if (storageFailure) throw new Error('blocked'); return key === 'needmap-connection-mode-v1' ? savedPreference : draft; }, setItem(key, value) { if (key === 'needmap-connection-mode-v1') savedPreference = value; else draft = value; }, removeItem() { draft = null; } },
     addEventListener: rootEvents.addEventListener.bind(rootEvents), setTimeout: (callback, delay) => { timers.set(++timerId, { callback, delay }); return timerId; }, clearTimeout: id => timers.delete(id) });
+  let language = 'en', overrides = {};
+  ctx.NeedMapI18n = { t(key, parameters) { let value = overrides[key] || english[key] || key; return value.replace(/\{(\w+)\}/g, (_match, name) => parameters?.[name] ?? ''); }, getLanguage() { return language; } };
   ctx.NeedMapNetwork.createClient = () => ({ writeReport: (id, report, done) => { writes++; write(id, plain(report), done); } });
   if (search) ctx.NeedMapNetwork.request = search;
   vm.runInContext(read('app.js'), ctx);
   return { elements, form, navigator, body, connection, navigations, window: rootEvents,
     get focused() { return focused; }, get writes() { return writes; }, get saved() { return draft; }, get preference() { return savedPreference; },
     locate: () => locationSuccess({ coords: valid.location }), rejectLocation: (code = 1) => locationFailure({ code }),
+    changeLanguage(code, messages) { language = code; overrides = messages; rootEvents.dispatch('needmap-languagechange'); },
     slow() { for (const timer of timers.values()) if (timer.delay === 8000 || timer.delay === 15000) timer.callback(); },
     fill({ addLocation = true } = {}) { for (const name of ['category', 'severity', 'summary']) elements[name].value = valid[name]; if (addLocation) { elements['location-button'].dispatch('click'); locationSuccess({ coords: valid.location }); } } };
 }
@@ -117,7 +124,7 @@ test('fast and unsupported-browser conditions navigate only after confirmed succ
     page.fill(); page.form.dispatch('submit');
     assert.deepEqual(page.navigations, []);
     finish(null);
-    assert.deepEqual(page.navigations, ['http://127.0.0.1:5174/']);
+    assert.deepEqual(page.navigations, ['http://127.0.0.1:5174/?lang=en']);
     assert.equal(page.saved, null);
     assert.equal(page.elements['map-link-container'].hidden, false);
   }
@@ -131,7 +138,7 @@ test('automatic slow mode keeps every field usable and remains after confirmed s
     assert.equal(page.writes, 1); assert.deepEqual(page.navigations, []); assert.equal(page.saved, null);
     assert.match(page.elements['form-status'].textContent, /Report received.*stay here/);
     assert.equal(page.elements['map-link-container'].hidden, false);
-    assert.equal(page.elements['map-link'].href, 'http://127.0.0.1:5174/');
+    assert.equal(page.elements['map-link'].href, 'http://127.0.0.1:5174/?lang=en');
   }
 });
 
@@ -185,7 +192,22 @@ test('unavailable preference storage still supports manual slow mode for the cur
 
 test('configured production map destination is used by both automatic and explicit navigation', () => {
   const page = mount({ mapUrl: 'https://map.needmap.example/' }); page.fill(); page.form.dispatch('submit');
-  assert.deepEqual(page.navigations, ['https://map.needmap.example/']);
-  assert.equal(page.elements['map-link'].href, 'https://map.needmap.example/');
+  assert.deepEqual(page.navigations, ['https://map.needmap.example/?lang=en']);
+  assert.equal(page.elements['map-link'].href, 'https://map.needmap.example/?lang=en');
   assert.doesNotMatch(html, /rel="(?:preload|prefetch|preconnect)"/);
+});
+
+test('a language change rerenders dynamic errors and status without changing community input', () => {
+  const page = mount();
+  page.elements.summary.value = 'Resident text stays exactly as entered.';
+  page.form.dispatch('submit');
+  page.changeLanguage('es', {
+    errorCategory: 'Elige una categoría de servicio.', errorSeverity: 'Elige un nivel de urgencia.',
+    errorLocation: 'Añade una ubicación aproximada.', modeFast: 'El mapa se abrirá después de confirmar.',
+    modeLabelFull: 'Formulario comunitario completo', submitReport: 'Enviar informe', useLocation: 'Usar mi ubicación', findPlace: 'Buscar lugar'
+  });
+  assert.equal(page.elements['category-error'].textContent, 'Elige una categoría de servicio.');
+  assert.equal(page.elements['mode-status'].textContent, 'El mapa se abrirá después de confirmar.');
+  assert.equal(page.elements.summary.value, 'Resident text stays exactly as entered.');
+  assert.equal(page.elements['map-link'].href, 'http://127.0.0.1:5174/?lang=es');
 });

@@ -6,12 +6,18 @@ import { attachMapViewport, MAP_WORLD_BOUNDS, MAP_VIEWPORT_OPTIONS } from './map
 
 const colors = { low: '#2f8a69', medium: '#d28b27', high: '#c34e42', unknown: '#526575' };
 
-export function createAnalysisOverviewMap(L, container, { reportPopup, candidatePopup } = {}) {
+export function createAnalysisOverviewMap(L, container, { reportPopup, candidatePopup, i18n } = {}) {
   let map;
   let popups;
   let viewport;
   let detachZoom;
   let pendingFit;
+  const tr = (key, values = {}, fallback = key) => i18n ? i18n.t(key, values) : Object.entries(values).reduce((text, [name, value]) => text.replaceAll(`{${name}}`, value), fallback);
+  const categoryName = (category) => tr(`category.${category}`, {}, String(category || "other").replaceAll("_", " "));
+  function translateControls() {
+    for (const [control, key] of [[container.querySelector(".leaflet-control-zoom-in"), "map.zoomIn"], [container.querySelector(".leaflet-control-zoom-out"), "map.zoomOut"]]) if (control) { control.title = tr(key, {}, control.title); control.setAttribute("aria-label", tr(key, {}, control.title)); }
+    container.querySelectorAll(".leaflet-popup-close-button").forEach((button) => { button.title = tr("map.closePopup", {}, "Close popup"); button.setAttribute("aria-label", tr("map.closePopup", {}, "Close popup")); });
+  }
   function applyPendingFit() {
     if (!map || !pendingFit || !(container.clientWidth > 0 && container.clientHeight > 0)) return;
     const fit = pendingFit;
@@ -36,6 +42,8 @@ export function createAnalysisOverviewMap(L, container, { reportPopup, candidate
     const candidatesLayer = L.layerGroup().addTo(map);
     const boundaryLayer = L.layerGroup().addTo(map);
     popups = createMapPopups(L, map, { document: container.ownerDocument });
+    translateControls(); map.on("popupopen", translateControls);
+    const stopLanguage = i18n?.subscribe(translateControls) || (() => {});
     return {
       update({ region, reports = [], recommendations = [], category = 'all' } = {}) {
         if (!map) return;
@@ -50,8 +58,8 @@ export function createAnalysisOverviewMap(L, container, { reportPopup, candidate
           points.push(point);
           const color = Object.hasOwn(colors, report.severity) ? colors[report.severity] : colors.unknown;
           const icon = L.divIcon({ className: '', html: `<span class="report-marker" style="background:${color}" aria-hidden="true">${serviceIconSvg(report.category)}</span>`, iconSize: [26, 26], iconAnchor: [13, 13] });
-          const marker = L.marker(point, { icon, title: `${report.category} report` }).addTo(reportsLayer);
-          popups.register(marker, () => reportPopup ? reportPopup(report) : safeText(container, report.summary || 'Community report'));
+          const marker = L.marker(point, { icon, title: tr("map.reportTitle", { category: categoryName(report.category), urgency: tr(`urgency.${report.severity || "unknown"}`, {}, report.severity || "unknown") }, `${report.category} report`) }).addTo(reportsLayer);
+          popups.register(marker, () => reportPopup ? reportPopup(report) : safeText(container, report.summary || tr("analysis.communityReports", {}, "Community report")));
         }
         for (const candidate of recommendations) {
           if (category !== 'all' && candidate.category !== category) continue;
@@ -59,9 +67,9 @@ export function createAnalysisOverviewMap(L, container, { reportPopup, candidate
           if (!point) continue;
           points.push(point);
           const rank = [1, 2, 3].includes(candidate.locationRank) ? candidate.locationRank : 1;
-          const type = candidate.analysis?.facilityType || 'Proposed service';
+          const type = categoryName(candidate.category);
           const icon = L.divIcon({ className: '', html: `<span class="candidate-marker" aria-hidden="true">${serviceIconSvg(candidate.category, type)}<b>${rank}</b></span>`, iconSize: [36, 36], iconAnchor: [18, 18] });
-          const marker = L.marker(point, { icon, title: `${type} · suggested location ${rank}` }).addTo(candidatesLayer);
+          const marker = L.marker(point, { icon, title: tr("map.suggestedTitle", { type, rank }, `${type} · suggested location ${rank}`) }).addTo(candidatesLayer);
           popups.register(marker, () => candidatePopup ? candidatePopup(candidate) : safeText(container, type));
         }
         pendingFit = { points, bounds: region?.bounds };
@@ -70,7 +78,7 @@ export function createAnalysisOverviewMap(L, container, { reportPopup, candidate
       destroy() {
         if (!map) return;
         pendingFit = undefined;
-        map.off('resize', applyPendingFit);
+        map.off('resize', applyPendingFit); map.off('popupopen', translateControls); stopLanguage();
         viewport?.destroy(); popups.destroy(); detachZoom?.();
         const old = map; map = null; old?.remove();
       },

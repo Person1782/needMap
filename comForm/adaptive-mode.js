@@ -19,14 +19,14 @@
   }
   function detect(navigator, performance, preference, observedSlow) {
     var connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection || {};
-    var reason = "";
-    if (preference === "slow") reason = "You chose slow connection mode.";
-    else if (navigator.onLine === false) reason = "You are currently offline.";
-    else if (connection.saveData === true) reason = "Your browser has data saving enabled.";
-    else if (/^(slow-2g|2g|3g)$/.test(connection.effectiveType || "") || (positive(connection.downlink) && connection.downlink < 1.5) || (positive(connection.rtt) && connection.rtt >= 500)) reason = "Your connection appears slow.";
-    else if ((positive(navigator.deviceMemory) && navigator.deviceMemory <= 2) || (positive(navigator.hardwareConcurrency) && navigator.hardwareConcurrency <= 2)) reason = "A lighter experience may work better on this device.";
-    else if (observedSlow || slowPage(performance)) reason = "This page or report has taken a while to load.";
-    return { slow: !!reason, reason: reason };
+    var reasonKey = "";
+    if (preference === "slow") reasonKey = "modeReasonManual";
+    else if (navigator.onLine === false) reasonKey = "modeReasonOffline";
+    else if (connection.saveData === true) reasonKey = "modeReasonSaveData";
+    else if (/^(slow-2g|2g|3g)$/.test(connection.effectiveType || "") || (positive(connection.downlink) && connection.downlink < 1.5) || (positive(connection.rtt) && connection.rtt >= 500)) reasonKey = "modeReasonSlow";
+    else if ((positive(navigator.deviceMemory) && navigator.deviceMemory <= 2) || (positive(navigator.hardwareConcurrency) && navigator.hardwareConcurrency <= 2)) reasonKey = "modeReasonDevice";
+    else if (observedSlow || slowPage(performance)) reasonKey = "modeReasonPageSlow";
+    return { slow: !!reasonKey, reasonKey: reasonKey };
   }
   function mapUrl(configured, location) {
     // Two independent local apps. Production uses the explicit deployment path.

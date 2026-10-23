@@ -3,7 +3,7 @@ import { WORLD_REGION } from "./region-navigation.js";
 const worldAliases = ["worldwide", "world", "global", "all regions", "global regions"];
 
 /** Show Worldwide above all countries initially, then every matching region. */
-export function createRegionPicker({ navigation, document = globalThis.document }) {
+export function createRegionPicker({ navigation, document = globalThis.document, i18n }) {
   const byId = (id) => document.getElementById(id);
   const menu = byId("region-menu");
   const search = byId("region-search");
@@ -11,6 +11,7 @@ export function createRegionPicker({ navigation, document = globalThis.document 
   const toggle = byId("change-region");
   const listeners = [];
   let destroyed = false;
+  const tr = (key, values, fallback) => i18n ? i18n.t(key, values) : fallback;
   const listen = (target, type, callback) => {
     target.addEventListener(type, callback);
     listeners.push(() => target.removeEventListener(type, callback));
@@ -38,9 +39,9 @@ export function createRegionPicker({ navigation, document = globalThis.document 
       item.append(button); results.append(item);
     });
     byId("region-search-status").textContent = total
-      ? searching ? `${total.toLocaleString()} matching region${total === 1 ? "" : "s"}.`
-        : `Worldwide and ${catalogTotal.toLocaleString()} countries and territories.`
-      : "No matching regions. Try a country, state, or a different spelling.";
+      ? searching ? tr("region.matching", { count: total }, `${total.toLocaleString()} matching region${total === 1 ? "" : "s"}.`)
+        : tr("region.allCountries", { count: catalogTotal }, `Worldwide and ${catalogTotal.toLocaleString()} countries and territories.`)
+      : tr("region.noMatches", {}, "No matching regions. Try a country, state, or a different spelling.");
   }
   function close() {
     const wasOpen = !menu.hidden;

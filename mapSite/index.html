@@ -14,7 +14,16 @@
   <header class="topbar">
     <div class="brand-block">
       <svg class="brand-mark" viewBox="0 0 40 40" fill="none" aria-hidden="true"><path d="M5 32V8h8l14 24h8V8M13 8v24M27 8v24" stroke="currentColor" stroke-width="2.5"/><path d="M3 37h34" stroke="#d9b86c" stroke-width="3"/></svg>
-      <div><p class="eyebrow">NeedMap</p><h1>From community needs to better services.</h1></div>
+      <div><p class="eyebrow">NeedMap</p><h1 data-i18n="brand.tagline">From community needs to better services.</h1></div>
+    </div>
+    <div class="language-navigation">
+      <button id="change-language" class="language-button" type="button" aria-expanded="false" aria-controls="language-menu"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="M3.5 12h17M12 3c2.3 2.5 3.5 5.5 3.5 9S14.3 18.5 12 21c-2.3-2.5-3.5-5.5-3.5-9S9.7 5.5 12 3Z" stroke="currentColor" stroke-width="1.7"/></svg><span>English</span><svg class="language-chevron" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m5 7.5 5 5 5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      <section id="language-menu" class="language-menu" aria-label="Choose language" hidden>
+        <label for="language-search">Search languages</label>
+        <input id="language-search" type="search" placeholder="Language name" autocomplete="off" maxlength="80" />
+        <p id="language-search-status" class="muted" role="status"></p>
+        <ul id="language-results" class="language-results" aria-label="Available languages"></ul>
+      </section>
     </div>
   </header>
   <div class="workspace-bar">
@@ -27,7 +36,7 @@
         <p id="region-action-status" class="region-action-status muted" role="status" hidden></p>
         <p id="region-search-status" class="muted" role="status"></p>
         <ul id="region-results" class="region-results" aria-label="Matching regions"></ul>
-        <p class="region-attribution muted">Region data: <a href="https://github.com/dr5hn/countries-states-cities-database" target="_blank" rel="noreferrer">Countries States Cities</a> · Boundaries: <a href="https://www.geoboundaries.org" target="_blank" rel="noreferrer">geoBoundaries</a></p>
+        <p class="region-attribution muted"><span id="region-data-label">Region data:</span> <a href="https://github.com/dr5hn/countries-states-cities-database" target="_blank" rel="noreferrer">Countries States Cities</a> · <span id="region-boundaries-label">Boundaries:</span> <a href="https://www.geoboundaries.org" target="_blank" rel="noreferrer">geoBoundaries</a></p>
       </section>
     </div>
     <nav class="page-navigation" aria-label="Main navigation"><a id="map-tab" href="#explore-view" aria-current="page">Map</a><a id="analysis-tab" href="#analysis">Analysis</a></nav>

@@ -5,18 +5,19 @@ import { getReportCoordinates } from "./report-location-map.js";
 import { loadReportPopulation } from "./report-population.js";
 import { createPopulationDetails } from "./population-details.js";
 
-const number = (value, digits = 0) => Number.isFinite(value) ? value.toLocaleString(undefined, { maximumFractionDigits: digits }) : "Unknown";
-const categoryName = (value) => ANALYSIS_CATEGORIES.find((entry) => entry.id === value)?.label || value;
-const dateLabel = (value) => {
-  if (value == null || value === "" || typeof value === "boolean") return "Submission date unavailable";
-  const date = new Date(typeof value?.seconds === "number" ? value.seconds * 1000 : value);
-  return Number.isFinite(date.getTime()) ? date.toLocaleDateString() : "Submission date unavailable";
-};
-
 /** Shared region/reports come from the map; external work starts only on Analysis. */
-export function createAnalysisWorkspace({ document = globalThis.document, loadEvidence = loadAnalysisEvidence, loadPopulation = loadReportPopulation, reviewComplaints, firebaseApp, createReportMap, createOverviewMap, createPopulationMap } = {}) {
+export function createAnalysisWorkspace({ document = globalThis.document, i18n, loadEvidence = loadAnalysisEvidence, loadPopulation = loadReportPopulation, reviewComplaints, firebaseApp, createReportMap, createOverviewMap, createPopulationMap } = {}) {
   const byId = (id) => document.getElementById(id);
   const filter = byId("analysis-category");
+  const tr = (key, values = {}, fallback = key) => i18n ? i18n.t(key, values) : Object.entries(values).reduce((text, [name, value]) => text.replaceAll(`{${name}}`, value), fallback);
+  const number = (value, digits = 0) => Number.isFinite(value) ? (i18n ? i18n.number(value, { maximumFractionDigits: digits }) : value.toLocaleString(undefined, { maximumFractionDigits: digits })) : tr("common.unknown", {}, "Unknown");
+  const categoryName = (value) => ANALYSIS_CATEGORIES.some((entry) => entry.id === value) ? tr(`category.${value}`, {}, ANALYSIS_CATEGORIES.find((entry) => entry.id === value).label) : value;
+  const urgencyName = (value) => ["high", "medium", "low", "unknown"].includes(value) ? tr(`urgency.${value}`, {}, value) : value;
+  const dateLabel = (value) => {
+    if (value == null || value === "" || typeof value === "boolean") return tr("analysis.submissionUnknown", {}, "Submission date unavailable");
+    const date = new Date(typeof value?.seconds === "number" ? value.seconds * 1000 : value);
+    return Number.isFinite(date.getTime()) ? (i18n ? i18n.date(date) : date.toLocaleDateString()) : tr("analysis.submissionUnknown", {}, "Submission date unavailable");
+  };
   const node = (tag, text, className) => {
     const result = document.createElement(tag);
     if (text !== undefined) result.textContent = text;
@@ -24,7 +25,23 @@ export function createAnalysisWorkspace({ document = globalThis.document, loadEv
     return result;
   };
   const icon = (category) => { const item = node("span", undefined, "service-icon"); item.setAttribute("aria-hidden", "true"); item.innerHTML = serviceIconSvg(category); return item; };
-  for (const category of ANALYSIS_CATEGORIES) { const option = node("option", category.label); option.value = category.id; filter.append(option); }
+  const evidenceKey = (fact) => fact?.category === "water" ? fact.kind === "affected_population" ? "waterAffected" : fact.kind === "access_gap_percent" ? "waterGap" : "water" : fact?.category === "healthcare" ? "health"
+    : fact?.category === "broadband" ? fact.kind === "access_gap_percent" ? "internetGap" : "internet" : fact?.category === "food" ? fact.kind === "affected_population" ? "foodAffected" : "food"
+      : fact?.category === "education" ? fact.kind === "affected_population" ? "educationCount" : "educationRate"
+        : fact?.category === "all" || fact?.kind === "population" ? "population" : null;
+  const factTitle = (fact) => { const key = evidenceKey(fact); return key ? tr(`evidence.${key}Title`, {}, fact.title || fact.label || fact.kind) : fact.title || fact.label || fact.kind; };
+  const factDescription = (fact) => { const key = evidenceKey(fact); return key ? tr(`evidence.${key}Description`, {}, fact.description || "") : tr("evidence.genericDescription", {}, "Published measurement for the selected geography. Read its definition and year before using it."); };
+  const unitName = (unit) => ({ people: tr("unit.people", {}, "people"), children: tr("unit.children", {}, "children"), "%": tr("unit.percent", {}, "%"), "index points": tr("unit.indexPoints", {}, "index points") })[unit] || unit || "";
+  function refreshFilterOptions() {
+    const selected = filter.value || "all";
+    const option = (label, value) => { const item = node("option", label); item.setAttribute("value", value); return item; };
+    const options = [option(tr("category.all", {}, "All Problems"), "all"),
+      ...ANALYSIS_CATEGORIES.map((category) => option(categoryName(category.id), category.id))];
+    const chosen = selected === "all" || ANALYSIS_CATEGORIES.some((item) => item.id === selected) ? selected : "all";
+    options.find((item) => item.getAttribute("value") === chosen)?.setAttribute("selected", "");
+    filter.replaceChildren(...options);
+  }
+  refreshFilterOptions();
   let region = null, reports = [], recommendations = [], reportsReady = false, connectionFailed = false;
   let overviewMap = null, overviewKey = "", populationDetails;
   let visible = false, destroyed = false, evidence = null, evidenceState = "idle", evidenceRevision = 0, evidenceController;
@@ -50,7 +67,7 @@ export function createAnalysisWorkspace({ document = globalThis.document, loadEv
       try {
         maps.set(entry.container, createReportMap(entry.container, entry.report));
       } catch {
-        entry.container.append(node("span", "Map unavailable", "analysis-map-placeholder"));
+        entry.container.append(node("span", tr("analysis.mapUnavailable", {}, "Map unavailable"), "analysis-map-placeholder"));
       }
     }
     function sync() {
@@ -95,12 +112,12 @@ export function createAnalysisWorkspace({ document = globalThis.document, loadEv
     const selected = filter.value || "all";
     return {
       population: population || { status: populationState === "loading" || populationState === "idle" ? "loading" : "unavailable" },
-      reports: populationScope(), region, category: selected === "all" ? "All Problems" : categoryName(selected),
+      reports: populationScope(), region, category: selected === "all" ? tr("category.all", {}, "All Problems") : categoryName(selected),
     };
   }
   function openPopulationDetails() {
     if (!visible || destroyed) return;
-    populationDetails ||= createPopulationDetails({ document, createMap: createPopulationMap });
+    populationDetails ||= createPopulationDetails({ document, createMap: createPopulationMap, i18n });
     populationDetails.open(populationContext());
   }
   function clearOverviewMap() {
@@ -118,29 +135,33 @@ export function createAnalysisWorkspace({ document = globalThis.document, loadEv
       overviewMap ||= createOverviewMap(container);
       overviewMap.update({ region, category: model.category, reports: scopedReports, recommendations: scopedRecommendations, reportsReady });
       overviewKey = key;
-      if (note) note.textContent = !reportsReady ? "Waiting for report locations…" : `${number(scopedReports.length)} ${scopedReports.length === 1 ? "report" : "reports"} · ${number(scopedRecommendations.length)} proposed service ${scopedRecommendations.length === 1 ? "location" : "locations"}${connectionFailed ? " · Last loaded reports" : ""}. Hover for details; click to keep them open.`;
+      if (note) note.textContent = !reportsReady ? tr("analysis.waitingLocations", {}, "Waiting for report locations…") : tr("analysis.mapCounts", {
+        reports: `${number(scopedReports.length)} ${tr(scopedReports.length === 1 ? "common.report" : "common.reports", {}, scopedReports.length === 1 ? "report" : "reports")}`,
+        services: `${number(scopedRecommendations.length)} ${tr(scopedRecommendations.length === 1 ? "common.location" : "common.locations", {}, scopedRecommendations.length === 1 ? "proposed service location" : "proposed service locations")}`,
+        last: connectionFailed ? tr("analysis.lastLoaded", {}, " · Last loaded reports") : "",
+      }, `${number(scopedReports.length)} reports · ${number(scopedRecommendations.length)} proposed service locations. Hover for details; click to keep them open.`);
     } catch {
       clearOverviewMap();
-      if (note) note.textContent = "The map could not be loaded. Reports are still available below.";
+      if (note) note.textContent = tr("analysis.mapFailed", {}, "The map could not be loaded. Reports are still available below.");
     }
   }
   function populationMetric() {
-    let value = "Unavailable", detail = "Population data could not be loaded for these report locations.";
-    if (!reportsReady) { value = "Unknown"; detail = "Waiting for reports and their locations"; }
-    else if (populationState === "idle" || populationState === "loading") { value = "Loading…"; detail = "Estimating residents within 500 m of the selected reports"; }
-    else if (population?.status === "empty") { value = "No reports"; detail = "No report locations to estimate in this selection"; }
+    let value = tr("population.unavailable", {}, "Unavailable"), detail = tr("population.failed", {}, "Population data could not be loaded for these report locations.");
+    if (!reportsReady) { value = tr("population.unknown", {}, "Unknown"); detail = tr("population.waiting", {}, "Waiting for reports and their locations"); }
+    else if (populationState === "idle" || populationState === "loading") { value = tr("population.loading", {}, "Loading…"); detail = tr("population.loadingDetail", {}, "Estimating residents within 500 m of the selected reports"); }
+    else if (population?.status === "empty") { value = tr("population.noReports", {}, "No reports"); detail = tr("population.noLocations", {}, "No report locations to estimate in this selection"); }
     else if (population?.status === "ready" && Number.isFinite(population.value) && population.value >= 0) {
-      value = `About ${Number(population.value.toPrecision(2)).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
-      detail = `Within 500 m of ${number(population.reportCount)} ${population.reportCount === 1 ? "report" : "reports"} · WorldPop ${population.year}. Overlapping areas counted once. This estimates nearby residents, not confirmed people affected.`;
-      if (connectionFailed) detail += " Based on the last loaded reports.";
-    } else if (population?.message) detail = population.message;
-    const result = metric("Estimated residents near reports", value, detail, undefined, "button");
+      value = tr("population.about", { count: Number(population.value.toPrecision(2)) }, `About ${number(Number(population.value.toPrecision(2)))}`);
+      detail = tr("population.nearDetail", { count: population.reportCount, year: population.year }, `Within 500 m of ${number(population.reportCount)} ${population.reportCount === 1 ? "report" : "reports"} · WorldPop ${population.year}. Overlapping areas counted once. This estimates nearby residents, not confirmed people affected.`);
+      if (connectionFailed) detail += tr("population.lastLoaded", {}, " Based on the last loaded reports.");
+    }
+    const result = metric(tr("population.metric", {}, "Estimated residents near reports"), value, detail, undefined, "button");
     result.type = "button";
     result.classList.add("analysis-population-button");
     result.id = "analysis-population";
     result.setAttribute("aria-live", "polite");
     result.setAttribute("aria-haspopup", "dialog");
-    result.append(node("span", "See how this was calculated →", "metric-detail-hint"));
+    result.append(node("span", tr("population.how", {}, "See how this was calculated →"), "metric-detail-hint"));
     result.addEventListener("click", openPopulationDetails);
     return result;
   }
@@ -185,31 +206,31 @@ export function createAnalysisWorkspace({ document = globalThis.document, loadEv
     const chart = byId("analysis-report-chart"), note = byId("report-chart-note");
     chart.replaceChildren(); note.replaceChildren();
     if (!reportsReady) {
-      chart.append(node("p", connectionFailed ? "Reports could not be loaded, so a comparison is not available." : "Loading reports…", "analysis-note"));
+      chart.append(node("p", connectionFailed ? tr("analysis.reportsFailed", {}, "Reports could not be loaded, so a comparison is not available.") : tr("analysis.loadingReports", {}, "Loading reports…"), "analysis-note"));
       return;
     }
     const entries = model.rankings.filter((item) => Number.isFinite(item.reportCount) && item.reportCount > 0)
       .sort((first, second) => second.reportCount - first.reportCount || first.label.localeCompare(second.label));
     if (!entries.length) {
-      chart.append(node("p", model.category === "all" ? "No reports have been submitted in this region." : "No reports match this problem in the selected region.", "analysis-note"));
+      chart.append(node("p", model.category === "all" ? tr("analysis.noRegionReports", {}, "No reports have been submitted in this region.") : tr("analysis.noProblemReports", {}, "No reports match this problem in the selected region."), "analysis-note"));
     } else {
       const maximum = entries[0].reportCount;
       const axis = node("div", undefined, "report-chart-axis"); axis.setAttribute("aria-hidden", "true");
-      axis.append(node("span", "0"), node("span", `${number(maximum)} ${maximum === 1 ? "report" : "reports"}`));
+      axis.append(node("span", "0"), node("span", tr("analysis.chartMax", { count: maximum }, `${number(maximum)} ${maximum === 1 ? "report" : "reports"}`)));
       const list = node("ul", undefined, "report-chart-list");
       for (const entry of entries) {
         const row = node("li", undefined, "report-chart-row"); row.dataset.category = entry.category;
-        const name = node("span", undefined, "report-chart-label"); name.append(icon(entry.category), node("span", entry.label));
+        const name = node("span", undefined, "report-chart-label"); name.append(icon(entry.category), node("span", categoryName(entry.category)));
         const track = node("span", undefined, "report-chart-track"); track.setAttribute("aria-hidden", "true");
         const bar = node("span", undefined, "report-chart-bar"); bar.style.width = `${entry.reportCount / maximum * 100}%`; track.append(bar);
-        row.append(name, track, node("span", `${number(entry.reportCount)} ${entry.reportCount === 1 ? "report" : "reports"}`, "report-chart-count"));
+        row.append(name, track, node("span", tr("analysis.chartMax", { count: entry.reportCount }, `${number(entry.reportCount)} ${entry.reportCount === 1 ? "report" : "reports"}`), "report-chart-count"));
         list.append(row);
       }
       chart.append(axis, list);
     }
-    note.append(document.createTextNode(`Reports submitted in ${region.label || region.name}. Open a problem below to read its reports.`));
-    if (model.overview.syntheticReports) note.append(document.createTextNode(` Includes ${number(model.overview.syntheticReports)} demonstration ${model.overview.syntheticReports === 1 ? "report" : "reports"}.`));
-    if (connectionFailed) note.append(document.createTextNode(" Showing the last loaded reports while the connection is unavailable."));
+    note.append(document.createTextNode(tr("analysis.chartNote", { region: region.label || region.name }, `Reports submitted in ${region.label || region.name}. Open a problem below to read its reports.`)));
+    if (model.overview.syntheticReports) note.append(document.createTextNode(tr("analysis.demoIncluded", { count: model.overview.syntheticReports }, ` Includes ${number(model.overview.syntheticReports)} demonstration ${model.overview.syntheticReports === 1 ? "report" : "reports"}.`)));
+    if (connectionFailed) note.append(document.createTextNode(tr("analysis.lastLoaded", {}, " Showing the last loaded reports while the connection is unavailable.")));
   }
   function render() {
     if (!region || !visible || destroyed) return;
@@ -218,23 +239,23 @@ export function createAnalysisWorkspace({ document = globalThis.document, loadEv
     const overview = model.overview;
     renderOverviewMap(model);
     renderReportChart(model);
-    byId("analysis-scope").textContent = `${region.label || region.name} · ${selectedCategory === "all" ? "All Problems" : categoryName(selectedCategory)}`;
+    byId("analysis-scope").textContent = tr("analysis.scope", { region: region.label || region.name, category: selectedCategory === "all" ? tr("category.all", {}, "All Problems") : categoryName(selectedCategory) }, `${region.label || region.name} · ${selectedCategory === "all" ? "All Problems" : categoryName(selectedCategory)}`);
     byId("analysis-category-icon").innerHTML = serviceIconSvg(selectedCategory);
-    byId("analysis-status").textContent = !reportsReady ? connectionFailed ? "Community reports could not be loaded. Public statistics are shown where available." : "Loading community reports…"
-      : connectionFailed ? "The report connection is unavailable. Counts may be out of date."
-      : evidenceState === "loading" ? "Reports loaded · looking up published statistics…"
-      : evidenceState === "unavailable" ? "Reports loaded · published statistics are currently unavailable."
-      : evidence?.status === "partial" ? "Reports loaded · some published statistics are unavailable."
-      : "Showing available reports and published evidence.";
+    byId("analysis-status").textContent = !reportsReady ? connectionFailed ? tr("analysis.statusReportsFailed", {}, "Community reports could not be loaded. Public statistics are shown where available.") : tr("analysis.statusLoading", {}, "Loading community reports…")
+      : connectionFailed ? tr("analysis.statusConnection", {}, "The report connection is unavailable. Counts may be out of date.")
+      : evidenceState === "loading" ? tr("analysis.statusStatsLoading", {}, "Reports loaded · looking up published statistics…")
+      : evidenceState === "unavailable" ? tr("analysis.statusStatsUnavailable", {}, "Reports loaded · published statistics are currently unavailable.")
+      : evidence?.status === "partial" ? tr("analysis.statusStatsPartial", {}, "Reports loaded · some published statistics are unavailable.")
+      : tr("analysis.statusReady", {}, "Showing available reports and published evidence.");
     const common = overview.mostCommonProblem;
     const metrics = byId("analysis-overview");
     metrics.replaceChildren(
-      metric("Total reports", reportsReady ? number(overview.totalReports) : "Unknown", reportsReady ? "In this region and problem filter" : "Waiting for the report connection"),
-      metric("Most reported problem", reportsReady && common ? common.label : reportsReady ? "No reports" : "Unknown", common ? `${number(common.count)} reports${common.tied?.length > 1 ? " · tied for most reported" : ""}` : "Based on reports in the selected filter", common?.category),
+      metric(tr("analysis.totalReports", {}, "Total reports"), reportsReady ? number(overview.totalReports) : tr("common.unknown", {}, "Unknown"), reportsReady ? tr("analysis.totalReportsDetail", {}, "In this region and problem filter") : tr("analysis.waitingConnection", {}, "Waiting for the report connection")),
+      metric(tr("analysis.mostReported", {}, "Most reported problem"), reportsReady && common ? categoryName(common.category) : reportsReady ? tr("analysis.noReports", {}, "No reports") : tr("common.unknown", {}, "Unknown"), common ? `${number(common.count)} ${tr("common.reports", {}, "reports")}${common.tied?.length > 1 ? ` · ${tr("analysis.tied", { count: common.count }, "tied for most reported")}` : ""}` : tr("analysis.basedOnReports", {}, "Based on reports in the selected filter"), common?.category),
       populationMetric()
     );
     byId("analysis-data-note").textContent = [
-      overview.syntheticReports ? `${number(overview.syntheticReports)} of these reports are marked as demonstration data. They are not evidence of real local demand.` : "",
+      overview.syntheticReports ? tr("analysis.demoWarning", { count: overview.syntheticReports }, `${number(overview.syntheticReports)} of these reports are marked as demonstration data. They are not evidence of real local demand.`) : "",
     ].filter(Boolean).join(" ");
     const expanded = new Set([...byId("analysis-rankings").querySelectorAll("details[open]")].map((row) => row.dataset.category));
     clearReportMaps();
@@ -245,53 +266,54 @@ export function createAnalysisWorkspace({ document = globalThis.document, loadEv
       row.open = expanded.has(ranking.category);
       const summary = node("summary");
       const name = node("span", undefined, "priority-name");
-      const heading = node("strong", undefined, "service-heading"); heading.append(icon(ranking.category), node("span", ranking.label));
-      name.append(heading, node("small", `${reportsReady ? number(ranking.reportCount) : "Unknown"} reports${ranking.rank === null ? " · Not ranked: no evidence for this exact region" : ""}`));
+      const heading = node("strong", undefined, "service-heading"); heading.append(icon(ranking.category), node("span", categoryName(ranking.category)));
+      name.append(heading, node("small", `${tr("analysis.reportCount", { count: reportsReady ? ranking.reportCount : tr("common.unknown", {}, "Unknown") }, `${reportsReady ? number(ranking.reportCount) : "Unknown"} reports`)}${ranking.rank === null ? tr("analysis.notRanked", {}, " · Not ranked: no evidence for this exact region") : ""}`));
       summary.append(node("span", ranking.rank === null ? "—" : String(ranking.rank), "priority-rank"), name);
       const detail = node("div", undefined, "priority-detail");
       const facts = [...(ranking.indicators || []), ...(ranking.contextIndicators || [])]
         .filter((fact) => !["access_index", "access_gap_index"].includes(fact.kind));
       if (facts.length) {
-        detail.append(node("h4", "Published data"));
+        detail.append(node("h4", tr("analysis.publishedData", {}, "Published data")));
         for (const fact of facts) {
           const paragraph = node("p", undefined, "evidence-fact");
-          paragraph.append(node("strong", `${fact.title || fact.label || fact.kind}: ${number(fact.value, 2)} ${fact.unit || ""}`), document.createTextNode(` · ${fact.year} · ${fact.scope?.name || fact.scope?.regionId || "Unknown geography"}. ${fact.description || ""} ${ranking.contextIndicators.includes(fact) ? "Context only; not used in this region’s ranking." : ""}`));
+          paragraph.append(node("strong", tr("analysis.fact", { title: factTitle(fact), value: number(fact.value, 2), unit: unitName(fact.unit) }, `${factTitle(fact)}: ${number(fact.value, 2)} ${unitName(fact.unit)}`)), document.createTextNode(` · ${fact.year} · ${fact.scope?.name || fact.scope?.regionId || tr("analysis.unknownGeography", {}, "Unknown geography")}. ${factDescription(fact)} ${ranking.contextIndicators.includes(fact) ? tr("analysis.contextOnly", {}, "Context only; not used in this region’s ranking.") : ""}`));
           detail.append(paragraph);
         }
       }
-      detail.append(node("h4", `Reports behind this problem (${reportsReady ? ranking.reports.length : "unknown"})`));
-      if (!ranking.reports.length) detail.append(node("p", reportsReady ? "No community reports for this problem in the selected region." : "Reports have not loaded.", "analysis-note"));
+      detail.append(node("h4", tr("analysis.reportsBehind", { count: reportsReady ? ranking.reports.length : tr("common.unknown", {}, "unknown") }, `Reports behind this problem (${reportsReady ? ranking.reports.length : "unknown"})`)));
+      if (!ranking.reports.length) detail.append(node("p", reportsReady ? tr("analysis.noCommunityReports", {}, "No community reports for this problem in the selected region.") : tr("analysis.reportsNotLoaded", {}, "Reports have not loaded."), "analysis-note"));
       const list = node("ol", undefined, "analysis-report-list");
       const mapEntries = [];
       for (const report of ranking.reports) {
         const item = node("li", undefined, "analysis-report");
         const copy = node("div", undefined, "analysis-report-copy");
-        copy.append(node("p", report.summary || "No description provided."), node("small", `${report.severity || "Unknown"} reported urgency · ${dateLabel(report.submittedAt)}${report.isSynthetic ? " · Demonstration report" : ""}`));
+        const reportText = node("p", report.summary || tr("explore.noDescription", {}, "No description provided.")); reportText.dir = "auto";
+        copy.append(reportText, node("small", tr("analysis.reportMeta", { urgency: urgencyName(report.severity || "unknown"), date: dateLabel(report.submittedAt), demo: report.isSynthetic ? tr("analysis.demoReport", {}, " · Demonstration report") : "" }, `${report.severity || "Unknown"} reported urgency · ${dateLabel(report.submittedAt)}${report.isSynthetic ? " · Demonstration report" : ""}`)));
         const insight = insights.find((entry) => entry.reportId === report.id);
-        if (insight?.quote) copy.append(node("blockquote", `AI-selected supporting excerpt: “${insight.quote}”`));
+        if (insight?.quote) { const quote = node("blockquote", tr("analysis.aiExcerpt", { quote: insight.quote }, `AI-selected supporting excerpt: “${insight.quote}”`)); quote.dir = "auto"; copy.append(quote); }
         item.append(copy);
         if (getReportCoordinates(report)) {
           item.classList.add("has-location-map");
           const figure = node("figure", undefined, "analysis-report-location");
           const container = node("div", undefined, "analysis-report-map");
           container.setAttribute("role", "region");
-          container.setAttribute("aria-label", `Map showing the approximate reported location for ${ranking.label}`);
-          container.append(node("span", "Loading map…", "analysis-map-placeholder"));
-          figure.append(container, node("figcaption", "Approximate reported location"));
+          container.setAttribute("aria-label", tr("analysis.reportMapLabel", { category: categoryName(ranking.category) }, `Map showing the approximate reported location for ${categoryName(ranking.category)}`));
+          container.append(node("span", tr("analysis.loadingMap", {}, "Loading map…"), "analysis-map-placeholder"));
+          figure.append(container, node("figcaption", tr("analysis.reportLocation", {}, "Approximate reported location")));
           item.append(figure); mapEntries.push({ container, report: { ...report, category: ranking.category } });
         } else {
-          copy.append(node("p", "Report location unavailable", "analysis-map-unavailable"));
+          copy.append(node("p", tr("analysis.reportLocationUnavailable", {}, "Report location unavailable"), "analysis-map-unavailable"));
         }
         list.append(item);
       }
       detail.append(list); row.append(summary, detail); rows.push(row);
       mapGroups.push({ row, entries: mapEntries });
     }
-    byId("analysis-rankings").replaceChildren(...(rows.length ? rows : [node("p", "No report or published problem evidence is available for this selection. A rank would not be supported.", "analysis-empty")]));
+    byId("analysis-rankings").replaceChildren(...(rows.length ? rows : [node("p", tr("analysis.noEvidence", {}, "No report or published problem evidence is available for this selection. A rank would not be supported."), "analysis-empty")]));
     for (const { row, entries } of mapGroups) attachReportMaps(row, entries);
-    byId("analysis-ai-status").textContent = aiState === "loading" ? "AI is reviewing the report text for supporting excerpts and explicitly stated duration…"
-      : aiState === "ready" ? `AI reviewed ${number(reviewResult?.reviewedCount ?? insights.length)} of ${number(reports.length)} reports. Excerpts are checked against the original text.`
-      : aiState === "unavailable" ? "AI review is unavailable. Reports and available statistics are still shown."
+    byId("analysis-ai-status").textContent = aiState === "loading" ? tr("analysis.aiLoading", {}, "AI is reviewing the report text for supporting excerpts and explicitly stated duration…")
+      : aiState === "ready" ? tr("analysis.aiReady", { reviewed: reviewResult?.reviewedCount ?? insights.length, total: reports.length }, `AI reviewed ${number(reviewResult?.reviewedCount ?? insights.length)} of ${number(reports.length)} reports. Excerpts are checked against the original text.`)
+      : aiState === "unavailable" ? tr("analysis.aiUnavailable", {}, "AI review is unavailable. Reports and available statistics are still shown.")
       : "";
   }
   async function ensureEvidence() {
@@ -333,5 +355,9 @@ export function createAnalysisWorkspace({ document = globalThis.document, loadEv
   }
   const onFilter = () => { clearReportMaps(); byId("analysis-rankings").replaceChildren(); ensurePopulation(); render(); };
   filter.addEventListener("change", onFilter);
-  return { update, setVisible(value) { visible = value; if (value) { ensurePopulation(); render(); ensureEvidence(); ensureAI(); } else { clearReportMaps(); clearOverviewMap(); populationDetails?.close(); cancelPopulation(); } }, destroy() { destroyed = true; clearReportMaps(); clearOverviewMap(); populationDetails?.destroy(); cancelPopulation(); ++evidenceRevision; ++aiRevision; evidenceController?.abort(); aiController?.abort(); clearTimeout(aiTimer); filter.removeEventListener("change", onFilter); } };
+  const stopLanguage = i18n?.subscribe(() => {
+    refreshFilterOptions(); overviewKey = ""; clearReportMaps();
+    if (visible) { render(); populationDetails?.update(populationContext()); }
+  }) || (() => {});
+  return { update, setVisible(value) { visible = value; if (value) { ensurePopulation(); render(); ensureEvidence(); ensureAI(); } else { clearReportMaps(); clearOverviewMap(); populationDetails?.close(); cancelPopulation(); } }, destroy() { destroyed = true; stopLanguage(); clearReportMaps(); clearOverviewMap(); populationDetails?.destroy(); cancelPopulation(); ++evidenceRevision; ++aiRevision; evidenceController?.abort(); aiController?.abort(); clearTimeout(aiTimer); filter.removeEventListener("change", onFilter); } };
 }

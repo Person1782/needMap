@@ -3,7 +3,7 @@ import { attachMapZoom } from "./map-zoom.js";
 import { attachMapViewport, MAP_WORLD_BOUNDS, MAP_VIEWPORT_OPTIONS } from "./map-viewport.js";
 
 /** Draws the exact queried area, not a simulated population-density layer. */
-export function createPopulationAreaMap(L, container, { geometry, reports = [] } = {}) {
+export function createPopulationAreaMap(L, container, { geometry, reports = [], i18n } = {}) {
   if (geometry?.type !== "MultiPolygon" || !Array.isArray(geometry.coordinates) || !geometry.coordinates.length) {
     throw new TypeError("A calculated population area is required.");
   }
@@ -15,6 +15,10 @@ export function createPopulationAreaMap(L, container, { geometry, reports = [] }
     viewport = attachMapViewport(map);
     detachZoom = attachMapZoom(map);
     map.attributionControl.setPrefix(false);
+    const translateControls = () => {
+      for (const [control, key, fallback] of [[container.querySelector?.(".leaflet-control-zoom-in"), "map.zoomIn", "Zoom in"], [container.querySelector?.(".leaflet-control-zoom-out"), "map.zoomOut", "Zoom out"]]) if (control) { const value = i18n ? i18n.t(key) : fallback; control.title = value; control.setAttribute("aria-label", value); }
+    };
+    translateControls();
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19, noWrap: true, bounds: MAP_WORLD_BOUNDS,
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>',
