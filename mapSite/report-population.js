@@ -141,15 +141,16 @@ async function withDeadline(operation, signal, timeoutMs) {
 }
 
 /** Estimates residents near the supplied reports, never confirmed impact. */
-export async function loadReportPopulation({ reports = [], region = null } = {}, {
+export async function loadReportPopulation({ reports = [], region = null,
+  radiusMeters = REPORT_POPULATION_RADIUS_METERS } = {}, {
   signal, fetchImpl = globalThis.fetch, timeoutMs = 60_000, pollDelayMs = 1_500, now = Date.now,
 } = {}) {
   assertActive(signal);
   let area;
-  const base = { radiusMeters: REPORT_POPULATION_RADIUS_METERS, reportCount: 0,
+  const base = { radiusMeters, reportCount: 0,
     year: WORLDPOP_POPULATION_YEAR };
   try {
-    area = buildReportPopulationArea(reports, region);
+    area = buildReportPopulationArea(reports, region, { radiusMeters });
     base.reportCount = area.reportCount;
     if (area.missingLocationCount) return { ...base, status: "unavailable",
       message: "Some reports have no usable location, so their nearby population cannot be estimated." };

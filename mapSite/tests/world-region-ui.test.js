@@ -56,7 +56,7 @@ test("the menu has one unified region list without download controls or a separa
   const app = await readFile(new URL("../app.js", import.meta.url), "utf8");
   const picker = await readFile(new URL("../region-picker.js", import.meta.url), "utf8");
   const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]);
-  assert.equal((html.match(/<ul[^>]*class="region-results"/g) || []).length, 1);
+  assert.equal((html.match(/<ul[^>]*class="region-results"/g) || []).length, 2);
   assert.doesNotMatch(html + app, /region-area-list|region-areas-title|id="region-areas"|Open a large state|region-worldwide|region-locate|needmapAreasLayer|renderRegionBoundaries/);
   assert.doesNotMatch(html + picker, /region-show-more|Show more|pageSize/);
   assert.doesNotMatch(html, /\bdownload(?:[\s=>])|world-region-catalog\.csv|Download (?:data|the complete)/);

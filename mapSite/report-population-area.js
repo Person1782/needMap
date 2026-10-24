@@ -1,6 +1,7 @@
 import polygonClipping from "polygon-clipping";
 
 export const REPORT_POPULATION_RADIUS_METERS = 500;
+export const MAX_REPORT_POPULATION_RADIUS_METERS = 50_000;
 const EARTH_RADIUS_METERS = 6371008.8;
 const MAX_LOCATIONS = 200;
 const STEPS = 64;
@@ -12,10 +13,10 @@ const validLocation = (report) => Number.isFinite(report?.latitude) &&
 
 // A local north/east vector basis remains defined even at either geographic
 // pole, where the usual latitude/longitude destination formula is singular.
-function bufferRing(longitude, latitude) {
+function bufferRing(longitude, latitude, radiusMeters) {
   const lon = longitude * RAD;
   const lat = latitude * RAD;
-  const distance = REPORT_POPULATION_RADIUS_METERS / EARTH_RADIUS_METERS;
+  const distance = radiusMeters / EARTH_RADIUS_METERS;
   const center = [Math.cos(lat) * Math.cos(lon), Math.cos(lat) * Math.sin(lon), Math.sin(lat)];
   const north = [-Math.sin(lat) * Math.cos(lon), -Math.sin(lat) * Math.sin(lon), Math.cos(lat)];
   const east = [-Math.sin(lon), Math.cos(lon), 0];
@@ -96,7 +97,13 @@ function regionPolygons(geometry) {
 }
 
 /** Union of 500 m report neighborhoods; never a claim of confirmed impact. */
-export function buildReportPopulationArea(reports = [], region = null) {
+export function buildReportPopulationArea(reports = [], region = null, {
+  radiusMeters = REPORT_POPULATION_RADIUS_METERS,
+} = {}) {
+  if (!Number.isFinite(radiusMeters) || radiusMeters <= 0 ||
+      radiusMeters > MAX_REPORT_POPULATION_RADIUS_METERS) {
+    throw new RangeError(`Population-area radius must be greater than 0 and no more than ${MAX_REPORT_POPULATION_RADIUS_METERS} meters.`);
+  }
   const seenIds = new Set();
   const locations = new Map();
   let reportCount = 0;
@@ -116,12 +123,11 @@ export function buildReportPopulationArea(reports = [], region = null) {
   }
   if (locations.size > MAX_LOCATIONS) throw new RangeError(`Population estimates support at most ${MAX_LOCATIONS} distinct report locations.`);
   const ordered = [...locations.values()].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
-  const pieces = ordered.flatMap(([longitude, latitude]) => splitLongitudeBands([bufferRing(longitude, latitude)]));
+  const pieces = ordered.flatMap(([longitude, latitude]) => splitLongitudeBands([bufferRing(longitude, latitude, radiusMeters)]));
   let coordinates = pieces.length ? polygonClipping.union(...pieces) : [];
   const boundary = regionPolygons(region?.geometry);
   if (boundary && coordinates.length) coordinates = polygonClipping.intersection(coordinates, boundary);
   const geometry = coordinates.length ? { type: "MultiPolygon", coordinates } : null;
-  const radiusMeters = REPORT_POPULATION_RADIUS_METERS;
   return { geometry, reportCount, missingLocationCount, radiusMeters,
-    key: JSON.stringify(["report-population-v1", region?.id ?? null, radiusMeters, reportCount, missingLocationCount, geometry]) };
+    key: JSON.stringify(["report-population-v2", region?.id ?? null, radiusMeters, reportCount, missingLocationCount, geometry]) };
 }

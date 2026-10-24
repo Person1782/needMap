@@ -43,7 +43,7 @@ export function createAnalysisWorkspace({ document = globalThis.document, i18n, 
   }
   refreshFilterOptions();
   let region = null, reports = [], recommendations = [], reportsReady = false, connectionFailed = false;
-  let overviewMap = null, overviewKey = "", populationDetails;
+  let overviewMap = null, overviewKey = "", populationDetails, pendingFocus;
   let visible = false, destroyed = false, evidence = null, evidenceState = "idle", evidenceRevision = 0, evidenceController;
   let insights = [], aiState = "idle", aiRevision = 0, aiController, aiTimer, reportKey = "", reviewResult = null;
   let population = null, populationState = "idle", populationKey = "", populationGeometry, populationRevision = 0, populationController;
@@ -286,6 +286,8 @@ export function createAnalysisWorkspace({ document = globalThis.document, i18n, 
       const mapEntries = [];
       for (const report of ranking.reports) {
         const item = node("li", undefined, "analysis-report");
+        item.dataset.reportId = report.id;
+        item.tabIndex = -1;
         const copy = node("div", undefined, "analysis-report-copy");
         const reportText = node("p", report.summary || tr("explore.noDescription", {}, "No description provided.")); reportText.dir = "auto";
         copy.append(reportText, node("small", tr("analysis.reportMeta", { urgency: urgencyName(report.severity || "unknown"), date: dateLabel(report.submittedAt), demo: report.isSynthetic ? tr("analysis.demoReport", {}, " · Demonstration report") : "" }, `${report.severity || "Unknown"} reported urgency · ${dateLabel(report.submittedAt)}${report.isSynthetic ? " · Demonstration report" : ""}`)));
@@ -311,6 +313,21 @@ export function createAnalysisWorkspace({ document = globalThis.document, i18n, 
     }
     byId("analysis-rankings").replaceChildren(...(rows.length ? rows : [node("p", tr("analysis.noEvidence", {}, "No report or published problem evidence is available for this selection. A rank would not be supported."), "analysis-empty")]));
     for (const { row, entries } of mapGroups) attachReportMaps(row, entries);
+    if (pendingFocus) {
+      const row = [...byId("analysis-rankings").querySelectorAll("details[data-category]")]
+        .find((item) => item.dataset.category === pendingFocus.category);
+      const report = row && [...row.querySelectorAll("[data-report-id]")]
+        .find((item) => item.dataset.reportId === pendingFocus.reportId);
+      if (report) {
+        row.open = true;
+        pendingFocus = undefined;
+        const schedule = document.defaultView?.requestAnimationFrame || ((callback) => callback());
+        schedule(() => {
+          report.scrollIntoView?.({ block: "center" });
+          report.focus({ preventScroll: true });
+        });
+      }
+    }
     byId("analysis-ai-status").textContent = aiState === "loading" ? tr("analysis.aiLoading", {}, "AI is reviewing the report text for supporting excerpts and explicitly stated duration…")
       : aiState === "ready" ? tr("analysis.aiReady", { reviewed: reviewResult?.reviewedCount ?? insights.length, total: reports.length }, `AI reviewed ${number(reviewResult?.reviewedCount ?? insights.length)} of ${number(reports.length)} reports. Excerpts are checked against the original text.`)
       : aiState === "unavailable" ? tr("analysis.aiUnavailable", {}, "AI review is unavailable. Reports and available statistics are still shown.")
@@ -359,5 +376,14 @@ export function createAnalysisWorkspace({ document = globalThis.document, i18n, 
     refreshFilterOptions(); overviewKey = ""; clearReportMaps();
     if (visible) { render(); populationDetails?.update(populationContext()); }
   }) || (() => {});
-  return { update, setVisible(value) { visible = value; if (value) { ensurePopulation(); render(); ensureEvidence(); ensureAI(); } else { clearReportMaps(); clearOverviewMap(); populationDetails?.close(); cancelPopulation(); } }, destroy() { destroyed = true; stopLanguage(); clearReportMaps(); clearOverviewMap(); populationDetails?.destroy(); cancelPopulation(); ++evidenceRevision; ++aiRevision; evidenceController?.abort(); aiController?.abort(); clearTimeout(aiTimer); filter.removeEventListener("change", onFilter); } };
+  function focusReport(category, reportId) {
+    if (!ANALYSIS_CATEGORIES.some((item) => item.id === category) ||
+        typeof reportId !== "string" || !reportId || reportId.length > 200) return false;
+    pendingFocus = { category, reportId };
+    for (const option of filter.options) option.removeAttribute("selected");
+    [...filter.options].find((option) => option.value === category)?.setAttribute("selected", "");
+    onFilter();
+    return true;
+  }
+  return { update, focusReport, setVisible(value) { visible = value; if (value) { ensurePopulation(); render(); ensureEvidence(); ensureAI(); } else { clearReportMaps(); clearOverviewMap(); populationDetails?.close(); cancelPopulation(); } }, destroy() { destroyed = true; stopLanguage(); clearReportMaps(); clearOverviewMap(); populationDetails?.destroy(); cancelPopulation(); ++evidenceRevision; ++aiRevision; evidenceController?.abort(); aiController?.abort(); clearTimeout(aiTimer); filter.removeEventListener("change", onFilter); } };
 }

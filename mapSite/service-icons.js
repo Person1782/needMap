@@ -12,15 +12,17 @@ export const SERVICE_ICONS = Object.freeze({
   food: svg('<path d="M4 3v5a3 3 0 0 0 6 0V3M7 3v18M17 21V3c-3 2-4 5-4 9h4"/>'),
   fuel: svg('<path d="M3 21h12M5 21V3h8v18M5 10h8M13 12h2a2 2 0 0 1 2 2v3a2 2 0 0 0 4 0V8l-4-4M18 5v4h3"/>'),
   emergency: svg('<path d="m12 2 8 3v6c0 5-4 8-8 11-4-3-8-6-8-11V5l8-3Z"/><path d="M12 8v8M8 12h8"/>'),
+  electricity: svg('<path d="m13 2-8 12h6l-1 8 9-13h-6V2Z"/>'),
   other: svg('<path d="m3 10 9-7 9 7M5 9v12h14V9M10 21v-7h4v7M8 11h.01M16 11h.01"/>'),
 });
 
 const CATEGORY_ICONS = Object.freeze({
-  healthcare: "hospital", medical: "hospital", medicine: "hospital", meditation: "hospital",
+  hospital: "hospital", clinic: "hospital", healthcare: "hospital", medical: "hospital", medicine: "hospital", meditation: "hospital",
   medication_access: "hospital", medication: "hospital", medications: "hospital", pharmacy: "hospital",
   education: "education", roads: "roads", road: "roads",
   transportation: "transit", transit: "transit", water: "water", water_supply: "water", broadband: "broadband", internet: "broadband",
-  food: "food", fuel: "fuel", emergency_response: "emergency", emergency: "emergency", other: "other",
+  food: "food", fuel: "fuel", emergency_response: "emergency", emergency: "emergency",
+  electricity: "electricity", electric: "electricity", power: "electricity", other: "other",
 });
 
 const SERVICE_RULES = [
@@ -33,6 +35,7 @@ const SERVICE_RULES = [
   [/(?:\b)(?:transit|transportation|transport|bus|shuttle|rail|train)(?:\b)/i, "transit"],
   [/(?:\b)(?:water|sanitation|drinking)(?:\b)/i, "water"],
   [/(?:\b)(?:internet|broadband|wi-?fi|connectivity)(?:\b)/i, "broadband"],
+  [/(?:\b)(?:electricity|electrical|electric|power grid|power line|solar|microgrid)(?:\b)/i, "electricity"],
   [/(?:\b)(?:food|grocery|groceries|pantry|supermarket|meal|meals|hungry)(?:\b)/i, "food"],
 ];
 

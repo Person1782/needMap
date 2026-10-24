@@ -44,6 +44,19 @@ test("submits merged geometry only, verifies a completed 2025 estimate and uses 
   assert.ok(calls.every(({ options }) => options.credentials === "omit" && options.redirect === "error"));
 });
 
+test("uses the requested planning radius and keeps different service areas out of the same cache entry", async () => {
+  const { calls, fetchImpl } = provider();
+  const first = await loadReportPopulation({ ...selection, radiusMeters: 2000 }, { fetchImpl, now });
+  const second = await loadReportPopulation({ ...selection, radiusMeters: 3000 }, { fetchImpl, now: now + 1 });
+  assert.equal(first.status, "ready");
+  assert.equal(first.radiusMeters, 2000);
+  assert.equal(second.radiusMeters, 3000);
+  assert.equal(calls.length, 4);
+  const firstGeometry = JSON.parse(calls[0].options.body).geojson;
+  const secondGeometry = JSON.parse(calls[2].options.body).geojson;
+  assert.notDeepEqual(firstGeometry, secondGeometry);
+});
+
 test("does not invent zero for no reports, invalid locations, invalid boundaries or empty clipped areas", async () => {
   const { calls, fetchImpl } = provider();
   const empty = await loadReportPopulation({ reports: [] }, { fetchImpl });

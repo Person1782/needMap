@@ -3,12 +3,21 @@ import { WORLD_REGION } from "./region-navigation.js";
 const worldAliases = ["worldwide", "world", "global", "all regions", "global regions"];
 
 /** Show Worldwide above all countries initially, then every matching region. */
-export function createRegionPicker({ navigation, document = globalThis.document, i18n }) {
+export function createRegionPicker({ navigation, document = globalThis.document, i18n,
+  ids = {}, rootSelector = ".region-navigation" }) {
   const byId = (id) => document.getElementById(id);
-  const menu = byId("region-menu");
-  const search = byId("region-search");
-  const results = byId("region-results");
-  const toggle = byId("change-region");
+  const names = {
+    menu: "region-menu", search: "region-search", results: "region-results",
+    toggle: "change-region", form: "region-search-form", status: "region-search-status",
+    ...ids,
+  };
+  const menu = byId(names.menu);
+  const search = byId(names.search);
+  const results = byId(names.results);
+  const toggle = byId(names.toggle);
+  if (!menu || !search || !results || !toggle || !byId(names.form) || !byId(names.status)) {
+    throw new TypeError("Region picker controls are incomplete.");
+  }
   const listeners = [];
   let destroyed = false;
   const tr = (key, values, fallback) => i18n ? i18n.t(key, values) : fallback;
@@ -38,7 +47,7 @@ export function createRegionPicker({ navigation, document = globalThis.document,
       button.addEventListener("click", () => { if (!destroyed) navigation.select(region.id); });
       item.append(button); results.append(item);
     });
-    byId("region-search-status").textContent = total
+    byId(names.status).textContent = total
       ? searching ? tr("region.matching", { count: total }, `${total.toLocaleString()} matching region${total === 1 ? "" : "s"}.`)
         : tr("region.allCountries", { count: catalogTotal }, `Worldwide and ${catalogTotal.toLocaleString()} countries and territories.`)
       : tr("region.noMatches", {}, "No matching regions. Try a country, state, or a different spelling.");
@@ -57,13 +66,13 @@ export function createRegionPicker({ navigation, document = globalThis.document,
   }
   listen(toggle, "click", () => menu.hidden ? open() : close());
   listen(search, "input", () => render());
-  listen(byId("region-search-form"), "submit", (event) => {
+  listen(byId(names.form), "submit", (event) => {
     event.preventDefault(); render(); results.querySelector("button")?.focus();
   });
   listen(document, "keydown", (event) => {
     if (event.key === "Escape" && !menu.hidden) { close(); toggle.focus(); }
   });
-  listen(document, "click", (event) => { if (!event.target.closest(".region-navigation")) close(); });
+  listen(document, "click", (event) => { if (!event.target.closest(rootSelector)) close(); });
   listen(results, "keydown", (event) => {
     const buttons = [...results.querySelectorAll("button")];
     const index = buttons.indexOf(document.activeElement);

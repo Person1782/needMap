@@ -9,7 +9,13 @@ test("every reporting category has a distinct local service icon", () => {
     assert.match(serviceIconSvg(category), /^<svg/);
     assert.equal(serviceIconSvg(category), SERVICE_ICONS[key]);
   }
-  assert.equal(new Set(Object.values(SERVICE_ICONS)).size, 11);
+  assert.equal(new Set(Object.values(SERVICE_ICONS)).size, 12);
+});
+
+test("electricity plans use a local electricity icon", () => {
+  assert.equal(serviceIconKey("electricity"), "electricity");
+  assert.equal(serviceIconKey("other", "Electricity microgrid"), "electricity");
+  assert.equal(serviceIconSvg("electricity"), SERVICE_ICONS.electricity);
 });
 
 test("inferred service names select the appropriate specific icon", () => {
@@ -20,7 +26,7 @@ test("inferred service names select the appropriate specific icon", () => {
 });
 
 test("healthcare and legacy medication report categories share the medical icon", () => {
-  for (const category of ["healthcare", "medical", "medication_access", "medication", "medications", "medicine", "pharmacy"]) {
+  for (const category of ["hospital", "clinic", "healthcare", "medical", "medication_access", "medication", "medications", "medicine", "pharmacy"]) {
     assert.equal(serviceIconSvg(category), SERVICE_ICONS.hospital, category);
   }
   assert.equal(serviceIconSvg("healthcare", "Pharmacy"), SERVICE_ICONS.medication,

@@ -39,7 +39,7 @@
         <p class="region-attribution muted"><span id="region-data-label">Region data:</span> <a href="https://github.com/dr5hn/countries-states-cities-database" target="_blank" rel="noreferrer">Countries States Cities</a> · <span id="region-boundaries-label">Boundaries:</span> <a href="https://www.geoboundaries.org" target="_blank" rel="noreferrer">geoBoundaries</a></p>
       </section>
     </div>
-    <nav class="page-navigation" aria-label="Main navigation"><a id="map-tab" href="#explore-view" aria-current="page">Map</a><a id="analysis-tab" href="#analysis">Analysis</a></nav>
+    <nav class="page-navigation" aria-label="Main navigation"><a id="map-tab" href="#explore-view" aria-current="page">Map</a><a id="analysis-tab" href="#analysis">Analysis</a><a id="plans-tab" href="#plans">Plans</a></nav>
     <div class="status-wrap"><span id="live-dot" class="live-dot" aria-hidden="true"></span><span id="status" role="status">Connecting…</span></div>
   </div>
   <main class="workspace-content">
@@ -90,6 +90,34 @@
           <p id="analysis-ai-status" class="analysis-note" role="status"></p>
           <div id="analysis-rankings" class="analysis-rankings"></div>
         </section>
+      </div>
+    </section>
+    <section id="plans-view" class="site-view plans-view" aria-labelledby="plans-title" tabindex="-1" hidden>
+      <div class="plans-shell">
+        <div class="plans-heading">
+          <div>
+            <p class="eyebrow" data-i18n="plans.eyebrow">Plan from community evidence</p>
+            <h2 id="plans-title" data-i18n="plans.title">Infrastructure plans</h2>
+            <p class="plans-subtitle" data-i18n="plans.subtitle">Compare up to three report-supported locations with transparent preliminary estimates.</p>
+          </div>
+          <div class="plans-filters">
+            <div class="plans-region-navigation">
+              <label id="plans-region-label" data-i18n="plans.region">Region</label>
+              <button id="plans-change-region" class="plans-select-button" type="button" aria-expanded="false" aria-controls="plans-region-menu" aria-labelledby="plans-region-label plans-current-region"><span id="plans-current-region">Worldwide</span><svg class="region-chevron" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m5 7.5 5 5 5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+              <section id="plans-region-menu" class="region-menu plans-region-menu" aria-label="Change region" hidden>
+                <form id="plans-region-search-form" role="search"><label for="plans-region-search" data-i18n="region.find">Find a region anywhere in the world</label><div class="region-search-row"><input id="plans-region-search" type="search" placeholder="Region, state, or country" autocomplete="off" maxlength="120" aria-describedby="plans-region-search-hint" /><button class="primary-button" type="submit" data-i18n="region.search">Search</button></div></form>
+                <p id="plans-region-search-hint" class="muted" data-i18n="region.hint">Search countries, states, provinces, and NeedMap regions worldwide.</p>
+                <p id="plans-region-search-status" class="muted" role="status"></p>
+                <ul id="plans-region-results" class="region-results" aria-label="Matching regions"></ul>
+                <p class="region-attribution muted"><span data-i18n="region.data">Region data:</span> <a href="https://github.com/dr5hn/countries-states-cities-database" target="_blank" rel="noreferrer">Countries States Cities</a> · <span data-i18n="region.boundaries">Boundaries:</span> <a href="https://www.geoboundaries.org" target="_blank" rel="noreferrer">geoBoundaries</a></p>
+              </section>
+            </div>
+            <label class="plans-type-filter" for="plans-type"><span data-i18n="plans.infrastructure">Infrastructure</span><span class="plans-select"><span id="plans-type-icon" class="service-icon" aria-hidden="true"></span><select id="plans-type"></select><svg class="plans-select-chevron" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m5 7.5 5 5 5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span></label>
+          </div>
+        </div>
+        <p id="plans-scope" class="plans-scope"></p>
+        <p id="plans-status" class="plans-status" role="status" aria-live="polite"></p>
+        <div id="plans-results" class="plans-results"></div>
       </div>
     </section>
   </main>

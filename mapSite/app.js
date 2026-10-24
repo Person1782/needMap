@@ -23,6 +23,11 @@ import { createPopulationAreaMap } from "./population-area-map.js";
 import "./population-details.css";
 import { createI18n } from "./i18n/index.js";
 import { createLanguagePicker } from "./i18n/language-picker.js";
+import { createPlansWorkspace } from "./plans-workspace.js";
+import { createPlansLocationMap } from "./plans-location-map.js";
+import { buildPlanBenchmarkEvidence } from "./plans-benchmarks.js";
+import { loadPlanLocalCostAdjustment } from "./plans-local-cost.js";
+import "./plans.css";
 
 const i18n = createI18n();
 await i18n.initialize();
@@ -50,7 +55,7 @@ function translateStaticInterface() {
   document.querySelectorAll("[data-i18n]").forEach((item) => { item.textContent = i18n.t(item.dataset.i18n); });
   const text = {
     ".skip-link": "skip.map", "#change-region": "region.change", "#region-status": "region.finding", "#region-search-form label": "region.find",
-    "#region-search-form button": "region.search", "#region-search-hint": "region.hint", "#region-data-label": "region.data", "#region-boundaries-label": "region.boundaries", "#map-tab": "nav.map", "#analysis-tab": "nav.analysis",
+    "#region-search-form button": "region.search", "#region-search-hint": "region.hint", "#region-data-label": "region.data", "#region-boundaries-label": "region.boundaries", "#map-tab": "nav.map", "#analysis-tab": "nav.analysis", "#plans-tab": "nav.plans",
     ".explore-panel>.eyebrow": "explore.eyebrow", ".explore-panel>h2": "explore.title", ".explore-panel>.intro": "explore.intro",
     ".explore-metrics>div:first-child span": "explore.reportsShown", ".explore-metrics>div:last-child span": "explore.highUrgency", "#candidate-status": "explore.waitingServices", "#report-scope": "explore.waitingReports",
     ".report-filters>label[for=report-search]": "explore.searchLabel", ".filter-row label:first-child": "explore.service", ".filter-row label:last-child": "explore.urgency",
@@ -76,6 +81,7 @@ function translateStaticInterface() {
     [".page-navigation", "aria-label", "nav.label"], ["#explore-view", "aria-label", "skip.map"], ["#report-search", "placeholder", "explore.searchPlaceholder"],
     ["#map", "aria-label", "map.community", { region: document.getElementById("current-region")?.textContent || "Worldwide" }], ["#fit-reports", "title", "map.centerTitle"], [".map-layer-control", "aria-label", "map.layers"], [".map-legend", "aria-label", "map.symbols"],
     ["#analysis-overview-map", "aria-label", "analysis.mapLabel"], [".analysis-map-legend", "aria-label", "analysis.symbols"], ["#analysis-overview", "aria-label", "analysis.overview"],
+    ["#plans-view", "aria-label", "skip.plans"], ["#plans-region-menu", "aria-label", "region.menu"], ["#plans-region-search", "placeholder", "region.placeholder"], ["#plans-region-results", "aria-label", "region.results"],
   ];
   for (const [selector, attribute, key, values] of attributes) document.querySelector(selector)?.setAttribute(attribute, i18n.t(key, values));
   search.placeholder = i18n.t("explore.searchPlaceholder");
@@ -117,11 +123,61 @@ let connectionFailed = false;
 let reportsReady = false;
 let connectionMessage = { key: "connection.connecting", values: {} };
 let regionMessage = { key: "region.finding", values: {} };
+let planCostState = { countryCode: null, status: "idle", adjustment: null };
+let planCostRevision = 0;
+let planCostController;
 function setConnectionMessage(key, values = {}) { connectionMessage = { key, values }; status.textContent = i18n.t(key, values); }
 setConnectionMessage("connection.connecting");
 const analysisWorkspace = createAnalysisWorkspace({ i18n, firebaseApp, reviewComplaints, createPopulationMap: (container, options) => createPopulationAreaMap(L, container, { ...options, i18n }), createOverviewMap: (container) => createAnalysisOverviewMap(L, container, { reportPopup, candidatePopup, i18n }), createReportMap: (container, report) => createReportLocationMap(L, container, report) });
 function updateAnalysis() {
   analysisWorkspace.update({ region: selectedRegion, reports: regionReports(), recommendations, reportsReady, connectionFailed });
+}
+const plansWorkspace = createPlansWorkspace({
+  i18n,
+  createLocationMap: (container) => createPlansLocationMap(L, container, { i18n }),
+  evidenceFor(type, region) {
+    const countryCode = typeof region?.countryCode === "string" ? region.countryCode.trim().toUpperCase() : "";
+    const canLocalize = !["electricity", "other"].includes(type) && planCostState.status === "ready" &&
+      planCostState.countryCode === countryCode;
+    const evidence = buildPlanBenchmarkEvidence(type, {
+      region,
+      localCostAdjustment: canLocalize ? planCostState.adjustment : null,
+    });
+    return evidence ? [evidence] : [];
+  },
+});
+function updatePlans() {
+  const planReports = reports.filter((report) => regionContains(selectedRegion, report.latitude, report.longitude));
+  plansWorkspace.update({ region: selectedRegion, reports: planReports, reportsReady, connectionFailed });
+}
+async function ensurePlanLocalCost() {
+  const region = selectedRegion;
+  const countryCode = typeof region?.countryCode === "string" ? region.countryCode.trim().toUpperCase() : "";
+  if (!countryCode || region?.kind === "world") {
+    planCostController?.abort();
+    planCostController = undefined;
+    planCostRevision += 1;
+    planCostState = { countryCode: null, status: "unavailable", adjustment: null };
+    return;
+  }
+  if (planCostState.countryCode === countryCode && ["loading", "ready", "unavailable"].includes(planCostState.status)) return;
+  planCostController?.abort();
+  const controller = new AbortController();
+  planCostController = controller;
+  const revision = ++planCostRevision;
+  planCostState = { countryCode, status: "loading", adjustment: null };
+  try {
+    const result = await loadPlanLocalCostAdjustment(region, { signal: controller.signal });
+    if (controller.signal.aborted || revision !== planCostRevision ||
+        String(selectedRegion?.countryCode || "").toUpperCase() !== countryCode) return;
+    planCostState = { countryCode, status: result.status, adjustment: result.adjustment };
+    updatePlans();
+  } catch (error) {
+    if (error?.name !== "AbortError") {
+      planCostState = { countryCode, status: "unavailable", adjustment: null };
+      updatePlans();
+    }
+  }
 }
 function element(tag, text, className) {
   const node = document.createElement(tag);
@@ -248,7 +304,7 @@ function updateCandidates() {
     ? i18n.t("candidate.count", { count: i18n.number(candidates.length) })
     : resolving && !selectedRegion.geometry ? i18n.t("candidate.finding") : i18n.t("candidate.needReports");
   if (connectionFailed) candidateStatus.textContent += i18n.t("candidate.outdated");
-  updateAnalysis();
+  updateAnalysis(); updatePlans();
 }
 
 [search, category, urgency, viewport].forEach((control) => control.addEventListener("input", renderReports));
@@ -271,25 +327,33 @@ $("#layer-candidates").addEventListener("change", (event) => {
   else candidatesLayer.removeFrom(map);
 });
 map.on("moveend zoomend", () => { if (viewport.checked) renderReports(); });
-if (["#plan", "#decisions"].includes(window.location.hash)) window.history.replaceState(null, "", "#explore-view");
-function translatePageShell(analyzing) {
+if (["#plan", "#decisions"].includes(window.location.hash)) window.history.replaceState(null, "", "#plans");
+function translatePageShell(page) {
   const skipLink = document.querySelector(".skip-link");
-  skipLink.href = analyzing ? "#analysis-view" : "#explore-view";
-  skipLink.textContent = i18n.t(analyzing ? "skip.analysis" : "skip.map");
-  document.title = i18n.t(analyzing ? "document.analysisTitle" : "document.mapTitle");
+  const target = page === "analysis" ? "analysis" : page === "plans" ? "plans" : "map";
+  skipLink.href = `#${target === "map" ? "explore" : target}-view`;
+  skipLink.textContent = i18n.t(`skip.${target}`);
+  document.title = i18n.t(`document.${target}Title`);
 }
 function showPage() {
-  const analyzing = window.location.hash.startsWith("#analysis");
-  translatePageShell(analyzing);
-  // Preserve the current Analysis view when the skip link targets it.
-  if (analyzing && !$("#analysis-view").hidden) return;
-  $("#explore-view").hidden = analyzing;
+  const hash = window.location.hash;
+  const page = hash.startsWith("#analysis") ? "analysis" : hash.startsWith("#plans") ? "plans" : "map";
+  const analyzing = page === "analysis", planning = page === "plans";
+  translatePageShell(page);
+  $("#explore-view").hidden = page !== "map";
   $("#analysis-view").hidden = !analyzing;
-  for (const [id, active] of [["#map-tab", !analyzing], ["#analysis-tab", analyzing]]) {
+  $("#plans-view").hidden = !planning;
+  for (const [id, active] of [["#map-tab", page === "map"], ["#analysis-tab", analyzing], ["#plans-tab", planning]]) {
     if (active) $(id).setAttribute("aria-current", "page"); else $(id).removeAttribute("aria-current");
   }
-  updateAnalysis(); analysisWorkspace.setVisible(analyzing);
-  if (!analyzing) requestAnimationFrame(() => {
+  updateAnalysis(); updatePlans();
+  analysisWorkspace.setVisible(analyzing); plansWorkspace.setVisible(planning);
+  if (planning) void ensurePlanLocalCost();
+  if (analyzing && hash.includes("?")) {
+    const parameters = new URLSearchParams(hash.slice(hash.indexOf("?") + 1));
+    analysisWorkspace.focusReport(parameters.get("category"), parameters.get("report"));
+  }
+  if (page === "map") requestAnimationFrame(() => {
     if ($("#explore-view").hidden) return;
     if (pendingRegionFit) fitSelectedRegion();
     else mapViewport.refresh();
@@ -306,13 +370,15 @@ const regionNavigation = createRegionNavigation({
     map.closePopup();
     viewport.checked = false;
     $("#current-region").textContent = region.label || region.name;
+    $("#plans-current-region").textContent = region.label || region.name;
     $("#map-region-label").textContent = i18n.t("map.community", { region: region.name });
     if (region.geometry) L.geoJSON(region.geometry, { style: { color: "#005ea8", weight: 2, fillOpacity: .025 }, interactive: false }).addTo(selectedRegionLayer);
     fitSelectedRegion();
     refreshCategories();
     renderReports();
     updateCandidates();
-    regionPicker.close();
+    if (window.location.hash.startsWith("#plans")) void ensurePlanLocalCost();
+    regionPicker.close(); plansRegionPicker.close();
   },
   onStatus({ state, message, key, values }) {
     regionMessage = key ? { key, values } : { message };
@@ -323,15 +389,29 @@ const regionNavigation = createRegionNavigation({
   },
 });
 const regionPicker = createRegionPicker({ navigation: regionNavigation, i18n });
+const plansRegionPicker = createRegionPicker({
+  navigation: regionNavigation,
+  i18n,
+  rootSelector: ".plans-region-navigation",
+  ids: {
+    menu: "plans-region-menu",
+    search: "plans-region-search",
+    results: "plans-region-results",
+    toggle: "plans-change-region",
+    form: "plans-region-search-form",
+    status: "plans-region-search-status",
+  },
+});
 const stopLanguageSubscription = i18n.subscribe(() => {
   translateStaticInterface();
   translateMapControls();
   $("#current-region").textContent = selectedRegion.label || selectedRegion.name;
+  $("#plans-current-region").textContent = selectedRegion.label || selectedRegion.name;
   $("#map-region-label").textContent = i18n.t("map.community", { region: selectedRegion.name });
   const localizedRegion = regionMessage.key ? i18n.t(regionMessage.key, regionMessage.values) : regionMessage.message;
   $("#region-status").textContent = localizedRegion; $("#region-action-status").textContent = localizedRegion;
   status.textContent = i18n.t(connectionMessage.key, connectionMessage.values);
-  map.closePopup(); regionPicker.render(); refreshCategories(); renderReports(); updateCandidates(); showPage();
+  map.closePopup(); regionPicker.render(); plansRegionPicker.render(); refreshCategories(); renderReports(); updateCandidates(); showPage();
 });
 regionNavigation.initialize();
 
@@ -384,6 +464,6 @@ const unsubscribe = onSnapshot(collection(db, "incomingSignals"), (snapshot) => 
 });
 window.addEventListener("pagehide", (event) => {
   if (event.persisted) return;
-  unsubscribe(); stopLanguageSubscription(); languagePicker.destroy(); regionController?.abort(); regionNavigation.destroy(); regionPicker.destroy(); mapViewport.destroy(); analysisWorkspace.destroy(); mapPopups.destroy(); detachMapZoom();
+  unsubscribe(); stopLanguageSubscription(); languagePicker.destroy(); regionController?.abort(); planCostController?.abort(); regionNavigation.destroy(); regionPicker.destroy(); plansRegionPicker.destroy(); mapViewport.destroy(); analysisWorkspace.destroy(); plansWorkspace.destroy(); mapPopups.destroy(); detachMapZoom();
   window.removeEventListener("hashchange", showPage);
 });

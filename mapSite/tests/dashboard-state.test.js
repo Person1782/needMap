@@ -16,13 +16,15 @@ test('search, category, urgency, and viewport filters combine without altering r
   assert.equal(reportSnapshotKey(reports), reportSnapshotKey([...reports].reverse()));
   assert.notEqual(reportSnapshotKey(reports), reportSnapshotKey([report('a', { summary: 'Changed need' })]));
 });
-test('map and analysis share region navigation without legacy planner or estimate controls', async () => {
+test('map, analysis, and plans share region navigation without legacy planner controls', async () => {
   const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
-  assert.doesNotMatch(html, /id="plan-view"/);
+  assert.match(html, /id="plans-view"/);
+  assert.match(html, /id="plans-type"/);
+  assert.match(html, /id="plans-change-region"/);
   assert.match(html, /id="analysis-view"/);
   assert.match(html, /id="analysis-category"/);
   assert.match(html, /id="explore-view"/);
-  assert.doesNotMatch(html, /service-plans|planning-workspace|cost and impact|estimates|refresh-analysis/);
+  assert.doesNotMatch(html, /service-plans|planning-workspace|cost and impact|refresh-analysis|csv|looking for existing services/i);
   assert.match(html, /id="change-region"/);
   assert.match(html, /id="region-search"/);
 });

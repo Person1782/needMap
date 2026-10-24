@@ -43,6 +43,26 @@ test("analysis loads lazily, then category updates the overview, rankings, repor
   } finally { page.workspace.destroy(); }
 });
 
+test("a Plans report citation opens the matching Analysis problem and report", () => {
+  const page = fixture({ loadEvidence: async () => ({ status: "unavailable", indicators: [] }) });
+  try {
+    page.workspace.update({
+      region: country,
+      reports: [report("water-report", "water", "This is the linked water report"), report("health-report", "healthcare")],
+      reportsReady: true,
+    });
+    page.workspace.setVisible(true);
+    assert.equal(page.workspace.focusReport("water", "water-report"), true);
+    assert.equal(page.query("#analysis-category").value, "water");
+    const row = page.query('.priority-row[data-category="water"]');
+    assert.equal(row.open, true);
+    const linked = row.querySelector('[data-report-id="water-report"]');
+    assert.ok(linked);
+    assert.match(linked.textContent, /linked water report/);
+    assert.equal(page.workspace.focusReport("unknown", "water-report"), false);
+  } finally { page.workspace.destroy(); }
+});
+
 test("overview map follows report and recommendation filters without resetting on evidence completion", async () => {
   const updates = []; let created = 0, destroyed = 0;
   const page = fixture({ createOverviewMap: () => {

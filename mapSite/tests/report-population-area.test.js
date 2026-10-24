@@ -33,6 +33,21 @@ test("buffers measure 500 meters at the equator and higher latitudes", () => {
   }
 });
 
+test("supports a validated planning radius while retaining the 500 meter default", () => {
+  const oneKilometer = buildReportPopulationArea([report("a", 10, 20)], null, { radiusMeters: 1000 });
+  assert.equal(oneKilometer.radiusMeters, 1000);
+  const ring = oneKilometer.geometry.coordinates[0][0];
+  for (const [x, y] of ring) {
+    const rad = Math.PI / 180;
+    const haversine = Math.sin((y - 20) * rad / 2) ** 2 +
+      Math.cos(20 * rad) * Math.cos(y * rad) * Math.sin((x - 10) * rad / 2) ** 2;
+    const meters = 6371008.8 * 2 * Math.asin(Math.sqrt(haversine));
+    assert.ok(Math.abs(meters - 1000) < 0.01);
+  }
+  assert.throws(() => buildReportPopulationArea([report("a")], null, { radiusMeters: 0 }), RangeError);
+  assert.throws(() => buildReportPopulationArea([report("a")], null, { radiusMeters: 50_001 }), RangeError);
+});
+
 test("deduplicates IDs and coordinates without multiplying residents", () => {
   const single = buildReportPopulationArea([report("a")]);
   const duplicate = buildReportPopulationArea([report("a"), report("a", 1), report("b"), { latitude: 0, longitude: 0 }]);
