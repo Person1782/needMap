@@ -2,6 +2,7 @@
   "use strict";
   var i18n = root.NeedMapI18n;
   if (!i18n || !i18n.t) return;
+  var loading = root.NeedMapLoading || { begin: function () { return function () {}; }, end: function () {}, refresh: function () {} };
   function tr(key, parameters) { return i18n.t(key, parameters); }
   function byId(id) { return document.getElementById(id); }
   var form = byId("signal-form");
@@ -18,8 +19,6 @@
   var placeInput = byId("place-query");
   var searchStatus = byId("place-search-status");
   var searchResults = byId("place-results");
-  var modeSelect = byId("connection-mode");
-  var modeStatus = byId("mode-status");
   var mapLinkContainer = byId("map-link-container");
   var formStatusState = { key: "", parameters: null, type: "" };
   var locationStatusState = { key: "noLocation", parameters: null, type: "" };
@@ -30,23 +29,22 @@
   var model = root.NeedMapForm;
   if (!root.JSON || !root.XMLHttpRequest || !root.addEventListener || !model || !root.NeedMapNetwork || !root.NeedMapAdaptive) {
     statusMessage.textContent = tr("browserUnsupported");
+    loading.end("boot");
     return;
   }
   var storageKey = "needmap-report-draft-v2";
   var location = null;
   var submitting = false;
-  var preference = "auto";
   var mode;
   var observedSlow = false;
   var submissionStay = false;
   var searchingNow = false;
-  var modeStorage;
-  var modeStorageKey = "needmap-connection-mode-v1";
   var baseDestination = root.NeedMapAdaptive.mapUrl(form.getAttribute("data-map-url"), root.location);
   var destination = baseDestination;
   var locationRequest = 0;
   var locating = false;
   var searchRequest = 0;
+  var finishSearchLoading = function () {};
   var storage;
   var draft = null;
   try {
@@ -54,11 +52,6 @@
     draft = JSON.parse(storage.getItem(storageKey) || "null");
     if (!draft || !draft.savedAt || new Date().getTime() - draft.savedAt > 7 * 86400000) { draft = null; storage.removeItem(storageKey); }
   } catch (error) { storage = null; draft = null; }
-  try {
-    modeStorage = root.localStorage;
-    if (modeStorage.getItem(modeStorageKey) === "slow") preference = "slow";
-  } catch (error) { modeStorage = null; }
-  modeSelect.value = preference;
   function localizedMapUrl(url) {
     var hashIndex = url.indexOf("#");
     var hash = hashIndex === -1 ? "" : url.slice(hashIndex);
@@ -73,20 +66,10 @@
   updateDestination();
   mapLinkContainer.hidden = true;
   function updateMode() {
-    mode = root.NeedMapAdaptive.detect(navigator, root.performance, preference, observedSlow);
+    mode = root.NeedMapAdaptive.detect(navigator, root.performance, observedSlow);
     if (submitting && mode.slow) submissionStay = true;
     document.body.setAttribute("data-connection-mode", mode.slow ? "slow" : "full");
-    byId("mode-label").textContent = tr(mode.slow ? "connectionSlow" : "modeLabelFull");
-    modeStatus.textContent = mode.slow ? tr("modeSlowDetail", { reason: tr(mode.reasonKey) }) : tr("modeFast");
-    if (submitting && submissionStay && !mode.slow) modeStatus.textContent = tr("modeImproved");
-    if (!modeStorage) byId("mode-preference-note").textContent = tr("modeNoStorage");
-    else byId("mode-preference-note").textContent = tr("preferenceRemembered");
   }
-  modeSelect.addEventListener("change", function () {
-    preference = modeSelect.value === "slow" ? "slow" : "auto";
-    try { if (modeStorage) modeStorage.setItem(modeStorageKey, preference); } catch (error) { modeStorage = null; }
-    updateMode();
-  });
   var backend = root.NeedMapNetwork.createClient(root.NeedMapConfig);
   var submissions = model.createSubmissionManager({
     createId: model.createId,
@@ -159,12 +142,15 @@
   function cancelLocationRequest() {
     locationRequest++;
     locating = false;
+    loading.end("location");
     locationButton.disabled = submitting;
     locationButton.textContent = tr("useLocation");
   }
   function clearSearch() {
     searchRequest++;
     searchingNow = false;
+    finishSearchLoading();
+    finishSearchLoading = function () {};
     searchButton.disabled = submitting;
     searchButton.textContent = tr("findPlace");
     while (searchResults.firstChild) searchResults.removeChild(searchResults.firstChild);
@@ -203,6 +189,7 @@
     locationButton.disabled = true;
     locationButton.textContent = tr("locationFinding");
     setLocationStatus("locationPermissionPrompt");
+    loading.begin("location", "locationFinding", "Finding location\u2026", "location");
     try {
       navigator.geolocation.getCurrentPosition(function (position) {
         if (request !== locationRequest || submitting) return;
@@ -228,7 +215,12 @@
     searchButton.disabled = true;
     searchButton.textContent = tr("searching");
     setSearchStatus("searchLooking");
+    var callbackFinished = false;
+    var releaseLoading = function () {};
     findPlace(placeInput.value, function (error, results) {
+      callbackFinished = true;
+      releaseLoading();
+      if (finishSearchLoading === releaseLoading) finishSearchLoading = function () {};
       if (request !== searchRequest || submitting) return;
       searchingNow = false;
       searchButton.disabled = false;
@@ -251,6 +243,10 @@
         searchResults.appendChild(item);
       });
     });
+    if (!callbackFinished) {
+      releaseLoading = loading.begin("place-search", "searchLooking", "Looking for matching places\u2026", "search");
+      finishSearchLoading = releaseLoading;
+    }
   }
   function lockForm(locked) {
     formFields.disabled = locked;
@@ -303,10 +299,12 @@
     form.setAttribute("aria-busy", "true");
     submitButton.textContent = tr("submitting");
     setStatus("submittingStatus");
+    loading.begin("submission", "submittingStatus", "Submitting your report. Keep this page open until confirmation appears.", "submission");
     var startedAt = new Date().getTime();
     var modeTimer = root.setTimeout(function () { observedSlow = true; updateMode(); }, 8000);
     var slowTimer = root.setTimeout(function () { setStatus("stillWaiting"); }, 15000);
     submissions.submit(result.report, function (error, reference) {
+      loading.end("submission");
       root.clearTimeout(slowTimer);
       root.clearTimeout(modeTimer);
       if (new Date().getTime() - startedAt >= 8000) observedSlow = true;
@@ -364,4 +362,5 @@
   updateConnectionStatus();
   byId("loading-status").hidden = true;
   submitButton.disabled = false;
+  loading.end("boot");
 }(window, document, navigator));

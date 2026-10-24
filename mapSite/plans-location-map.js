@@ -2,6 +2,8 @@ import { serviceIconSvg } from "./service-icons.js";
 import { getReportCoordinates } from "./report-location-map.js";
 import { attachMapZoom } from "./map-zoom.js";
 import { attachMapViewport, MAP_WORLD_BOUNDS, MAP_VIEWPORT_OPTIONS } from "./map-viewport.js";
+import { trackLeafletTileLayer } from "./leaflet-loading.js";
+import { CANDIDATE_MARKER_Z_INDEX, separatedCandidateIconOptions } from "./map-marker-layout.js";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 const FALLBACK_WIDTH = 800;
@@ -114,37 +116,25 @@ export function renderPlansLocationFallback(container, { candidate, geometry, i1
     }));
   }
 
-  for (const { report, point: [latitude, longitude] } of reportPoints) {
-    const point = project(latitude, longitude);
-    const marker = svgNode(document, "circle", {
-      class: "plan-fallback-report",
-      cx: decimal(point.x), cy: decimal(point.y), r: 6,
-      "data-geographic-role": "report",
-      "data-report-id": report?.id ?? "",
-      "data-latitude": latitude,
-      "data-longitude": longitude,
-    });
-    const title = svgNode(document, "title");
-    title.textContent = typeof report?.summary === "string" && report.summary.trim()
-      ? report.summary.trim() : tr("plans.reportLocations", {}, "Supporting report location");
-    marker.append(title);
-    svg.append(marker);
-  }
-
   if (candidatePoint) {
     const [latitude, longitude] = candidatePoint;
     const point = project(latitude, longitude);
+    const verticalOffset = point.y >= 70 ? -38 : 38;
+    const leaderEdge = verticalOffset < 0 ? 20 : -20;
+    const leaderTarget = -verticalOffset;
     const rank = [1, 2, 3].includes(candidate?.rank) ? candidate.rank : 1;
     const marker = svgNode(document, "g", {
       class: "plan-fallback-candidate",
-      transform: `translate(${decimal(point.x)} ${decimal(point.y)})`,
+      transform: `translate(${decimal(point.x)} ${decimal(point.y + verticalOffset)})`,
       "data-geographic-role": "candidate",
       "data-latitude": latitude,
       "data-longitude": longitude,
     });
     const title = svgNode(document, "title");
     title.textContent = tr("plans.mapCandidate", { rank }, `Recommended location ${rank}`);
-    marker.append(title, svgNode(document, "rect", {
+    marker.append(title, svgNode(document, "line", {
+      class: "plan-fallback-candidate-leader", x1: 0, y1: leaderEdge, x2: 0, y2: leaderTarget,
+    }), svgNode(document, "rect", {
       x: -20, y: -20, width: 40, height: 40, rx: 8,
     }));
     const icon = svgNode(document, "g", { class: "plan-fallback-icon" });
@@ -162,6 +152,25 @@ export function renderPlansLocationFallback(container, { candidate, geometry, i1
     svg.append(marker);
   }
 
+  // Report dots are deliberately appended last so they stay visible if a
+  // recommendation and a report share or nearly share a coordinate.
+  for (const { report, point: [latitude, longitude] } of reportPoints) {
+    const point = project(latitude, longitude);
+    const marker = svgNode(document, "circle", {
+      class: "plan-fallback-report",
+      cx: decimal(point.x), cy: decimal(point.y), r: 6,
+      "data-geographic-role": "report",
+      "data-report-id": report?.id ?? "",
+      "data-latitude": latitude,
+      "data-longitude": longitude,
+    });
+    const title = svgNode(document, "title");
+    title.textContent = typeof report?.summary === "string" && report.summary.trim()
+      ? report.summary.trim() : tr("plans.reportLocations", {}, "Supporting report location");
+    marker.append(title);
+    svg.append(marker);
+  }
+
   container.style.background = "";
   container.replaceChildren(svg);
   return svg;
@@ -171,12 +180,13 @@ export function renderPlansLocationFallback(container, { candidate, geometry, i1
  * Shows the exact planning area used for a recommendation. The vector area,
  * report points and candidate remain visible even when background tiles fail.
  */
-export function createPlansLocationMap(L, container, { i18n } = {}) {
+export function createPlansLocationMap(L, container, { i18n, onLoading } = {}) {
   if (!container) throw new TypeError("A Plans map container is required.");
   let map;
   let viewport;
   let detachZoom;
   let stopped = false;
+  let stopTileLoading = () => {};
   const tr = (key, values = {}, fallback = key) => i18n
     ? i18n.t(key, values)
     : Object.entries(values).reduce((text, [name, value]) => text.replaceAll(`{${name}}`, value), fallback);
@@ -206,16 +216,21 @@ export function createPlansLocationMap(L, container, { i18n } = {}) {
     viewport = attachMapViewport(map);
     detachZoom = attachMapZoom(map);
     map.attributionControl.setPrefix(false);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    const tiles = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19,
       noWrap: true,
       bounds: MAP_WORLD_BOUNDS,
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>',
-    }).addTo(map);
+    });
+    stopTileLoading = trackLeafletTileLayer(tiles, { onLoading, key: "plans-map-tiles", label: () => tr("analysis.loadingMap", {}, "Loading map…"), target: container });
+    tiles.addTo(map);
     const boundaryLayer = L.layerGroup().addTo(map);
     const areaLayer = L.layerGroup().addTo(map);
     const reportLayer = L.layerGroup().addTo(map);
     const candidateLayer = L.layerGroup().addTo(map);
+    const reportPane = map.createPane("plans-report-markers");
+    reportPane.style.zIndex = "650";
+    reportPane.style.pointerEvents = "none";
     translateControls();
     const stopLanguage = i18n?.subscribe(translateControls) || (() => {});
 
@@ -244,6 +259,7 @@ export function createPlansLocationMap(L, container, { i18n } = {}) {
         if (!point) continue;
         points.push(point);
         L.circleMarker(point, {
+          pane: "plans-report-markers",
           radius: 5,
           weight: 2,
           color: "#fff",
@@ -256,14 +272,13 @@ export function createPlansLocationMap(L, container, { i18n } = {}) {
       if (center) {
         points.push(center);
         const rank = [1, 2, 3].includes(candidate.rank) ? candidate.rank : 1;
-        const icon = L.divIcon({
-          className: "",
-          html: `<span class="plans-candidate-marker" aria-hidden="true">${serviceIconSvg(candidate.iconKey)}<b>${rank}</b></span>`,
-          iconSize: [42, 42],
-          iconAnchor: [21, 21],
-        });
+        const icon = L.divIcon(separatedCandidateIconOptions(
+          `<span class="plans-candidate-marker" aria-hidden="true">${serviceIconSvg(candidate.iconKey)}<b>${rank}</b></span>`,
+          { size: 42, className: "plans-separated-candidate-icon" },
+        ));
         L.marker(center, {
           icon,
+          zIndexOffset: CANDIDATE_MARKER_Z_INDEX,
           title: tr("plans.mapCandidate", { rank }, `Recommended location ${rank}`),
           keyboard: false,
           interactive: false,
@@ -282,6 +297,7 @@ export function createPlansLocationMap(L, container, { i18n } = {}) {
       destroy() {
         if (stopped) return;
         stopped = true;
+        stopTileLoading();
         stopLanguage();
         viewport?.destroy();
         detachZoom?.();
@@ -292,6 +308,7 @@ export function createPlansLocationMap(L, container, { i18n } = {}) {
     };
   } catch (error) {
     stopped = true;
+    stopTileLoading();
     viewport?.destroy();
     detachZoom?.();
     try { map?.remove(); } catch { /* Keep the original creation error. */ }

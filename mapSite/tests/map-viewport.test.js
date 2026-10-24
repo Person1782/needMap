@@ -53,6 +53,8 @@ test('shared bounds use the complete Mercator world and prevent drag or touch zo
   assert.equal(MAP_VIEWPORT_OPTIONS.maxBounds, MAP_WORLD_BOUNDS);
   assert.equal(MAP_VIEWPORT_OPTIONS.maxBoundsViscosity, 1);
   assert.equal(MAP_VIEWPORT_OPTIONS.bounceAtZoomLimits, false);
+  assert.equal(MAP_VIEWPORT_OPTIONS.wheelDebounceTime, 0);
+  assert.equal(MAP_VIEWPORT_OPTIONS.wheelPxPerZoomLevel, 40);
 });
 
 test('wide and tall viewports calculate snapped coverage from true projection with a safety margin', () => {

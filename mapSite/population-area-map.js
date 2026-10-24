@@ -1,15 +1,17 @@
 import { getReportCoordinates } from "./report-location-map.js";
 import { attachMapZoom } from "./map-zoom.js";
 import { attachMapViewport, MAP_WORLD_BOUNDS, MAP_VIEWPORT_OPTIONS } from "./map-viewport.js";
+import { trackLeafletTileLayer } from "./leaflet-loading.js";
 
 /** Draws the exact queried area, not a simulated population-density layer. */
-export function createPopulationAreaMap(L, container, { geometry, reports = [], i18n } = {}) {
+export function createPopulationAreaMap(L, container, { geometry, reports = [], i18n, onLoading } = {}) {
   if (geometry?.type !== "MultiPolygon" || !Array.isArray(geometry.coordinates) || !geometry.coordinates.length) {
     throw new TypeError("A calculated population area is required.");
   }
   let map;
   let detachZoom;
   let viewport;
+  let stopTileLoading = () => {};
   try {
     map = L.map(container, { ...MAP_VIEWPORT_OPTIONS, attributionControl: true, scrollWheelZoom: true, touchZoom: true, zoomSnap: 0.25, zoomControl: true });
     viewport = attachMapViewport(map);
@@ -19,10 +21,12 @@ export function createPopulationAreaMap(L, container, { geometry, reports = [], 
       for (const [control, key, fallback] of [[container.querySelector?.(".leaflet-control-zoom-in"), "map.zoomIn", "Zoom in"], [container.querySelector?.(".leaflet-control-zoom-out"), "map.zoomOut", "Zoom out"]]) if (control) { const value = i18n ? i18n.t(key) : fallback; control.title = value; control.setAttribute("aria-label", value); }
     };
     translateControls();
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    const tiles = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19, noWrap: true, bounds: MAP_WORLD_BOUNDS,
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>',
-    }).addTo(map);
+    });
+    stopTileLoading = trackLeafletTileLayer(tiles, { onLoading, key: "population-map-tiles", label: () => i18n?.t("analysis.loadingMap") || "Loading map…", target: container });
+    tiles.addTo(map);
     const layer = L.geoJSON(geometry, {
       interactive: false,
       style: { color: "#005ea8", weight: 2, fillColor: "#007ac2", fillOpacity: 0.18 },
@@ -41,10 +45,11 @@ export function createPopulationAreaMap(L, container, { geometry, reports = [], 
       L.circleMarker(point, { radius: 5, weight: 2, color: "#fff", fillColor: "#15344a", fillOpacity: 1, interactive: false }).addTo(map);
     }
   } catch (error) {
+    stopTileLoading();
     viewport?.destroy();
     detachZoom?.();
     try { map?.remove(); } catch { /* Preserve the original error. */ }
     throw error;
   }
-  return { destroy() { viewport?.destroy(); detachZoom?.(); const current = map; map = null; current?.remove(); } };
+  return { destroy() { stopTileLoading(); viewport?.destroy(); detachZoom?.(); const current = map; map = null; current?.remove(); } };
 }

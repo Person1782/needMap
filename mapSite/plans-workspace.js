@@ -53,6 +53,7 @@ export function createPlansWorkspace({
   loadPopulation = loadReportPopulation,
   buildArea = buildReportPopulationArea,
   evidenceFor = () => [],
+  onLoading,
 } = {}) {
   const byId = (id) => document.getElementById(id);
   const typeSelect = byId("plans-type");
@@ -88,6 +89,7 @@ export function createPlansWorkspace({
   let destroyed = false;
   let populationRevision = 0;
   let populationController;
+  const populationLoaders = new Map();
   let maps = [];
   let populationByCandidate = new Map();
   let areaByCandidate = new Map();
@@ -117,10 +119,40 @@ export function createPlansWorkspace({
     maps = [];
   }
 
+  function releasePopulationLoaders(revision) {
+    for (const [candidateId, activity] of populationLoaders) {
+      if (revision !== undefined && activity.revision !== revision) continue;
+      activity.stop();
+      populationLoaders.delete(candidateId);
+    }
+  }
+
   function cancelPopulation() {
     populationRevision += 1;
     populationController?.abort();
     populationController = undefined;
+    releasePopulationLoaders();
+  }
+
+  function bindPopulationLoaders(revision = populationRevision, { rebind = false } = {}) {
+    if (!visible || destroyed || !populationController || populationController.signal.aborted || revision !== populationRevision) return;
+    const candidates = new Map((model?.candidates || []).map((candidate) => [candidate.id, candidate]));
+    for (const [candidateId, activity] of populationLoaders) {
+      if (!rebind && activity.revision === revision && populationByCandidate.get(candidateId)?.status === "loading" && candidates.has(candidateId)) continue;
+      activity.stop();
+      populationLoaders.delete(candidateId);
+    }
+    for (const candidate of candidates.values()) {
+      if (populationByCandidate.get(candidate.id)?.status !== "loading") continue;
+      populationLoaders.get(candidate.id)?.stop();
+      const stop = onLoading?.({
+        key: "plans-population",
+        label: tr("plans.populationLoading", {}, "Calculating nearby residents…"),
+        target: byId(`plan-benefit-${candidate.rank}`),
+        appearance: "status",
+      }) || (() => {});
+      populationLoaders.set(candidate.id, { revision, stop });
+    }
   }
 
   function makeArea(candidate) {
@@ -156,6 +188,7 @@ export function createPlansWorkspace({
   function populationBox(candidate) {
     const state = populationByCandidate.get(candidate.id);
     const box = node("div", undefined, "plan-benefit");
+    box.id = `plan-benefit-${candidate.rank}`;
     box.append(node("span", tr("plans.potentialResidents", {}, "Potential nearby residents")));
     if (state?.status === "ready") {
       const rounded = roundedResidents(state.value);
@@ -168,6 +201,10 @@ export function createPlansWorkspace({
       box.append(node("strong", tr("common.loading", {}, "Loading…")));
       box.append(node("small", tr("plans.populationLoading", {}, "Calculating the modeled population inside the highlighted area.")));
     }
+    const loadingSlot = node("span", undefined, "context-loading-slot plan-benefit-loading-slot");
+    loadingSlot.dataset.loadingFor = box.id;
+    loadingSlot.setAttribute("aria-hidden", "true");
+    box.append(loadingSlot);
     return box;
   }
 
@@ -257,6 +294,16 @@ export function createPlansWorkspace({
     return renderPlansLocationFallback(container, { geometry, candidate, i18n });
   }
 
+  function mountCandidateMap({ mapContainer, area, candidate }) {
+    if (!visible) return;
+    try {
+      const map = createLocationMap?.(mapContainer);
+      if (!map) throw new Error("No map was created.");
+      map.update({ candidate, geometry: area.geometry, region });
+      maps.push(map);
+    } catch { fallbackMap(mapContainer, area.geometry, candidate); }
+  }
+
   function candidateCard(candidate) {
     const card = node("article", undefined, "plan-card");
     const header = node("header", undefined, "plan-card-header");
@@ -296,15 +343,7 @@ export function createPlansWorkspace({
     const population = populationByCandidate.get(candidate.id);
     dataPanel.append(estimates, populationBox(candidate), reportSection(candidate), assumptionsSection(candidate), sourceBox(candidate, population));
     grid.append(mapPanel, dataPanel); card.append(header, grid);
-    if (visible) {
-      try {
-        const map = createLocationMap?.(mapContainer);
-        if (!map) throw new Error("No map was created.");
-        map.update({ candidate, geometry: area.geometry, region });
-        maps.push(map);
-      } catch { fallbackMap(mapContainer, area.geometry, candidate); }
-    }
-    return card;
+    return { card, mapContainer, area, candidate };
   }
 
   function statusText() {
@@ -335,7 +374,12 @@ export function createPlansWorkspace({
     byId("plans-status").textContent = statusText();
     results.replaceChildren();
     if (!model.candidates.length) results.append(node("div", statusText(), "plans-empty"));
-    else results.append(...model.candidates.map(candidateCard));
+    else {
+      const cards = model.candidates.map(candidateCard);
+      results.append(...cards.map(({ card }) => card));
+      for (const card of cards) mountCandidateMap(card);
+    }
+    bindPopulationLoaders(populationRevision, { rebind: true });
   }
 
   async function calculatePopulation() {
@@ -343,8 +387,9 @@ export function createPlansWorkspace({
     cancelPopulation();
     const revision = populationRevision;
     const controller = new AbortController(); populationController = controller;
+    for (const candidate of model.candidates) populationByCandidate.set(candidate.id, { status: "loading" });
+    bindPopulationLoaders(revision);
     await Promise.all(model.candidates.map(async (candidate) => {
-      populationByCandidate.set(candidate.id, { status: "loading" });
       try {
         const result = await loadPopulation({
           reports: [{ id: candidate.id, ...candidate.position }],
@@ -359,6 +404,7 @@ export function createPlansWorkspace({
       }
     }));
     if (!destroyed && visible && revision === populationRevision) render();
+    releasePopulationLoaders(revision);
   }
 
   function rebuild({ resetPopulation = false } = {}) {

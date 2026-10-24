@@ -128,6 +128,20 @@ test('overview shows reports, proposed locations and selected boundary, then ref
   handle.destroy(); handle.destroy(); assert.equal(f.calls.removed, 1); assert.equal(f.map.handlerCount(), 0);
 });
 
+test('overview keeps a report visible when a recommendation has the same coordinate', () => {
+  const f = fixture();
+  const handle = createAnalysisOverviewMap(f.L, f.container);
+  handle.update({
+    reports: [{ category: 'water', latitude: 1, longitude: 2, summary: 'Same point' }],
+    recommendations: [{ category: 'water', position: { latitude: 1, longitude: 2 }, locationRank: 1 }],
+  });
+  const [report, recommendation] = f.calls.markers;
+  assert.ok(report.options.zIndexOffset > recommendation.options.zIndexOffset);
+  assert.deepEqual(recommendation.options.icon.iconAnchor, [18, 54]);
+  assert.match(recommendation.options.icon.className, /separated-candidate-icon/);
+  handle.destroy();
+});
+
 test('empty overview falls back to selected region then worldwide without inventing report locations', () => {
   const f = fixture(); const handle = createAnalysisOverviewMap(f.L, f.container);
   const region = { bounds: [[1, 2], [8, 9]] };

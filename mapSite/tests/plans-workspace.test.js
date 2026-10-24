@@ -5,6 +5,7 @@ import { parseHTML } from "linkedom";
 import { createPlansWorkspace } from "../plans-workspace.js";
 import { buildPlanBenchmarkEvidence } from "../plans-benchmarks.js";
 import arabicMessages from "../i18n/locales/ar.js";
+import englishMessages from "../i18n/locales/en.js";
 
 const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
 const region = {
@@ -90,6 +91,42 @@ test("Plans exposes exact infrastructure choices, renders sourced recommendation
   assert.equal(mapsDestroyed, mapsCreated);
 });
 
+test("Plans connects each map container before creating and updating its map", () => {
+  const { document, window } = parseHTML(html);
+  let created = 0, updated = 0, destroyed = 0;
+  const workspace = createPlansWorkspace({
+    document,
+    evidenceFor(type, selectedRegion) {
+      const evidence = buildPlanBenchmarkEvidence(type, { region: selectedRegion });
+      return evidence ? [evidence] : [];
+    },
+    createLocationMap(container) {
+      created += 1;
+      assert.equal(container.isConnected, true, "Leaflet must measure an attached map container");
+      return {
+        update() {
+          updated += 1;
+          assert.equal(container.isConnected, true, "the initial viewport fit must run after attachment");
+        },
+        destroy() { destroyed += 1; },
+      };
+    },
+    loadPopulation: async () => ({ status: "unavailable" }),
+  });
+  try {
+    select(window, document.getElementById("plans-type"), "water_facility");
+    workspace.update({
+      region,
+      reports: [report("a", 37, -122.1), report("b", 37.02, -122)],
+      reportsReady: true,
+    });
+    workspace.setVisible(true);
+    assert.equal(created, 1);
+    assert.equal(updated, 1);
+  } finally { workspace.destroy(); }
+  assert.equal(destroyed, created);
+});
+
 test("Plans never creates a recommendation from one report and never fabricates an Other estimate", async () => {
   const { document, window } = parseHTML(html);
   const workspace = createPlansWorkspace({
@@ -158,5 +195,88 @@ test("Plans translates dynamic estimate explanations instead of leaking English 
     for (const english of ["The shaded radius", "A preliminary facility", "NeedMap takes the lowest", "Used for:", "This is a national economy-wide"]) {
       assert.doesNotMatch(text, new RegExp(english), english);
     }
+  } finally { workspace.destroy(); }
+});
+
+test("Plans population loading tokens survive stale completions and clear on cancellation", async () => {
+  const { document, window } = parseHTML(html);
+  const pending = [], active = new Set(); let sequence = 0;
+  const workspace = createPlansWorkspace({
+    document,
+    evidenceFor(type, selectedRegion) { const evidence = buildPlanBenchmarkEvidence(type, { region: selectedRegion }); return evidence ? [evidence] : []; },
+    createLocationMap: () => ({ update() {}, destroy() {} }),
+    loadPopulation(context, { signal }) { return new Promise((resolve) => pending.push({ context, signal, resolve })); },
+    onLoading({ key }) { const token = `${key}:${++sequence}`; active.add(token); return () => active.delete(token); },
+  });
+  try {
+    select(window, document.getElementById("plans-type"), "water_facility");
+    workspace.update({ region, reports: [report("a", 37, -122.1), report("b", 37.02, -122)], reportsReady: true });
+    workspace.setVisible(true);
+    assert.equal(pending.length, 1);
+    assert.equal(active.size, 1);
+    workspace.update({ region: { ...region, id: "US-CA-2", name: "New region" }, reports: [report("c", 37, -122.1), report("d", 37.02, -122)], reportsReady: true });
+    assert.equal(pending[0].signal.aborted, true);
+    assert.equal(pending.length, 2);
+    assert.equal(active.size, 1);
+    pending[0].resolve({ status: "ready", value: 1 }); await tick();
+    assert.equal(active.size, 1);
+    workspace.setVisible(false);
+    assert.equal(pending[1].signal.aborted, true);
+    assert.equal(active.size, 0);
+  } finally { workspace.destroy(); }
+});
+
+test("each Plans population bar stays with its loading benefit card through partial completion and translation", async () => {
+  const { document, window } = parseHTML(html);
+  const pending = [], activities = [];
+  let languageListener = () => {};
+  const i18n = localizedI18n("en", englishMessages);
+  i18n.subscribe = (listener) => { languageListener = listener; return () => { languageListener = () => {}; }; };
+  const workspace = createPlansWorkspace({
+    document,
+    i18n,
+    evidenceFor(type, selectedRegion) { const evidence = buildPlanBenchmarkEvidence(type, { region: selectedRegion }); return evidence ? [evidence] : []; },
+    createLocationMap: () => ({ update() {}, destroy() {} }),
+    loadPopulation(context, { signal }) { return new Promise((resolve) => pending.push({ context, signal, resolve })); },
+    onLoading(options) {
+      const activity = { ...options, released: false };
+      activities.push(activity);
+      return () => { activity.released = true; };
+    },
+  });
+  const clustered = [
+    report("a", 36.3, -122.7), report("b", 36.31, -122.69),
+    report("c", 37.6, -121.3), report("d", 37.61, -121.29),
+  ];
+  const activePopulation = () => activities.filter((activity) => activity.key === "plans-population" && !activity.released);
+  try {
+    select(window, document.getElementById("plans-type"), "water_facility");
+    workspace.update({ region, reports: clustered, reportsReady: true });
+    workspace.setVisible(true);
+    assert.equal(pending.length, 2);
+    assert.deepEqual(activePopulation().map((activity) => activity.target.id), ["plan-benefit-1", "plan-benefit-2"]);
+    for (const activity of activePopulation()) {
+      assert.equal(activity.target.isConnected, true);
+      assert.ok(activity.target.querySelector(`[data-loading-for="${activity.target.id}"]`));
+      assert.match(activity.target.textContent, /Loading/);
+    }
+
+    pending[0].resolve({ status: "ready", value: 1200, year: 2025 }); await tick();
+    assert.equal(activePopulation().length, 2, "a fast candidate keeps its bar until its loading card is rerendered");
+    assert.match(document.getElementById("plan-benefit-1").textContent, /Loading/);
+
+    const oldTargets = activePopulation().map((activity) => activity.target);
+    languageListener();
+    assert.equal(activePopulation().length, 1);
+    assert.equal(activePopulation()[0].target.id, "plan-benefit-2");
+    assert.equal(activePopulation()[0].target, document.getElementById("plan-benefit-2"));
+    assert.equal(activePopulation()[0].target.isConnected, true);
+    assert.notEqual(activePopulation()[0].target, oldTargets[1]);
+    assert.match(document.getElementById("plan-benefit-1").textContent, /About 1,200/);
+    assert.match(document.getElementById("plan-benefit-2").textContent, /Loading/);
+
+    pending[1].resolve({ status: "ready", value: 2400, year: 2025 }); await tick();
+    assert.equal(activePopulation().length, 0);
+    assert.match(document.getElementById("plan-benefit-2").textContent, /About 2,400/);
   } finally { workspace.destroy(); }
 });

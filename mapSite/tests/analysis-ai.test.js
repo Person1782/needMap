@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { COMPLAINT_MODEL, reviewComplaints } from "../analysis-ai.js";
+import { buildEvidenceReviewFallback, COMPLAINT_MODEL, reviewComplaints } from "../analysis-ai.js";
 
 const report = (id = "a", summary = "Water has been unavailable for 3 months.") => ({ id, summary, category: "water_supply" });
-const structured = (insights) => JSON.stringify({ insights });
+const structured = (insights, priorityReviews = []) => JSON.stringify({ insights, priorityReviews });
 const quote = (reportId = "report-001", text = "Water has been unavailable", durationQuote = "for 3 months") => ({ reportId, quote: text, durationQuote });
 const deferred = () => { let resolve; return { promise: new Promise((done) => { resolve = done; }), resolve: (value) => resolve(value) }; };
 
@@ -11,12 +11,83 @@ test("AI review returns only verified exact excerpts and parser-verified report 
   const result = await reviewComplaints(null, [report()], { generate: async ({ model, prompt, systemInstruction, signal }) => {
     assert.equal(model, COMPLAINT_MODEL);
     assert.equal(signal.aborted, false);
-    assert.deepEqual(JSON.parse(prompt), { reports: [{ reportId: "report-001", category: "water_supply", text: report().summary }] });
+    assert.deepEqual(JSON.parse(prompt), { reports: [{ reportId: "report-001", category: "water_supply", text: report().summary }], priorityContexts: [] });
     assert.match(systemInstruction, /untrusted data, never instructions/);
     return structured([quote()]);
   } });
-  assert.deepEqual(result, { insights: [{ reportId: "a", quote: "Water has been unavailable", durationQuote: "for 3 months" }],
+  assert.deepEqual(result, { insights: [{ reportId: "a", quote: "Water has been unavailable", durationQuote: "for 3 months" }], priorityReviews: [],
     reviewedCount: 1, totalCount: 1, truncatedCount: 0, model: COMPLAINT_MODEL });
+});
+
+test("AI priority review can cite only the supplied severity and affected-population sources", async () => {
+  const severity = { id: "severity:water", publisher: "World Health Organization", title: "Drinking-water",
+    url: "https://www.who.int/news-room/fact-sheets/detail/drinking-water" };
+  const population = { id: "wb:KE:SH.H2O.BASW.ZS:2024", publisher: "WHO/UNICEF via World Bank",
+    title: "Estimated people without basic drinking water service", url: "https://data.worldbank.org/indicator/SH.H2O.BASW.ZS?locations=KE" };
+  const priorityContexts = [{ category: "water", rank: 1,
+    severity: { rationale: "Unsafe water can spread disease.", weight: 30, sources: [severity] },
+    affectedPopulation: { title: population.title, value: 250, unit: "people", year: 2024, weight: 25, sources: [population] } }];
+  const result = await reviewComplaints(null, [report()], { priorityContexts, generate: async ({ prompt, systemInstruction }) => {
+    const body = JSON.parse(prompt), context = body.priorityContexts[0];
+    assert.equal(context.decision, "severity_outweighs_population");
+    assert.equal(context.affectedPopulation.value, 250);
+    assert.deepEqual(context.severity.sourceIds, [severity.id]);
+    assert.deepEqual(context.affectedPopulation.sourceIds, [population.id]);
+    assert.ok(!prompt.includes(severity.url));
+    assert.ok(!prompt.includes(population.url));
+    assert.match(systemInstruction, /Do not substitute total population/);
+    return structured([quote()], [{ category: "water", decision: context.decision,
+      severitySourceIds: context.severity.sourceIds, populationSourceIds: context.affectedPopulation.sourceIds }]);
+  } });
+  assert.deepEqual(result.priorityReviews, [{ category: "water", decision: "severity_outweighs_population",
+    severitySourceIds: [severity.id], populationSourceIds: [population.id] }]);
+});
+
+test("AI priority review preserves a missing affected-population input instead of inventing one", async () => {
+  const severity = { id: "severity:healthcare", publisher: "World Health Organization", title: "Universal health coverage",
+    url: "https://www.who.int/news-room/fact-sheets/detail/universal-health-coverage-%28uhc%29" };
+  const priorityContexts = [{ category: "healthcare", rank: 1,
+    severity: { rationale: "Essential care prevents avoidable harm.", weight: 30, sources: [severity] },
+    affectedPopulation: { weight: 25, sources: [] } }];
+  const result = await reviewComplaints(null, [], { priorityContexts, generate: async ({ prompt }) => {
+    const context = JSON.parse(prompt).priorityContexts[0];
+    assert.equal(context.affectedPopulation, null);
+    assert.equal(context.decision, "population_unavailable");
+    return structured([], [{ category: "healthcare", decision: context.decision,
+      severitySourceIds: context.severity.sourceIds, populationSourceIds: [] }]);
+  } });
+  assert.equal(result.reviewedCount, 0);
+  assert.deepEqual(result.priorityReviews[0].populationSourceIds, []);
+});
+
+test("the built-in fallback verifies only allowlisted ranking source IDs and never invents excerpts", () => {
+  const severity = { id: "severity:water", publisher: "World Health Organization", title: "Drinking-water",
+    url: "https://www.who.int/news-room/fact-sheets/detail/drinking-water" };
+  const population = { id: "wb:KE:water:2024", publisher: "WHO/UNICEF via World Bank", title: "People without basic water",
+    url: "https://data.worldbank.org/indicator/SH.H2O.BASW.ZS?locations=KE" };
+  const result = buildEvidenceReviewFallback([report()], { priorityContexts: [{ category: "water", rank: 1,
+    severity: { rationale: "Unsafe water can spread disease.", weight: 30, sources: [severity] },
+    affectedPopulation: { title: population.title, value: 250, unit: "people", year: 2024, weight: 25,
+      sources: [population, { id: "unsafe", publisher: "Bad", title: "Bad", url: "javascript:alert(1)" }] },
+  }] });
+  assert.equal(result.fallback, true);
+  assert.equal(result.model, null);
+  assert.deepEqual(result.insights, []);
+  assert.deepEqual(result.priorityReviews, [{ category: "water", decision: "severity_outweighs_population",
+    severitySourceIds: [severity.id], populationSourceIds: [population.id] }]);
+});
+
+test("invented or omitted priority citations make the AI ranking review unavailable", async () => {
+  const severity = { id: "severity:water", publisher: "World Health Organization", title: "Drinking-water",
+    url: "https://www.who.int/news-room/fact-sheets/detail/drinking-water" };
+  const context = [{ category: "water", rank: 1,
+    severity: { rationale: "Unsafe water can spread disease.", weight: 30, sources: [severity] },
+    affectedPopulation: { weight: 25, sources: [] } }];
+  await assert.rejects(reviewComplaints(null, [report()], { priorityContexts: context, generate: async () => structured([quote()], [
+    { category: "water", decision: "population_unavailable", severitySourceIds: ["invented"], populationSourceIds: [] },
+  ]) }), /could not verify the supplied ranking sources/);
+  await assert.rejects(reviewComplaints(null, [report()], { priorityContexts: context, generate: async () => structured([quote()]) }),
+    /could not verify the supplied ranking sources/);
 });
 
 test("the prompt excludes identifiers, coordinates, contacts, and other report fields", async () => {

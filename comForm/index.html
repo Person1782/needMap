@@ -3,25 +3,29 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="Share an anonymous service-access concern with NeedMap. A small, text-only form for slow connections." />
+    <meta name="description" content="Share an anonymous service-access concern with NeedMap using a small, accessible form." />
     <meta name="theme-color" content="#15344a" />
     <title>Report a concern | NeedMap Community</title>
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
     <link rel="stylesheet" href="./styles.css" />
+    <noscript><style>#loading-status { display: none !important; }</style></noscript>
   </head>
   <body>
     <a class="skip-link" href="#main-content" data-i18n="skipForm">Skip to report form</a>
-    <div class="demo-banner" data-i18n="demoBanner">Demonstration · Not an official government service</div>
     <header class="site-header"><div class="header-inner">
-      <div class="brand-block"><a class="brand" href="./">NeedMap</a><span class="brand-subtitle" data-i18n="brandSubtitle">Community reporting</span><span class="lite-tag" id="mode-label" data-i18n="modeLabelLight">Lightweight community form</span></div>
+      <div class="brand-block"><a class="brand" href="./">NeedMap</a><span class="brand-subtitle" data-i18n="brandSubtitle">Community reporting</span></div>
       <div class="language-picker" id="language-picker">
-        <button class="language-button" id="language-button" type="button" aria-haspopup="dialog" aria-expanded="false">Language: English</button>
+        <button class="language-button" id="language-button" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="language-panel" aria-label="Language: English"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="M3.5 12h17M12 3c2.3 2.5 3.5 5.5 3.5 9S14.3 18.5 12 21c-2.3-2.5-3.5-5.5-3.5-9S9.7 5.5 12 3Z" stroke="currentColor" stroke-width="1.7"/></svg><span id="language-button-label">English</span><svg class="language-chevron" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m5 7.5 5 5 5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         <div class="language-panel" id="language-panel" role="dialog" aria-label="Choose a language" hidden>
-          <label class="sr-only" for="language-search" data-i18n="languageSearch">Search languages</label>
+          <label for="language-search" data-i18n="languageSearch">Search languages</label>
           <input id="language-search" type="search" autocomplete="off" placeholder="Search languages" maxlength="60" />
           <ul id="language-list" class="language-list"></ul>
           <p id="language-empty" class="field-help" hidden>No matching languages.</p>
           <p id="language-error" class="field-error" role="alert"></p>
+        </div>
+        <div id="language-loading" class="context-loading-panel language-loading-panel" hidden>
+          <span id="language-loading-label" class="context-loading-label" role="status" aria-live="polite" aria-atomic="true">Loading the form…</span>
+          <span class="context-loading-track" role="progressbar" aria-labelledby="language-loading-label"><span class="context-loading-indicator"></span></span>
         </div>
       </div>
     </div></header>
@@ -30,17 +34,16 @@
       <h1 data-i18n="mainHeading">What could be easier to reach?</h1>
       <p class="intro" data-i18n="intro">Tell us about a service your community needs. No account, photos or downloads required.</p>
       <p class="privacy-note"><strong data-i18n="privacyStrong">Keep it anonymous.</strong> <span data-i18n="privacyRest">Reports are public. Leave out names, contact details, home addresses and medical information. Locations are rounded to an approximate map area.</span></p>
-      <div class="connection-mode">
-        <label for="connection-mode" data-i18n="connectionLabel">Connection mode</label>
-        <select id="connection-mode" aria-describedby="mode-status mode-preference-note"><option value="auto" data-i18n="connectionAuto">Automatic</option><option value="slow" data-i18n="connectionSlow">Slow connection mode</option></select>
-        <p id="mode-status" class="field-help" role="status" aria-live="polite" data-i18n="modeInitial">The form adapts to your connection and device. Slow connection mode keeps you here after submission.</p>
-        <p id="mode-preference-note" class="field-help" data-i18n="preferenceRemembered">Your choice is remembered on this device.</p>
-      </div>
       <section class="form-card" aria-labelledby="form-heading">
         <h2 id="form-heading" data-i18n="formHeading">Your community report</h2>
         <p class="field-help" data-i18n="formRequired">All three sections are required. This form submits demonstration data.</p>
         <noscript><p class="notice">JavaScript is needed to send a report. Enable it and reload this page. The form uses a small script without any large libraries.</p></noscript>
-        <p id="loading-status" class="notice" role="status" data-i18n="loading">Loading the form. If this message remains, reload when your connection improves or try another browser.</p>
+        <div id="loading-status" class="initial-loading-anchor" aria-busy="true">
+          <div id="form-loading" class="context-loading-panel initial-loading-panel">
+            <span id="form-loading-label" class="context-loading-label" role="status" aria-live="polite" aria-atomic="true" data-i18n="loading">Loading the form. If this message remains, reload when your connection improves or try another browser.</span>
+            <span class="context-loading-track" role="progressbar" aria-labelledby="form-loading-label"><span class="context-loading-indicator"></span></span>
+          </div>
+        </div>
         <p id="connection-status" class="notice" role="status" hidden data-i18n="offlineNotice">You are offline. You can keep writing. Reconnect and select Submit report when ready.</p>
         <form id="signal-form" method="post" novalidate data-map-url="/map/">
           <div id="error-summary" class="error-summary" tabindex="-1" aria-labelledby="error-heading" hidden><h3 id="error-heading" data-i18n="errorHeading">Check the following fields</h3><ul id="error-list"></ul></div>
@@ -75,14 +78,24 @@
               <p class="field-help" id="location-help" data-i18n="locationHelp">Near the concern? Let your phone find the area. Your precise location stays on your device. Device accuracy may vary.</p>
               <button id="location-button" class="secondary-button" type="button" aria-describedby="location-help location-error" data-i18n="useLocation">Use my location</button>
               <button id="clear-location" class="text-button" type="button" data-i18n="clearLocation">Clear location</button>
-              <p id="location-status" class="location-status" role="status" aria-live="polite" data-i18n="noLocation">No location added yet.</p>
+              <div id="location-loading-area" class="context-loading-anchor">
+                <p id="location-status" class="location-status" role="status" aria-live="polite" data-i18n="noLocation">No location added yet.</p>
+                <div id="location-loading" class="context-loading-panel anchored-loading-panel" role="progressbar" aria-labelledby="location-status" hidden>
+                  <span class="context-loading-track" aria-hidden="true"><span class="context-loading-indicator"></span></span>
+                </div>
+              </div>
               <p id="location-error" class="field-error"></p>
               <div class="place-search">
                 <label for="place-query" data-i18n="placeLabel">Or find a nearby town or neighbourhood</label>
                 <p class="field-help" id="place-help" data-i18n="placeHelp">Include the region or country. Search selects the approximate centre of a place. Search text goes to OpenStreetMap; it is not included in your report. Avoid home addresses.</p>
                 <input id="place-query" type="search" maxlength="120" autocomplete="off" dir="auto" placeholder="Town, region or country" data-i18n-placeholder="placePlaceholder" aria-describedby="place-help" data-search-url="https://nominatim.openstreetmap.org/search" />
                 <button id="place-search-button" class="secondary-button" type="button" data-i18n="findPlace">Find place</button>
-                <p id="place-search-status" class="field-help" role="status" aria-live="polite"></p>
+                <div id="search-loading-area" class="context-loading-anchor">
+                  <p id="place-search-status" class="field-help" role="status" aria-live="polite"></p>
+                  <div id="search-loading" class="context-loading-panel anchored-loading-panel" role="progressbar" aria-labelledby="place-search-status" hidden>
+                    <span class="context-loading-track" aria-hidden="true"><span class="context-loading-indicator"></span></span>
+                  </div>
+                </div>
                 <ul id="place-results" class="place-results" aria-label="Matching places" data-i18n-aria-label="matchingPlaces"></ul>
                 <p class="attribution"><span data-i18n="placeAttribution">Place search:</span> <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</a>.</p>
               </div>
@@ -99,7 +112,12 @@
             <div class="submit-actions"><button id="submit-button" type="submit" disabled data-i18n="submitReport">Submit report</button><button class="text-button" type="reset" data-i18n="clearForm">Clear form</button></div>
             <p class="field-help" data-i18n="publicNotice">Your report will be publicly visible in the demonstration workspace. It does not request a direct response.</p>
           </fieldset>
-          <p id="form-status" class="form-status" role="status" aria-live="polite" aria-atomic="true" tabindex="-1"></p>
+          <div id="submission-loading-area" class="context-loading-anchor">
+            <p id="form-status" class="form-status" role="status" aria-live="polite" aria-atomic="true" tabindex="-1"></p>
+            <div id="submission-loading" class="context-loading-panel anchored-loading-panel" role="progressbar" aria-labelledby="form-status" hidden>
+              <span class="context-loading-track" aria-hidden="true"><span class="context-loading-indicator"></span></span>
+            </div>
+          </div>
           <p id="map-link-container" class="field-help" hidden><a id="map-link" href="/map/" data-i18n="openMap">Open the Map page</a> <span data-i18n="mapReadyRest">when you are ready. The map uses more data.</span></p>
         </form>
       </section>
@@ -107,6 +125,7 @@
     </main>
     <footer class="site-footer" data-i18n="footer">NeedMap Community · Better-informed community planning</footer>
     <!-- form-scripts-start -->
+    <script defer src="./loading-bar.js"></script>
     <script defer src="./i18n.js"></script>
     <script defer src="./firebase-config.js"></script>
     <script defer src="./form-model.js"></script>

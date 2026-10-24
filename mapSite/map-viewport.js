@@ -7,6 +7,8 @@ export const MAP_VIEWPORT_OPTIONS = Object.freeze({
   maxBounds: MAP_WORLD_BOUNDS,
   maxBoundsViscosity: 1,
   bounceAtZoomLimits: false,
+  wheelDebounceTime: 0,
+  wheelPxPerZoomLevel: 40,
 });
 
 /** Keep a single, non-wrapping map world large enough to fill its viewport. */

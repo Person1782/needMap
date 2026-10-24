@@ -87,3 +87,22 @@ test("Plans fallback unwraps service areas that cross the date line around the c
     "nearby points on opposite longitude signs are not placed a world apart");
   assert.equal((svg.querySelector(".plan-fallback-area").getAttribute("d").match(/M/g) || []).length, 2);
 });
+
+test("Plans fallback keeps a colocated report above and apart from its recommendation", () => {
+  const { document } = parseHTML('<div id="map"></div>');
+  const colocated = {
+    ...candidate,
+    supportingReports: [{ id: "same", latitude: 37.2, longitude: -122 }],
+  };
+  const svg = renderPlansLocationFallback(document.getElementById("map"), { candidate: colocated });
+  const recommendation = svg.querySelector(".plan-fallback-candidate");
+  const report = svg.querySelector(".plan-fallback-report");
+  const recommendationIndex = [...svg.children].indexOf(recommendation);
+  const reportIndex = [...svg.children].indexOf(report);
+  const recommendationY = Number(recommendation.getAttribute("transform").match(/\s([-\.\d]+)\)/)?.[1]);
+  const reportY = Number(report.getAttribute("cy"));
+
+  assert.ok(Math.abs(recommendationY - reportY) >= 38);
+  assert.ok(reportIndex > recommendationIndex, "report is painted over the recommendation leader if they touch");
+  assert.ok(recommendation.querySelector(".plan-fallback-candidate-leader"));
+});

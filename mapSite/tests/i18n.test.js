@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { parseHTML } from "linkedom";
 import { COUNTRY_LANGUAGE_CANDIDATES, LANGUAGE_STORAGE_KEY, SUPPORTED_LANGUAGES, createI18n, languageForCountry, normalizeLanguageCode } from "../i18n/index.js";
 import { createLanguagePicker } from "../i18n/language-picker.js";
+import { MESSAGE_KEYS } from "../i18n/messages.js";
 import { WORLD_REGION_ROWS } from "../world-region-catalog.js";
 
 function storage(values = {}) {
@@ -24,6 +25,19 @@ test("language catalog uses the shared 18 codes and strict BCP-47 normalization"
   assert.equal(normalizeLanguageCode("es-MX"), "es");
   assert.equal(normalizeLanguageCode("../../ar"), null);
   assert.equal(normalizeLanguageCode("not-a-language"), null);
+});
+
+test("all language packs include the complete priority reason and AI-review copy", async () => {
+  const required = ["analysis.rankReasonTitle", "analysis.rankReasonRankedLead", "analysis.rankReasonPopulation",
+    "analysis.rankReasonPopulationUnavailable", "analysis.rankReasonPopulationLoading", "analysis.aiReviewTitle",
+    "analysis.aiReviewLoadingRank", "analysis.aiReviewUnavailableRank", "analysis.aiReviewReadyRank", "analysis.rationale.water"];
+  for (const { code } of SUPPORTED_LANGUAGES) {
+    const messages = (await import(`../i18n/locales/${code}.js`)).default;
+    assert.equal(Object.keys(messages).length, MESSAGE_KEYS.length, code);
+    for (const key of required) assert.equal(typeof messages[key], "string", `${code}:${key}`);
+    assert.match(messages["analysis.rankReasonRankedLead"], /\{rank\}/, code);
+    assert.match(messages["analysis.aiReviewReadyRank"], /\{reviewed\}/, code);
+  }
 });
 
 test("country defaults are supported and browser language breaks official-language ties", () => {
@@ -73,6 +87,25 @@ test("failed and stale pack loads do not change or persist the active preference
   releaseSpanish({ default: { greeting: "es" } }); await spanish;
   releaseFrench({ default: { greeting: "fr" } }); await french;
   assert.equal(i18n.code, "es"); assert.equal(store.getItem(LANGUAGE_STORAGE_KEY), "es");
+});
+
+test("language-pack loading exposes balanced activity tokens for success and failure", async () => {
+  const active = new Set(); let sequence = 0;
+  const onLoading = ({ key, code }) => {
+    const token = `${key}:${code}:${++sequence}`; active.add(token);
+    let released = false;
+    return () => { if (!released) { released = true; active.delete(token); } };
+  };
+  const i18n = createI18n({
+    storage: storage(), navigator: { languages: ["en"] }, location: { search: "" }, document: parseHTML("<html></html>").document,
+    packLoaders: loaders({ de: () => Promise.reject(new Error("offline")) }), onLoading,
+  });
+  const initialization = i18n.initialize();
+  assert.equal(active.size, 1);
+  await initialization;
+  assert.equal(active.size, 0);
+  await assert.rejects(i18n.select("de"), /offline/);
+  assert.equal(active.size, 0);
 });
 
 test("manual or saved language is never replaced by a later region and RTL updates the document", async () => {

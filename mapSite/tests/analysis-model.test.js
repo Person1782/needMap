@@ -110,6 +110,44 @@ test("severity baseline places water above broadband for otherwise identical evi
   assert.equal(ANALYSIS_CATEGORIES.find((item) => item.id === "water").severity, 100);
 });
 
+test("severity factors cite authoritative consequence context without outsourcing NeedMap's policy baseline", () => {
+  const expected = new Map([
+    ["water", ["World Health Organization", "https://www.who.int/news-room/fact-sheets/detail/drinking-water"]],
+    ["healthcare", ["World Health Organization", "https://www.who.int/news-room/fact-sheets/detail/universal-health-coverage-%28uhc%29"]],
+    ["emergency_response", ["World Health Organization", "https://www.who.int/health-topics/emergency-care"]],
+    ["food", ["World Health Organization", "https://www.who.int/en/news-room/fact-sheets/detail/malnutrition"]],
+    ["roads", ["World Health Organization", "https://www.who.int/news-room/fact-sheets/detail/road-traffic-injuries"]],
+    ["transportation", ["World Bank", "https://www.worldbank.org/ext/en/topic/transport"]],
+    ["education", ["UNESCO", "https://www.unesco.org/en/right-education?hub=66970"]],
+    ["fuel", ["International Energy Agency", "https://www.iea.org/reports/sdg7-data-and-projections"]],
+    ["broadband", ["International Telecommunication Union", "https://www.itu.int/dms_pub/itu-d/opb/ind/D-IND-ICT_MDD.GCR-2025-4-PDF-E.pdf"]],
+  ]);
+  const result = model({ reports: ANALYSIS_CATEGORIES.map(({ id }) => report(`report-${id}`, id)) });
+
+  for (const definition of ANALYSIS_CATEGORIES) {
+    const severity = factor(result.rankings.find((row) => row.category === definition.id), "severity");
+    if (definition.id === "other") {
+      assert.equal(definition.severitySource, undefined);
+      assert.deepEqual(severity.sources, []);
+      assert.match(definition.rationale, /more context is needed/i);
+      assert.match(severity.description, /No category-level source is attached because more context is needed/);
+      continue;
+    }
+
+    const [publisher, url] = expected.get(definition.id);
+    assert.equal(severity.sources.length, 1, definition.id);
+    const cited = severity.sources[0];
+    assert.equal(cited.publisher, publisher, definition.id);
+    assert.equal(cited.url, url, definition.id);
+    assert.ok(cited.title.trim(), definition.id);
+    assert.ok(cited.usedFor.trim(), definition.id);
+    assert.ok(cited.uses.includes(cited.usedFor), definition.id);
+    assert.match(cited.usedFor, /not support for NeedMap's numeric policy baseline/, definition.id);
+    assert.match(severity.description, /cited source provides consequence context only/, definition.id);
+    assert.match(severity.description, /does not endorse NeedMap's numeric baseline/, definition.id);
+  }
+});
+
 test("category filters never inflate report-frequency scores or change overall ranks", () => {
   const reports = [report("a"), report("b", "healthcare"), report("c", "healthcare"), report("d", "education")];
   const full = model({ reports });

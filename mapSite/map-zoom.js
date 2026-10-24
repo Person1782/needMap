@@ -1,5 +1,7 @@
 /** Keep trackpad/browser zoom gestures inside an interactive Leaflet map. */
 export function attachMapZoom(map, scheduler = {}) {
+  const WHEEL_PIXELS_PER_ZOOM = 40;
+  const WHEEL_IDLE_MS = 80;
   const container = map.getContainer();
   const host = container.ownerDocument?.defaultView || globalThis;
   const now = scheduler.now || (() => Date.now());
@@ -81,19 +83,20 @@ export function attachMapZoom(map, scheduler = {}) {
   }
   function resetWheel() { cancelTimer(wheelTimer); wheelTimer = undefined; endWheel(); }
   function onWheel(event) {
-    // Ordinary wheel scrolling is handled by Leaflet's own wheel handler.
-    if (!event.ctrlKey && !event.metaKey) return;
+    // Handle mouse wheels, trackpad scrolling, and browser pinch-wheel events
+    // through one continuous path. Leaflet's default wheel handler batches
+    // input before moving, which makes otherwise identical maps feel delayed.
     consume(event);
     if (gesture || touches >= 2) return;
     const delta = event.deltaY;
     if (!Number.isFinite(delta) || delta === 0) return;
     const time = now();
-    if (wheelZoom === undefined || time - wheelLast >= 200) wheelZoom = map.getZoom();
+    if (wheelZoom === undefined || time - wheelLast >= WHEEL_IDLE_MS) wheelZoom = map.getZoom();
     const units = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? (container.clientHeight || 800) : 1;
-    wheelZoom = clamp(wheelZoom - delta * units / 100);
+    wheelZoom = clamp(wheelZoom - delta * units / WHEEL_PIXELS_PER_ZOOM);
     wheelLast = time;
     cancelTimer(wheelTimer);
-    wheelTimer = scheduleTimer(endWheel, 200);
+    wheelTimer = scheduleTimer(endWheel, WHEEL_IDLE_MS);
     queueZoom(wheelZoom, anchorFor(event));
   }
   function onGestureStart(event) {

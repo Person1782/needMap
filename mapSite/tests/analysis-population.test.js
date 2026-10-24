@@ -11,9 +11,9 @@ const reports = [
   { id: "clinic", category: "medical", summary: "Clinic needed", latitude: -1.291, longitude: 36.821 },
 ];
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
-function fixture(loadPopulation) {
+function fixture(loadPopulation, options = {}) {
   const { document, window } = parseHTML(html);
-  const workspace = createAnalysisWorkspace({ document, loadPopulation, loadEvidence: async () => ({ status: "unavailable", indicators: [] }) });
+  const workspace = createAnalysisWorkspace({ document, loadPopulation, loadEvidence: async () => ({ status: "unavailable", indicators: [] }), ...options });
   const text = () => document.querySelector("#analysis-population").textContent;
   const choose = (category) => { document.querySelector(`#analysis-category option[value="${category}"]`).selected = true; document.querySelector("#analysis-category").dispatchEvent(new window.Event("change")); };
   return { document, workspace, text, choose };
@@ -127,5 +127,53 @@ test("population details open only on click, update while loading, and close whe
     assert.match(page.document.querySelector(".population-dialog").textContent, /Healthcare/);
     page.workspace.setVisible(false);
     assert.equal(page.document.querySelector(".population-dialog"), null);
+  } finally { page.workspace.destroy(); }
+});
+
+test("population progress stays inside the exact metric through filter and language rerenders", async () => {
+  const pending = [], activities = [];
+  let languageListener = () => {};
+  const i18n = {
+    code: "en",
+    t(key) { return key; },
+    number(value) { return String(value); },
+    date(value) { return String(value); },
+    subscribe(listener) { languageListener = listener; return () => { languageListener = () => {}; }; },
+  };
+  const page = fixture((scope, { signal }) => new Promise((resolve) => pending.push({ scope, signal, resolve })), {
+    i18n,
+    onLoading(options) {
+      const activity = { ...options, released: false };
+      activities.push(activity);
+      return () => { activity.released = true; };
+    },
+  });
+  const current = () => activities.filter((activity) => activity.key === "analysis-population" && !activity.released).at(-1);
+  try {
+    page.workspace.update({ region, reports, reportsReady: true });
+    page.workspace.setVisible(true); await tick();
+    assert.equal(pending.length, 1);
+    assert.equal(current().target, page.document.querySelector("#analysis-population"));
+    assert.ok(current().target.querySelector('[data-loading-for="analysis-population"]'));
+    assert.equal(current().target.hasAttribute("aria-live"), false);
+    assert.equal(current().target.querySelector("strong").getAttribute("aria-live"), "polite");
+
+    const beforeFilter = current();
+    page.choose("healthcare");
+    assert.equal(pending[0].signal.aborted, true);
+    assert.equal(pending.length, 2);
+    assert.equal(beforeFilter.released, true);
+    assert.equal(current().target, page.document.querySelector("#analysis-population"));
+    assert.notEqual(current().target, beforeFilter.target);
+
+    const beforeLanguage = current();
+    languageListener();
+    assert.equal(beforeLanguage.released, true);
+    assert.equal(current().target, page.document.querySelector("#analysis-population"));
+    assert.notEqual(current().target, beforeLanguage.target);
+    assert.equal(current().target.isConnected, true);
+
+    pending[1].resolve(result(250)); await tick();
+    assert.equal(current(), undefined);
   } finally { page.workspace.destroy(); }
 });

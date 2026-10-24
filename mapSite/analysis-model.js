@@ -1,17 +1,29 @@
 // Priority weights are NeedMap's explicit policy, not an official government rating.
 // Only measurements for the selected geography enter the score. Missing evidence
 // remains an interval; weights are never redistributed to the available factors.
+const SEVERITY_SOURCES = Object.freeze({
+  water: Object.freeze({ id: "severity-water-who", title: "Drinking-water", publisher: "World Health Organization", url: "https://www.who.int/news-room/fact-sheets/detail/drinking-water", usedFor: "Severity context about the health consequences of unsafe or unavailable drinking water; not support for NeedMap's numeric policy baseline" }),
+  healthcare: Object.freeze({ id: "severity-healthcare-who", title: "Universal health coverage (UHC)", publisher: "World Health Organization", url: "https://www.who.int/news-room/fact-sheets/detail/universal-health-coverage-%28uhc%29", usedFor: "Severity context about gaps in access to essential health services; not support for NeedMap's numeric policy baseline" }),
+  emergency_response: Object.freeze({ id: "severity-emergency-care-who", title: "Emergency care", publisher: "World Health Organization", url: "https://www.who.int/health-topics/emergency-care", usedFor: "Severity context about timely emergency care for acute illness and injury; not support for NeedMap's numeric policy baseline" }),
+  food: Object.freeze({ id: "severity-malnutrition-who", title: "Malnutrition", publisher: "World Health Organization", url: "https://www.who.int/en/news-room/fact-sheets/detail/malnutrition", usedFor: "Severity context about the health consequences of inadequate nutrition; not support for NeedMap's numeric policy baseline" }),
+  roads: Object.freeze({ id: "severity-road-injuries-who", title: "Road traffic injuries", publisher: "World Health Organization", url: "https://www.who.int/news-room/fact-sheets/detail/road-traffic-injuries", usedFor: "Severity context about the health consequences of unsafe roads; not support for NeedMap's numeric policy baseline" }),
+  transportation: Object.freeze({ id: "severity-transport-world-bank", title: "Transport", publisher: "World Bank", url: "https://www.worldbank.org/ext/en/topic/transport", usedFor: "Severity context about transport access and connections to services and opportunity; not support for NeedMap's numeric policy baseline" }),
+  education: Object.freeze({ id: "severity-education-unesco", title: "The right to education", publisher: "UNESCO", url: "https://www.unesco.org/en/right-education?hub=66970", usedFor: "Severity context about access to education as a human right; not support for NeedMap's numeric policy baseline" }),
+  fuel: Object.freeze({ id: "severity-energy-iea", title: "SDG7: Data and Projections", publisher: "International Energy Agency", url: "https://www.iea.org/reports/sdg7-data-and-projections", usedFor: "Severity context about access to modern energy services; not support for NeedMap's numeric policy baseline" }),
+  broadband: Object.freeze({ id: "severity-connectivity-itu", title: "Measuring digital development: Facts and Figures 2025", publisher: "International Telecommunication Union", url: "https://www.itu.int/dms_pub/itu-d/opb/ind/D-IND-ICT_MDD.GCR-2025-4-PDF-E.pdf", usedFor: "Severity context about global digital connectivity gaps; not support for NeedMap's numeric policy baseline" }),
+});
+
 export const ANALYSIS_CATEGORIES = Object.freeze([
-  { id: "water", label: "Water supply", severity: 100, rationale: "Safe water and sanitation are essential to survival and disease prevention." },
-  { id: "healthcare", label: "Healthcare", severity: 95, rationale: "Unavailable essential care or medicines can interrupt treatment and cause preventable illness, disability, or death." },
-  { id: "emergency_response", label: "Emergency response", severity: 95, rationale: "Delays in emergency response can immediately threaten life." },
-  { id: "food", label: "Food access", severity: 90, rationale: "Inadequate food access threatens nutrition and health." },
-  { id: "roads", label: "Roads", severity: 70, rationale: "Unsafe or impassable roads can prevent access to essential services." },
-  { id: "transportation", label: "Transportation", severity: 65, rationale: "Transport barriers can prevent access to care, education, and livelihoods." },
-  { id: "education", label: "Education", severity: 65, rationale: "Education barriers have lasting effects on opportunity and well-being." },
-  { id: "fuel", label: "Fuel access", severity: 60, rationale: "Fuel shortages can disrupt household needs and essential services." },
-  { id: "broadband", label: "Internet access", severity: 45, rationale: "Connectivity barriers restrict access to information, education, and services." },
-  { id: "other", label: "Other infrastructure", severity: 50, rationale: "An unspecified infrastructure concern requires more context to assess its consequences." },
+  { id: "water", label: "Water supply", severity: 100, rationale: "Safe water and sanitation are essential to survival and disease prevention.", severitySource: SEVERITY_SOURCES.water },
+  { id: "healthcare", label: "Healthcare", severity: 95, rationale: "Unavailable essential care or medicines can interrupt treatment and cause preventable illness, disability, or death.", severitySource: SEVERITY_SOURCES.healthcare },
+  { id: "emergency_response", label: "Emergency response", severity: 95, rationale: "Delays in emergency response can immediately threaten life.", severitySource: SEVERITY_SOURCES.emergency_response },
+  { id: "food", label: "Food access", severity: 90, rationale: "Inadequate food access threatens nutrition and health.", severitySource: SEVERITY_SOURCES.food },
+  { id: "roads", label: "Roads", severity: 70, rationale: "Unsafe or impassable roads can prevent access to essential services.", severitySource: SEVERITY_SOURCES.roads },
+  { id: "transportation", label: "Transportation", severity: 65, rationale: "Transport barriers can prevent access to care, education, and livelihoods.", severitySource: SEVERITY_SOURCES.transportation },
+  { id: "education", label: "Education", severity: 65, rationale: "Education barriers have lasting effects on opportunity and well-being.", severitySource: SEVERITY_SOURCES.education },
+  { id: "fuel", label: "Fuel access", severity: 60, rationale: "Fuel shortages can disrupt household needs and essential services.", severitySource: SEVERITY_SOURCES.fuel },
+  { id: "broadband", label: "Internet access", severity: 45, rationale: "Connectivity barriers restrict access to information, education, and services.", severitySource: SEVERITY_SOURCES.broadband },
+  { id: "other", label: "Other infrastructure", severity: 50, rationale: "More context is needed to assess the consequences of an unspecified infrastructure concern." },
 ].map(Object.freeze));
 
 export const PRIORITY_WEIGHTS = Object.freeze({ severity: 30, affected_population: 25, access: 20, frequency: 15, duration: 10 });
@@ -133,12 +145,13 @@ function latest(indicators, kinds) {
   return indicators.filter((indicator) => kinds.includes(indicator.kind)).sort((a, b) => Number(b.year || 0) - Number(a.year || 0) || String(a.id).localeCompare(String(b.id)))[0] || null;
 }
 
-function makeFactor(id, label, score, coverage, description, indicators = [], extra = {}) {
+function makeFactor(id, label, score, coverage, description, indicators = [], extra = {}, supportingSources = []) {
   const weight = PRIORITY_WEIGHTS[id];
   const share = clamp(coverage, 0, 1);
   const knownScore = score === null ? 0 : clamp(score);
   const contribution = weight * knownScore / 100 * share;
-  return { id, label, weight, score: score === null ? null : round(knownScore), contribution: round(contribution), possibleContribution: round(contribution + weight * (1 - share)), coverage: round(share * 100), description, indicators, sources: sourcesFrom(indicators), ...extra };
+  const sourceIndicators = supportingSources.map((source) => ({ source, usedFor: source.usedFor }));
+  return { id, label, weight, score: score === null ? null : round(knownScore), contribution: round(contribution), possibleContribution: round(contribution + weight * (1 - share)), coverage: round(share * 100), description, indicators, sources: sourcesFrom([...indicators, ...sourceIndicators]), ...extra };
 }
 
 function rankCategory(definition, reports, regionReportCount, indicators, contextIndicators, insights, now, reportsAvailable) {
@@ -158,8 +171,9 @@ function rankCategory(definition, reports, regionReportCount, indicators, contex
   const durationCoverage = reports.length ? durations.length / reports.length : 0;
   const factors = [
     makeFactor("severity", "Severity", severitySupported / severityCoverage, severityCoverage,
-      `NeedMap policy baseline ${definition.severity}/100 supplies 80% of this factor; reported urgency supplies 20% (low 25, medium 60, high 100). ${definition.rationale} These are transparent policy choices, not an official severity assessment.`, [],
-      { policyBaseline: definition.severity, reportUrgencyMean: urgencyMean === null ? null : round(urgencyMean), knownUrgencyReports: urgencyReports.length }),
+      `NeedMap policy baseline ${definition.severity}/100 supplies 80% of this factor; reported urgency supplies 20% (low 25, medium 60, high 100). ${definition.rationale} These are transparent policy choices, not an official severity assessment.${definition.severitySource ? " The cited source provides consequence context only; it does not endorse NeedMap's numeric baseline." : " No category-level source is attached because more context is needed."}`, [],
+      { policyBaseline: definition.severity, reportUrgencyMean: urgencyMean === null ? null : round(urgencyMean), knownUrgencyReports: urgencyReports.length },
+      definition.severitySource ? [definition.severitySource] : []),
     makeFactor("affected_population", "People affected", affected ? Math.min(100, Math.log10(affected.value + 1) / 6 * 100) : null, affected ? 1 : 0,
       affected ? "Uses the latest supported affected-population estimate for this exact geography. Score = min(100, log10(people + 1) / 6 × 100); the factor reaches 100 at approximately one million people. Estimates describe the cited indicator, not people verified by these reports." : "No supported affected-population estimate for this exact geography. The region's total population is not substituted.", affected ? [affected] : []),
     makeFactor("access", "Service access", accessScore, access ? 1 : 0,

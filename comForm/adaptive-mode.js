@@ -17,16 +17,17 @@
     } catch (error) { /* Timing hints are optional on older browsers. */ }
     return false;
   }
-  function detect(navigator, performance, preference, observedSlow) {
+  function detect(navigator, performance, observedSlow) {
+    navigator = navigator || {};
     var connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection || {};
-    var reasonKey = "";
-    if (preference === "slow") reasonKey = "modeReasonManual";
-    else if (navigator.onLine === false) reasonKey = "modeReasonOffline";
-    else if (connection.saveData === true) reasonKey = "modeReasonSaveData";
-    else if (/^(slow-2g|2g|3g)$/.test(connection.effectiveType || "") || (positive(connection.downlink) && connection.downlink < 1.5) || (positive(connection.rtt) && connection.rtt >= 500)) reasonKey = "modeReasonSlow";
-    else if ((positive(navigator.deviceMemory) && navigator.deviceMemory <= 2) || (positive(navigator.hardwareConcurrency) && navigator.hardwareConcurrency <= 2)) reasonKey = "modeReasonDevice";
-    else if (observedSlow || slowPage(performance)) reasonKey = "modeReasonPageSlow";
-    return { slow: !!reasonKey, reasonKey: reasonKey };
+    var slow = navigator.onLine === false || connection.saveData === true ||
+      /^(slow-2g|2g|3g)$/.test(connection.effectiveType || "") ||
+      (positive(connection.downlink) && connection.downlink < 1.5) ||
+      (positive(connection.rtt) && connection.rtt >= 500) ||
+      (positive(navigator.deviceMemory) && navigator.deviceMemory <= 2) ||
+      (positive(navigator.hardwareConcurrency) && navigator.hardwareConcurrency <= 2) ||
+      observedSlow || slowPage(performance);
+    return { slow: !!slow };
   }
   function mapUrl(configured, location) {
     // Two independent local apps. Production uses the explicit deployment path.

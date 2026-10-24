@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { buildPlanBenchmarkEvidence } from "../plans-benchmarks.js";
 import {
+  createPlanLocalCostLoader,
   loadPlanLocalCostAdjustment,
   PLAN_COST_INDICATOR,
   PLAN_COST_PRICE_YEAR,
@@ -157,4 +158,29 @@ test("network failure is honest, successful values expire from the one-day cache
     loadPlanLocalCostAdjustment(kenya, { signal: controller.signal, fetchImpl }),
     (error) => error?.name === "AbortError",
   );
+});
+
+test("leaving Plans cancels only an in-flight local-cost request and revisit starts a clean replacement", async () => {
+  const pending = [], active = new Set(), changes = [];
+  const loader = createPlanLocalCostLoader({
+    load(region, { signal }) { return new Promise((resolve) => pending.push({ region, signal, resolve })); },
+    onLoading({ key }) { active.add(key); return () => active.delete(key); },
+    loadingLabel: () => "Loading local cost…",
+    onStateChange(state) { changes.push(state); },
+  });
+  try {
+    void loader.ensure(kenya);
+    assert.equal(loader.state.status, "loading"); assert.equal(active.size, 1); assert.equal(pending.length, 1);
+    assert.equal(loader.cancel(), true);
+    assert.equal(pending[0].signal.aborted, true); assert.equal(loader.state.status, "idle"); assert.equal(active.size, 0);
+
+    const replacement = loader.ensure(kenya);
+    assert.equal(pending.length, 2); assert.equal(active.size, 1);
+    pending[1].resolve({ status: "ready", adjustment: { multiplier: 0.5 } });
+    await replacement;
+    assert.equal(loader.state.status, "ready"); assert.equal(loader.state.adjustment.multiplier, 0.5); assert.equal(active.size, 0);
+    assert.equal(loader.cancel(), false, "completed evidence remains cached when Plans is hidden");
+    assert.equal(loader.state.status, "ready");
+    assert.equal(changes.at(-1).status, "ready");
+  } finally { loader.destroy(); }
 });

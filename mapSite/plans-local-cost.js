@@ -234,3 +234,77 @@ export async function loadPlanLocalCostAdjustment(region, {
   while (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value);
   return resultFor(region, countryCode, observation);
 }
+
+/** Owns the single Plans price-level request and makes tab changes cancellable. */
+export function createPlanLocalCostLoader({
+  load = loadPlanLocalCostAdjustment,
+  onLoading = () => () => {},
+  loadingLabel = () => "Loading…",
+  onStateChange = () => {},
+} = {}) {
+  let state = { countryCode: null, status: "idle", adjustment: null };
+  let controller;
+  let releaseLoading;
+  let revision = 0;
+  let destroyed = false;
+
+  function publish(next, notify = true) {
+    state = next;
+    if (notify && !destroyed) onStateChange(state);
+  }
+
+  function cancel() {
+    if (state.status !== "loading") return false;
+    revision += 1;
+    controller?.abort(); controller = undefined;
+    releaseLoading?.(); releaseLoading = undefined;
+    publish({ countryCode: state.countryCode, status: "idle", adjustment: null }, false);
+    return true;
+  }
+
+  async function ensure(region) {
+    if (destroyed) return state;
+    const countryCode = countryCodeFor(region);
+    if (!countryCode || region?.kind === "world") {
+      if (state.status === "unavailable" && state.countryCode === null) return state;
+      cancel(); revision += 1;
+      publish({ countryCode: null, status: "unavailable", adjustment: null });
+      return state;
+    }
+    if (state.countryCode === countryCode && ["loading", "ready", "unavailable"].includes(state.status)) return state;
+
+    cancel();
+    const currentController = new AbortController();
+    controller = currentController;
+    const currentRevision = ++revision;
+    publish({ countryCode, status: "loading", adjustment: null }, false);
+    const stopLoading = onLoading({ key: "plans-local-cost", label: loadingLabel() }) || (() => {});
+    releaseLoading = stopLoading;
+    try {
+      const result = await load(region, { signal: currentController.signal });
+      if (destroyed || currentController.signal.aborted || currentRevision !== revision) return state;
+      publish({ countryCode, status: result.status, adjustment: result.adjustment });
+    } catch (error) {
+      if (!destroyed && !currentController.signal.aborted && currentRevision === revision && error?.name !== "AbortError") {
+        publish({ countryCode, status: "unavailable", adjustment: null });
+      }
+    } finally {
+      stopLoading();
+      if (releaseLoading === stopLoading) releaseLoading = undefined;
+      if (controller === currentController) controller = undefined;
+    }
+    return state;
+  }
+
+  return {
+    ensure,
+    cancel,
+    get state() { return state; },
+    destroy() {
+      if (destroyed) return;
+      destroyed = true; revision += 1;
+      controller?.abort(); controller = undefined;
+      releaseLoading?.(); releaseLoading = undefined;
+    },
+  };
+}

@@ -4,9 +4,10 @@ import { serviceIconSvg } from "./service-icons.js";
 import { getReportCoordinates } from "./report-location-map.js";
 import { loadReportPopulation } from "./report-population.js";
 import { createPopulationDetails } from "./population-details.js";
+import { buildEvidenceReviewFallback } from "./analysis-ai.js";
 
 /** Shared region/reports come from the map; external work starts only on Analysis. */
-export function createAnalysisWorkspace({ document = globalThis.document, i18n, loadEvidence = loadAnalysisEvidence, loadPopulation = loadReportPopulation, reviewComplaints, firebaseApp, createReportMap, createOverviewMap, createPopulationMap } = {}) {
+export function createAnalysisWorkspace({ document = globalThis.document, i18n, loadEvidence = loadAnalysisEvidence, loadPopulation = loadReportPopulation, reviewComplaints, firebaseApp, createReportMap, createOverviewMap, createPopulationMap, onLoading } = {}) {
   const byId = (id) => document.getElementById(id);
   const filter = byId("analysis-category");
   const tr = (key, values = {}, fallback = key) => i18n ? i18n.t(key, values) : Object.entries(values).reduce((text, [name, value]) => text.replaceAll(`{${name}}`, value), fallback);
@@ -32,6 +33,120 @@ export function createAnalysisWorkspace({ document = globalThis.document, i18n, 
   const factTitle = (fact) => { const key = evidenceKey(fact); return key ? tr(`evidence.${key}Title`, {}, fact.title || fact.label || fact.kind) : fact.title || fact.label || fact.kind; };
   const factDescription = (fact) => { const key = evidenceKey(fact); return key ? tr(`evidence.${key}Description`, {}, fact.description || "") : tr("evidence.genericDescription", {}, "Published measurement for the selected geography. Read its definition and year before using it."); };
   const unitName = (unit) => ({ people: tr("unit.people", {}, "people"), children: tr("unit.children", {}, "children"), "%": tr("unit.percent", {}, "%"), "index points": tr("unit.indexPoints", {}, "index points") })[unit] || unit || "";
+  const categoryDefinition = (category) => ANALYSIS_CATEGORIES.find((entry) => entry.id === category);
+  const rankingFactor = (ranking, id) => ranking.factors?.find((factor) => factor.id === id);
+  function safeSource(source) {
+    if (!source || typeof source !== "object") return null;
+    try {
+      const url = new URL(source.url);
+      return url.protocol === "https:" && source.publisher ? { ...source, url: url.href } : null;
+    } catch { return null; }
+  }
+  function appendSourceLinks(target, rawSources, { before = " (", separator = "; ", after = ")" } = {}) {
+    const sources = [...new Map((Array.isArray(rawSources) ? rawSources : [])
+      .map(safeSource).filter(Boolean).map((source) => [source.id || source.url, source])).values()];
+    if (!sources.length) return false;
+    target.append(document.createTextNode(before));
+    sources.forEach((source, index) => {
+      if (index) target.append(document.createTextNode(separator));
+      const link = node("a", source.publisher, "priority-source-link");
+      link.href = source.url; link.target = "_blank"; link.rel = "noopener noreferrer";
+      const use = source.usedFor || source.uses?.[0];
+      if (use) link.title = tr("analysis.sourceUsedFor", { use }, `Used for: ${use}`);
+      target.append(link);
+    });
+    target.append(document.createTextNode(after));
+    return true;
+  }
+  function aiReviewStatus(ranking) {
+    if (!reportsReady) return connectionFailed
+      ? tr("analysis.aiReviewNoReportsRank", {}, "No community reports were available to check, so AI did not affect the rank.")
+      : tr("analysis.aiReviewWaitingRank", {}, "Waiting for community reports; AI does not set the rank.");
+    if (!ranking.reports.length && !reviewComplaints) return tr("analysis.aiReviewNoReportsRank", {}, "No community reports were available to check, so AI did not affect the rank.");
+    if (aiState === "fallback") return tr("analysis.aiReviewFallbackRank", {}, "NeedMap checked the cited severity, affected-population, and report inputs with its built-in evidence review; no external AI output was used.");
+    if (!reviewComplaints || aiState === "unavailable") return tr("analysis.aiReviewUnavailableRank", {}, "Unavailable, so AI did not contribute to the rank.");
+    if (aiState !== "ready") return tr("analysis.aiReviewLoadingRank", {}, "Checking exact report excerpts and explicit durations; AI does not set the rank.");
+    const priorityReview = reviewResult?.priorityReviews?.find((review) => review.category === ranking.category);
+    if (!ranking.reports.length && !priorityReview) return tr("analysis.aiReviewNoReportsRank", {}, "No community reports were available to check, so AI did not affect the rank.");
+    const reportIds = new Set(ranking.reports.map((report) => report.id));
+    const excerptCount = insights.filter((insight) => reportIds.has(insight.reportId) && insight.quote).length;
+    const durationCount = (rankingFactor(ranking, "duration")?.reportEvidence || [])
+      .filter((entry) => /^AI-selected\b/.test(entry.provenance || "")).length;
+    return tr("analysis.aiReviewReadyRank", {
+      reviewed: number(reviewResult?.reviewedCount ?? insights.length), excerpts: number(excerptCount), durations: number(durationCount),
+    }, `Checked ${number(reviewResult?.reviewedCount ?? insights.length)} reports overall and verified ${number(excerptCount)} exact excerpts plus ${number(durationCount)} explicit durations used in this rank; AI did not set the rank.`);
+  }
+  function appendPriorityExplanation(detail, ranking) {
+    const reason = node("section", undefined, "priority-reason");
+    reason.append(node("h4", `${tr("analysis.aiReviewTitle", {}, "AI review")}: ${tr("analysis.rankReasonTitle", {}, "Why it ranks here")}`));
+    const definition = categoryDefinition(ranking.category);
+    const severity = rankingFactor(ranking, "severity");
+    const highUrgency = ranking.reports.filter((report) => report.severity === "high").length;
+    const rationale = tr(`analysis.rationale.${ranking.category}`, {}, definition?.rationale || "The problem needs more context").trim().replace(/[.!?。؟]+$/u, "");
+    const affected = [...(ranking.indicators || [])]
+      .filter((indicator) => indicator.kind === "affected_population")
+      .sort((left, right) => Number(right.year || 0) - Number(left.year || 0))[0];
+    const explanation = node("p");
+    if (ranking.rank === null) {
+      explanation.textContent = tr("analysis.rankReasonUnranked", { rationale }, `Not ranked: ${rationale}, but no community report or region-specific published measurement supports this problem for the exact region.`);
+      appendSourceLinks(explanation, severity?.sources);
+    } else {
+      const values = { rank: ranking.rank, rationale, high: number(highUrgency), reports: number(ranking.reportCount) };
+      const marker = "\u0000RANK_RATIONALE\u0000";
+      const markedValues = { ...values, rationale: marker };
+      const lead = !reportsReady
+        ? connectionFailed
+          ? tr("analysis.rankReasonReportsUnavailableLead", markedValues, `Rank #${ranking.rank}: ${marker}; community-report urgency is unavailable, and`)
+          : tr("analysis.rankReasonReportsLoadingLead", markedValues, `Rank #${ranking.rank}: ${marker}; community reports are still loading, and`)
+        : ranking.reportCount > 0
+          ? tr("analysis.rankReasonRankedLead", markedValues, `Rank #${ranking.rank}: ${marker}; ${number(highUrgency)} of ${number(ranking.reportCount)} reports were high urgency, and`)
+          : tr("analysis.rankReasonNoReportsLead", markedValues, `Rank #${ranking.rank}: ${marker}; no community report added an urgency signal, and`);
+      const markerIndex = lead.indexOf(marker);
+      if (markerIndex < 0) {
+        explanation.append(document.createTextNode(`${lead} `));
+      } else {
+        explanation.append(document.createTextNode(lead.slice(0, markerIndex)), document.createTextNode(rationale));
+        appendSourceLinks(explanation, severity?.sources);
+        explanation.append(document.createTextNode(`${lead.slice(markerIndex + marker.length)} `));
+      }
+      if (!affected) {
+        explanation.append(document.createTextNode(evidenceState === "idle" || evidenceState === "loading"
+          ? tr("analysis.rankReasonPopulationLoading", {}, "population evidence is still loading.")
+          : tr("analysis.rankReasonPopulationUnavailable", {}, "no exact-region population input was available, so NeedMap did not guess; severity therefore carried more weight and the order is provisional.")));
+      } else {
+        const place = affected.scope?.name || region.label || region.name;
+        explanation.append(document.createTextNode(`${tr("analysis.rankReasonPopulation", {
+          title: factTitle(affected), population: number(affected.value), unit: unitName(affected.unit), place, year: affected.year,
+        }, `severity weighs slightly more than ${factTitle(affected)}: ${number(affected.value)} ${unitName(affected.unit)} in ${place} (`)}`));
+        appendSourceLinks(explanation, [affected.source, ...(Array.isArray(affected.sources) ? affected.sources : [])], { before: "", after: "" });
+        explanation.append(document.createTextNode(tr("analysis.rankReasonPopulationLimitation", { year: affected.year }, `, ${affected.year}; published input, not a confirmed count from reports).`)));
+      }
+    }
+    const review = node("p", undefined, "priority-ai-line");
+    review.append(node("strong", `${tr("analysis.aiReviewTitle", {}, "AI review")}:`), document.createTextNode(` ${aiReviewStatus(ranking)}`));
+    reason.append(explanation, review);
+    detail.append(reason);
+  }
+  function priorityContextsForAI() {
+    if (!region || !reportsReady || evidenceState === "idle" || evidenceState === "loading") return [];
+    const model = buildAnalysisModel({ reports, region, evidence, category: "all", reportsAvailable: reportsReady });
+    return model.rankings.filter((ranking) => Number.isInteger(ranking.rank)).map((ranking) => {
+      const definition = categoryDefinition(ranking.category);
+      const severity = rankingFactor(ranking, "severity");
+      const populationFactor = rankingFactor(ranking, "affected_population");
+      const affected = [...(ranking.indicators || [])]
+        .filter((indicator) => indicator.kind === "affected_population")
+        .sort((left, right) => Number(right.year || 0) - Number(left.year || 0))[0];
+      return {
+        category: ranking.category, rank: ranking.rank,
+        severity: { rationale: definition?.rationale || "", weight: severity?.weight, sources: severity?.sources || [] },
+        affectedPopulation: affected ? {
+          title: affected.title || affected.kind, value: affected.value, unit: affected.unit, year: affected.year,
+          weight: populationFactor?.weight, sources: populationFactor?.sources || [],
+        } : { weight: populationFactor?.weight, sources: [] },
+      };
+    });
+  }
   function refreshFilterOptions() {
     const selected = filter.value || "all";
     const option = (label, value) => { const item = node("option", label); item.setAttribute("value", value); return item; };
@@ -47,7 +162,26 @@ export function createAnalysisWorkspace({ document = globalThis.document, i18n, 
   let visible = false, destroyed = false, evidence = null, evidenceState = "idle", evidenceRevision = 0, evidenceController;
   let insights = [], aiState = "idle", aiRevision = 0, aiController, aiTimer, reportKey = "", reviewResult = null;
   let population = null, populationState = "idle", populationKey = "", populationGeometry, populationRevision = 0, populationController;
+  let releaseEvidence, releaseAI, releasePopulation;
   let reportMapGroups = [];
+  const loadingTarget = (key) => ({
+    "analysis-evidence": byId("analysis-status"),
+    "analysis-ai": byId("analysis-ai-status"),
+    "analysis-population": byId("analysis-population"),
+  })[key];
+  const beginLoading = (key, label) => onLoading?.({
+    key,
+    label,
+    target: loadingTarget(key),
+    appearance: "status",
+  }) || (() => {});
+  const release = (name) => {
+    const current = name === "evidence" ? releaseEvidence : name === "ai" ? releaseAI : releasePopulation;
+    if (name === "evidence") releaseEvidence = undefined;
+    else if (name === "ai") releaseAI = undefined;
+    else releasePopulation = undefined;
+    current?.();
+  };
   function clearReportMaps() {
     for (const dispose of reportMapGroups) dispose();
     reportMapGroups = [];
@@ -159,9 +293,15 @@ export function createAnalysisWorkspace({ document = globalThis.document, i18n, 
     result.type = "button";
     result.classList.add("analysis-population-button");
     result.id = "analysis-population";
-    result.setAttribute("aria-live", "polite");
     result.setAttribute("aria-haspopup", "dialog");
-    result.append(node("span", tr("population.how", {}, "See how this was calculated →"), "metric-detail-hint"));
+    const liveValue = result.querySelector("strong");
+    liveValue?.setAttribute("role", "status");
+    liveValue?.setAttribute("aria-live", "polite");
+    liveValue?.setAttribute("aria-atomic", "true");
+    const loadingSlot = node("span", undefined, "context-loading-slot metric-loading-slot");
+    loadingSlot.dataset.loadingFor = result.id;
+    loadingSlot.setAttribute("aria-hidden", "true");
+    result.append(loadingSlot, node("span", tr("population.how", {}, "See how this was calculated →"), "metric-detail-hint"));
     result.addEventListener("click", openPopulationDetails);
     return result;
   }
@@ -173,9 +313,26 @@ export function createAnalysisWorkspace({ document = globalThis.document, i18n, 
   }
   function cancelPopulation() {
     ++populationRevision; populationController?.abort(); populationController = null;
+    release("population");
     if (populationState === "loading") populationState = "idle";
   }
-  async function ensurePopulation() {
+  function bindPopulationLoading() {
+    if (populationState !== "loading" || !populationController || populationController.signal.aborted || !visible || destroyed) return;
+    release("population");
+    releasePopulation = beginLoading("analysis-population", tr("population.loadingDetail", {}, "Estimating residents near reports…"));
+  }
+  function cancelEvidence() {
+    if (evidenceState !== "loading") return;
+    ++evidenceRevision; evidenceController?.abort(); evidenceController = undefined;
+    release("evidence"); evidenceState = "idle";
+  }
+  function cancelAI() {
+    if (aiState !== "loading") return;
+    ++aiRevision; aiController?.abort(); aiController = undefined;
+    clearTimeout(aiTimer); aiTimer = undefined;
+    release("ai"); aiState = "idle";
+  }
+  async function ensurePopulation({ deferLoadingBind = false } = {}) {
     if (!visible || !region || destroyed) return;
     const selected = filter.value || "all";
     const scoped = reports.filter((report) => selected === "all" || categoryForReport(report) === selected);
@@ -192,6 +349,7 @@ export function createAnalysisWorkspace({ document = globalThis.document, i18n, 
     }
     const revision = ++populationRevision;
     populationController = new AbortController(); populationState = "loading"; renderPopulation();
+    if (!deferLoadingBind) bindPopulationLoading();
     try {
       const result = await loadPopulation({ reports: scoped, region }, { signal: populationController.signal });
       if (destroyed || revision !== populationRevision) return;
@@ -199,6 +357,8 @@ export function createAnalysisWorkspace({ document = globalThis.document, i18n, 
     } catch {
       if (destroyed || revision !== populationRevision) return;
       population = null; populationState = "unavailable";
+    } finally {
+      if (revision === populationRevision) release("population");
     }
     renderPopulation();
   }
@@ -270,6 +430,7 @@ export function createAnalysisWorkspace({ document = globalThis.document, i18n, 
       name.append(heading, node("small", `${tr("analysis.reportCount", { count: reportsReady ? ranking.reportCount : tr("common.unknown", {}, "Unknown") }, `${reportsReady ? number(ranking.reportCount) : "Unknown"} reports`)}${ranking.rank === null ? tr("analysis.notRanked", {}, " · Not ranked: no evidence for this exact region") : ""}`));
       summary.append(node("span", ranking.rank === null ? "—" : String(ranking.rank), "priority-rank"), name);
       const detail = node("div", undefined, "priority-detail");
+      appendPriorityExplanation(detail, ranking);
       const facts = [...(ranking.indicators || []), ...(ranking.contextIndicators || [])]
         .filter((fact) => !["access_index", "access_gap_index"].includes(fact.kind));
       if (facts.length) {
@@ -330,47 +491,70 @@ export function createAnalysisWorkspace({ document = globalThis.document, i18n, 
     }
     byId("analysis-ai-status").textContent = aiState === "loading" ? tr("analysis.aiLoading", {}, "AI is reviewing the report text for supporting excerpts and explicitly stated duration…")
       : aiState === "ready" ? tr("analysis.aiReady", { reviewed: reviewResult?.reviewedCount ?? insights.length, total: reports.length }, `AI reviewed ${number(reviewResult?.reviewedCount ?? insights.length)} of ${number(reports.length)} reports. Excerpts are checked against the original text.`)
+      : aiState === "fallback" ? tr("analysis.aiFallback", {}, "NeedMap completed the review from the cited evidence using its built-in fallback; no external AI output was used.")
       : aiState === "unavailable" ? tr("analysis.aiUnavailable", {}, "AI review is unavailable. Reports and available statistics are still shown.")
       : "";
+    bindPopulationLoading();
   }
   async function ensureEvidence() {
     if (!visible || !region || evidenceState !== "idle" || destroyed) return;
     const revision = ++evidenceRevision; evidenceController = new AbortController(); evidenceState = "loading"; render();
+    const stopLoading = beginLoading("analysis-evidence", tr("analysis.statusStatsLoading", {}, "Looking up published statistics…"));
+    releaseEvidence = stopLoading;
     try {
       const result = await loadEvidence(region, { signal: evidenceController.signal });
       if (destroyed || revision !== evidenceRevision) return;
       evidence = result; evidenceState = result.status === "unavailable" ? "unavailable" : "ready";
     } catch { if (destroyed || revision !== evidenceRevision) return; evidenceState = "unavailable"; }
+    finally {
+      stopLoading();
+      if (releaseEvidence === stopLoading) releaseEvidence = undefined;
+    }
     render();
+    ensureAI();
   }
   function ensureAI() {
-    if (!visible || !reportsReady || !reports.length || !reviewComplaints || aiState !== "idle" || destroyed) return;
+    if (!visible || !reportsReady || !reviewComplaints || aiState !== "idle" || destroyed || evidenceState === "idle" || evidenceState === "loading") return;
+    const priorityContexts = priorityContextsForAI();
+    if (!reports.length && !priorityContexts.length) return;
     const revision = ++aiRevision; aiController = new AbortController(); const signal = aiController.signal;
     aiState = "loading"; render();
+    const stopLoading = beginLoading("analysis-ai", tr("analysis.aiLoading", {}, "AI is reviewing report text…"));
+    releaseAI = stopLoading;
     aiTimer = setTimeout(async () => {
       try {
-        const result = await reviewComplaints(firebaseApp, reports, { signal });
+        const result = await reviewComplaints(firebaseApp, reports, { signal, priorityContexts });
         if (destroyed || revision !== aiRevision) return;
         reviewResult = result; insights = Array.isArray(result) ? result : result.insights || []; aiState = "ready";
-      } catch { if (destroyed || revision !== aiRevision) return; aiState = "unavailable"; }
+      } catch (error) {
+        if (destroyed || revision !== aiRevision) return;
+        if (signal.aborted || error?.name === "AbortError") return;
+        reviewResult = buildEvidenceReviewFallback(reports, { priorityContexts });
+        insights = [];
+        aiState = "fallback";
+      }
+      finally {
+        stopLoading();
+        if (releaseAI === stopLoading) releaseAI = undefined;
+      }
       render();
     }, 600);
   }
   function update(next) {
     const changedRegion = next.region.id !== region?.id;
     if (changedRegion) {
-      ++evidenceRevision; evidenceController?.abort(); evidence = null; evidenceState = "idle";
+      cancelEvidence(); evidence = null; evidenceState = "idle";
       clearReportMaps();
       byId("analysis-rankings").replaceChildren();
     }
     region = next.region; reports = next.reports; recommendations = next.recommendations || []; reportsReady = next.reportsReady; connectionFailed = !!next.connectionFailed;
     const key = JSON.stringify(reports.map((report) => [report.id, report.summary, report.category, report.severity, report.submittedAt]));
     if (changedRegion || key !== reportKey) {
-      reportKey = key; ++aiRevision; aiController?.abort(); clearTimeout(aiTimer); insights = []; reviewResult = null; aiState = "idle";
+      reportKey = key; cancelAI(); insights = []; reviewResult = null; aiState = "idle";
     }
-    ensurePopulation(); render(); ensureEvidence(); ensureAI();
+    ensurePopulation({ deferLoadingBind: true }); render(); ensureEvidence(); ensureAI();
   }
-  const onFilter = () => { clearReportMaps(); byId("analysis-rankings").replaceChildren(); ensurePopulation(); render(); };
+  const onFilter = () => { clearReportMaps(); byId("analysis-rankings").replaceChildren(); ensurePopulation({ deferLoadingBind: true }); render(); };
   filter.addEventListener("change", onFilter);
   const stopLanguage = i18n?.subscribe(() => {
     refreshFilterOptions(); overviewKey = ""; clearReportMaps();
@@ -385,5 +569,5 @@ export function createAnalysisWorkspace({ document = globalThis.document, i18n, 
     onFilter();
     return true;
   }
-  return { update, focusReport, setVisible(value) { visible = value; if (value) { ensurePopulation(); render(); ensureEvidence(); ensureAI(); } else { clearReportMaps(); clearOverviewMap(); populationDetails?.close(); cancelPopulation(); } }, destroy() { destroyed = true; stopLanguage(); clearReportMaps(); clearOverviewMap(); populationDetails?.destroy(); cancelPopulation(); ++evidenceRevision; ++aiRevision; evidenceController?.abort(); aiController?.abort(); clearTimeout(aiTimer); filter.removeEventListener("change", onFilter); } };
+  return { update, focusReport, setVisible(value) { visible = value; if (value) { render(); ensurePopulation(); ensureEvidence(); ensureAI(); } else { clearReportMaps(); clearOverviewMap(); populationDetails?.close(); cancelPopulation(); cancelEvidence(); cancelAI(); } }, destroy() { destroyed = true; stopLanguage(); clearReportMaps(); clearOverviewMap(); populationDetails?.destroy(); cancelPopulation(); cancelEvidence(); cancelAI(); filter.removeEventListener("change", onFilter); } };
 }

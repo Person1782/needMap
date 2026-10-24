@@ -14,11 +14,20 @@ function leafletMock({ failureAt, removalFailure = false } = {}) {
     setView(coordinates, zoom) { calls.view = { coordinates, zoom }; fail("view"); return this; },
     remove() { calls.removed = (calls.removed || 0) + 1; if (removalFailure) throw new Error("Removal failed"); },
   };
+  const tileHandlers = new Map();
+  const tileLayer = {
+    on(type, callback) { tileHandlers.set(type, callback); return this; },
+    off(type, callback) { if (tileHandlers.get(type) === callback) tileHandlers.delete(type); return this; },
+    emit(type) { tileHandlers.get(type)?.(); },
+    listenerCount() { return tileHandlers.size; },
+    addTo(target) { calls.tileTarget = target; fail("tileAdd"); return this; },
+  };
   const L = {
     map(container, options) { calls.map = { container, options }; fail("map"); return map; },
     tileLayer(url, options) {
       calls.tiles = { url, options }; fail("tiles");
-      return { addTo(target) { calls.tileTarget = target; fail("tileAdd"); return this; } };
+      calls.tileLayer = tileLayer;
+      return tileLayer;
     },
     divIcon(options) { calls.icon = options; fail("icon"); return options; },
     marker(coordinates, options) {
@@ -82,6 +91,25 @@ test("tiles use the existing OpenStreetMap provider and retain required attribut
   assert.equal(mock.calls.map.options.attributionControl, true);
   assert.equal(mock.calls.prefix, false);
   assert.equal(mock.calls.tileTarget, mock.map);
+});
+
+test("mini-map tile activity reaches the global loading hook and releases on teardown", () => {
+  const mock = leafletMock();
+  let starts = 0, stops = 0;
+  const handle = createReportLocationMap(mock.L, {}, report, { onLoading({ key }) {
+    assert.equal(key, "report-map-tiles"); starts++;
+    let stopped = false;
+    return () => { if (!stopped) { stopped = true; stops++; } };
+  } });
+  mock.calls.tileLayer.emit("loading");
+  mock.calls.tileLayer.emit("loading");
+  assert.equal(starts, 1);
+  mock.calls.tileLayer.emit("load");
+  assert.equal(stops, 1);
+  mock.calls.tileLayer.emit("loading");
+  handle.destroy();
+  assert.equal(stops, 2);
+  assert.equal(mock.calls.tileLayer.listenerCount(), 0);
 });
 
 test("marker colors match urgency and unknown report values cannot inject markup", () => {

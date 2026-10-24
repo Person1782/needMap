@@ -7,24 +7,24 @@
   var DETECTION_TIMEOUT = 3500;
   var RTL = { ar: true, ur: true };
   var LANGUAGES = [
-    { code: "en", name: "English", search: "English" },
-    { code: "es", name: "Espa\u00f1ol", search: "Spanish Espanol" },
-    { code: "fr", name: "Fran\u00e7ais", search: "French Francais" },
-    { code: "pt", name: "Portugu\u00eas", search: "Portuguese Portugues" },
-    { code: "ar", name: "\u0627\u0644\u0639\u0631\u0628\u064a\u0629", search: "Arabic Arabia" },
-    { code: "zh-Hans", name: "\u7b80\u4f53\u4e2d\u6587", search: "Chinese Simplified Mandarin" },
-    { code: "zh-Hant", name: "\u7e41\u9ad4\u4e2d\u6587", search: "Chinese Traditional Mandarin" },
-    { code: "hi", name: "\u0939\u093f\u0928\u094d\u0926\u0940", search: "Hindi" },
-    { code: "bn", name: "\u09ac\u09be\u0982\u09b2\u09be", search: "Bengali Bangla" },
-    { code: "ur", name: "\u0627\u0631\u062f\u0648", search: "Urdu" },
-    { code: "ru", name: "\u0420\u0443\u0441\u0441\u043a\u0438\u0439", search: "Russian Russkiy" },
-    { code: "de", name: "Deutsch", search: "German Deutsch" },
-    { code: "id", name: "Bahasa Indonesia", search: "Indonesian Bahasa" },
-    { code: "ja", name: "\u65e5\u672c\u8a9e", search: "Japanese Nihongo" },
-    { code: "ko", name: "\ud55c\uad6d\uc5b4", search: "Korean Hanguk" },
-    { code: "vi", name: "Ti\u1ebfng Vi\u1ec7t", search: "Vietnamese Tieng Viet" },
-    { code: "tr", name: "T\u00fcrk\u00e7e", search: "Turkish Turkce" },
-    { code: "sw", name: "Kiswahili", search: "Swahili Kiswahili" }
+    { code: "en", name: "English", englishName: "English", search: "English" },
+    { code: "es", name: "Espa\u00f1ol", englishName: "Spanish", search: "Spanish Espanol" },
+    { code: "fr", name: "Fran\u00e7ais", englishName: "French", search: "French Francais" },
+    { code: "pt", name: "Portugu\u00eas", englishName: "Portuguese", search: "Portuguese Portugues" },
+    { code: "ar", name: "\u0627\u0644\u0639\u0631\u0628\u064a\u0629", englishName: "Arabic", search: "Arabic Arabia" },
+    { code: "zh-Hans", name: "\u7b80\u4f53\u4e2d\u6587", englishName: "Chinese (Simplified)", search: "Chinese Simplified Mandarin" },
+    { code: "zh-Hant", name: "\u7e41\u9ad4\u4e2d\u6587", englishName: "Chinese (Traditional)", search: "Chinese Traditional Mandarin" },
+    { code: "hi", name: "\u0939\u093f\u0928\u094d\u0926\u0940", englishName: "Hindi", search: "Hindi" },
+    { code: "bn", name: "\u09ac\u09be\u0982\u09b2\u09be", englishName: "Bengali", search: "Bengali Bangla" },
+    { code: "ur", name: "\u0627\u0631\u062f\u0648", englishName: "Urdu", search: "Urdu" },
+    { code: "ru", name: "\u0420\u0443\u0441\u0441\u043a\u0438\u0439", englishName: "Russian", search: "Russian Russkiy" },
+    { code: "de", name: "Deutsch", englishName: "German", search: "German Deutsch" },
+    { code: "id", name: "Bahasa Indonesia", englishName: "Indonesian", search: "Indonesian Bahasa" },
+    { code: "ja", name: "\u65e5\u672c\u8a9e", englishName: "Japanese", search: "Japanese Nihongo" },
+    { code: "ko", name: "\ud55c\uad6d\uc5b4", englishName: "Korean", search: "Korean Hanguk" },
+    { code: "vi", name: "Ti\u1ebfng Vi\u1ec7t", englishName: "Vietnamese", search: "Vietnamese Tieng Viet" },
+    { code: "tr", name: "T\u00fcrk\u00e7e", englishName: "Turkish", search: "Turkish Turkce" },
+    { code: "sw", name: "Kiswahili", englishName: "Swahili", search: "Swahili Kiswahili" }
   ];
   var KEYS = [
     "metaDescription", "pageTitle", "skipForm", "demoBanner", "brandSubtitle", "modeLabelLight",
@@ -49,10 +49,11 @@
     "reportReceivedStay", "reportReceivedOpening", "reportReceivedLink", "reportingUnavailable",
     "submissionUnconfirmed", "savedLocation", "errorCategory", "errorSeverity", "errorSummaryRequired",
     "errorSummaryLength", "errorPhone", "errorEmail", "errorAddress", "errorLocation", "placeInputError",
-    "placeWait", "placeUnavailable", "placeInvalid", "modeLabelFull"
+    "placeWait", "placeUnavailable", "placeInvalid", "modeLabelFull",
+    "languageDetecting", "languageLoading"
   ];
   var ENGLISH = [
-    "Share an anonymous service-access concern with NeedMap. A small, text-only form for slow connections.",
+    "Share an anonymous service-access concern with NeedMap using a small, accessible form.",
     "Report a concern | NeedMap Community", "Skip to report form", "Demonstration \u00b7 Not an official government service",
     "Community reporting", "Lightweight community form", "A concern today. Better planning tomorrow.",
     "What could be easier to reach?", "Tell us about a service your community needs. No account, photos or downloads required.",
@@ -106,7 +107,8 @@
     "Remove the email address before submitting.", "Remove the street address before submitting.",
     "Add your approximate location or choose a nearby place.", "Enter a town or neighbourhood, with at least 3 characters.",
     "Please wait a moment before searching again.", "Place search is unavailable. Check your connection or use your device location.",
-    "Place search returned an invalid response. Try again later.", "Complete community form"
+    "Place search returned an invalid response. Try again later.", "Complete community form",
+    "Detecting your language\u2026", "Loading selected language\u2026"
   ];
   var COUNTRY_GROUPS = {
     es: "AR BO CL CO CR CU DO EC ES GQ GT HN MX NI PA PE PR PY SV UY VE",
@@ -135,7 +137,13 @@
   var callbacks = [];
   var loadSerial = 0;
   var manualSelection = false;
+  var automaticCancel = null;
+  var activePackCancel = null;
   var picker;
+  var loading = root.NeedMapLoading;
+  function beginLoading(key, labelKey, fallback) {
+    return loading && loading.begin ? loading.begin(key, labelKey, fallback, "language") : function () {};
+  }
   for (var languageIndex = 0; languageIndex < LANGUAGES.length; languageIndex++) supported[LANGUAGES[languageIndex].code] = LANGUAGES[languageIndex];
   for (var groupCode in COUNTRY_GROUPS) if (Object.prototype.hasOwnProperty.call(COUNTRY_GROUPS, groupCode)) {
     var groupCountries = COUNTRY_GROUPS[groupCode].split(" ");
@@ -240,9 +248,10 @@
   }
   function loadPack(code, callback) {
     code = normalizeLanguage(code);
-    if (code === "en") { callback(null, ENGLISH); return; }
-    var request = new root.XMLHttpRequest();
+    var request;
     var completed = false;
+    try { request = new root.XMLHttpRequest(); }
+    catch (constructionError) { callback(constructionError); return function () {}; }
     var timer = root.setTimeout(function () { if (!completed) { completed = true; try { request.abort(); } catch (ignore) {} callback(new Error("timeout")); } }, PACK_TIMEOUT);
     function finish(error, value) {
       if (completed) return;
@@ -266,18 +275,53 @@
       request.onerror = function () { finish(new Error("network")); };
       request.send(null);
     } catch (error) { finish(error); }
+    return function () {
+      if (completed) return;
+      completed = true;
+      root.clearTimeout(timer);
+      request.onreadystatechange = null;
+      request.onerror = null;
+      try { request.abort(); } catch (ignore) {}
+    };
   }
   function select(code, remember, callback) {
-    if (remember) manualSelection = true;
+    if (remember) {
+      manualSelection = true;
+      if (automaticCancel) { automaticCancel(); automaticCancel = null; }
+    }
+    code = normalizeLanguage(code);
     var serial = ++loadSerial;
-    loadPack(code, function (error, pack) {
+    if (activePackCancel) { activePackCancel(); activePackCancel = null; }
+    if (code === "en") {
+      install(code, ENGLISH, ready);
+      if (remember) try { root.localStorage.setItem(STORAGE_KEY, code); } catch (storageError) {}
+      if (callback) callback(null);
+      return;
+    }
+    var stopLoading = beginLoading("language-pack-" + serial, "languageLoading", "Loading selected language\u2026");
+    var settled = false;
+    var cancelRequest = function () {};
+    var cancelCurrent;
+    function release() {
+      if (settled) return false;
+      settled = true;
+      stopLoading();
+      return true;
+    }
+    cancelCurrent = function () {
+      if (!release()) return;
+      cancelRequest();
+    };
+    cancelRequest = loadPack(code, function (error, pack) {
+      if (!release()) return;
+      if (activePackCancel === cancelCurrent) activePackCancel = null;
       if (serial !== loadSerial) return;
       if (error) { if (callback) callback(error); return; }
-      code = normalizeLanguage(code);
       install(code, pack, ready);
       if (remember) try { root.localStorage.setItem(STORAGE_KEY, code); } catch (storageError) {}
       if (callback) callback(null);
     });
+    if (!settled) activePackCancel = cancelCurrent;
   }
   function savedLanguage() {
     try {
@@ -286,16 +330,18 @@
     } catch (error) { return null; }
   }
   function detectAutomatic(callback) {
-    if (navigator.onLine === false || !root.XMLHttpRequest) { callback(navigatorLanguage()); return; }
+    if (navigator.onLine === false || !root.XMLHttpRequest) { callback(navigatorLanguage()); return function () {}; }
     var request = new root.XMLHttpRequest();
     var completed = false;
+    var stopLoading = beginLoading("language-region", "languageDetecting", "Detecting your language\u2026");
     var timer = root.setTimeout(function () { finish(); }, DETECTION_TIMEOUT);
-    function finish(countryCode) {
+    function finish(countryCode, cancelled) {
       if (completed) return;
       completed = true;
       root.clearTimeout(timer);
       try { request.abort(); } catch (ignore) {}
-      callback(countryCode ? countryLanguage(countryCode) : navigatorLanguage());
+      if (!cancelled) callback(countryCode ? countryLanguage(countryCode) : navigatorLanguage());
+      stopLoading();
     }
     try {
       request.open("GET", IP_ENDPOINT, true);
@@ -309,11 +355,14 @@
       request.onerror = function () { finish(); };
       request.send(null);
     } catch (error) { finish(); }
+    return function () { finish(null, true); };
   }
   function updatePicker() {
     if (!picker) return;
     var selected = languageByCode(current);
-    picker.button.textContent = t("languageButton", { language: selected.name });
+    var label = document.getElementById("language-button-label");
+    if (label) label.textContent = selected.name;
+    picker.button.setAttribute("aria-label", t("languageButton", { language: selected.name }));
     picker.panel.setAttribute("aria-label", t("languageDialog"));
     picker.search.setAttribute("placeholder", t("languageSearch"));
     picker.search.setAttribute("aria-label", t("languageSearch"));
@@ -329,7 +378,7 @@
     var visible = 0;
     for (var index = 0; index < picker.options.length; index++) {
       var option = picker.options[index];
-      var matches = !query || (option.name + " " + option.search + " " + option.code).toLowerCase().indexOf(query) !== -1;
+      var matches = !query || (option.name + " " + option.englishName + " " + option.search + " " + option.code).toLowerCase().indexOf(query) !== -1;
       option.item.hidden = !matches;
       if (matches) visible++;
     }
@@ -357,9 +406,14 @@
       var optionButton = document.createElement("button");
       optionButton.type = "button";
       optionButton.className = "language-option";
-      optionButton.textContent = language.name;
       optionButton.setAttribute("lang", language.code);
       optionButton.setAttribute("dir", RTL[language.code] ? "rtl" : "ltr");
+      var nativeName = document.createElement("strong");
+      var englishName = document.createElement("span");
+      nativeName.textContent = language.name;
+      englishName.textContent = language.englishName;
+      optionButton.appendChild(nativeName);
+      optionButton.appendChild(englishName);
       optionButton.addEventListener("click", function () {
         error.textContent = "";
         optionButton.disabled = true;
@@ -371,7 +425,7 @@
       });
       item.appendChild(optionButton);
       list.appendChild(item);
-      picker.options.push({ code: language.code, name: language.name, search: language.search, item: item, button: optionButton });
+      picker.options.push({ code: language.code, name: language.name, englishName: language.englishName, search: language.search, item: item, button: optionButton });
     }(LANGUAGES[index]));
     button.addEventListener("click", function () {
       var opening = panel.hidden;
@@ -418,7 +472,8 @@
   finishReady();
   var saved = savedLanguage();
   if (saved) select(saved, false, function (error) { if (error) install("en", ENGLISH, false); });
-  else detectAutomatic(function (code) {
+  else automaticCancel = detectAutomatic(function (code) {
+    automaticCancel = null;
     if (manualSelection) return;
     select(code, false, function (error) { if (error && !manualSelection) install("en", ENGLISH, false); });
   });

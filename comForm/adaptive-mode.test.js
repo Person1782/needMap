@@ -14,8 +14,8 @@ test('uses effective connection conditions, data saving and device hints rather 
 test('missing, malformed or restricted optional hints do not break a complete form', () => {
   for (const hints of [{}, { connection: {} }, { connection: { downlink: 0, rtt: NaN }, deviceMemory: -1, hardwareConcurrency: '2' }]) assert.equal(adaptive.detect(hints).slow, false);
   assert.equal(adaptive.detect({}, { getEntriesByType() { throw new Error('unavailable'); } }).slow, false);
-  assert.equal(adaptive.detect({}, null, 'slow').slow, true);
-  assert.equal(adaptive.detect({}, null, 'auto', true).slow, true);
+  assert.equal(adaptive.detect(null).slow, false);
+  assert.equal(adaptive.detect({}, null, true).slow, true);
 });
 
 test('uses already-downloaded page and script timings with legacy fallback', () => {

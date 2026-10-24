@@ -90,7 +90,7 @@ function browserLanguage(navigator) {
   return "en";
 }
 
-export function createI18n({ document = globalThis.document, storage, navigator = globalThis.navigator, location = globalThis.location, packLoaders = loaders } = {}) {
+export function createI18n({ document = globalThis.document, storage, navigator = globalThis.navigator, location = globalThis.location, packLoaders = loaders, onLoading } = {}) {
   const localStorage = safeStorage(storage);
   const saved = storedLanguage(localStorage);
   const query = (() => { try { return normalizeLanguageCode(location?.search ? new URLSearchParams(location.search).get("lang") : null); } catch { return null; } })();
@@ -122,7 +122,10 @@ export function createI18n({ document = globalThis.document, storage, navigator 
       return code;
     }
     const current = ++revision;
-    const module = await packLoaders[supported]();
+    const releaseLoading = onLoading?.({ key: "language", source, code: supported }) || (() => {});
+    let module;
+    try { module = await packLoaders[supported](); }
+    finally { releaseLoading(); }
     if (current !== revision) return code;
     code = supported; messages = module.default; applyDocument();
     if (persist || (source === "query" || (!saved && query && supported === query))) {

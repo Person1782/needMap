@@ -72,18 +72,21 @@ function fixture() {
 
 const callsOf = (fixtureValue, type) => fixtureValue.calls.filter((call) => call.type === type);
 
-test('modified trackpad wheel stays inside the map while ordinary wheel remains native Leaflet', () => {
+test('every wheel gesture uses the immediate continuous map path', () => {
   const f = fixture();
   let nativeWheels = 0;
   f.container.addEventListener('wheel', () => nativeWheels++, { capture: false });
-  assert.equal(f.dispatch('wheel', { deltaY: -30 }).prevented, false);
+  const wheel = f.dispatch('wheel', { deltaY: -30 });
+  assert.equal(wheel.prevented, true); assert.equal(wheel.stopped, true);
+  f.flush();
+  assert.equal(callsOf(f, 'move')[0].zoom, 10.75);
   const pinch = f.dispatch('wheel', { ctrlKey: true, deltaY: -15 });
   assert.equal(pinch.prevented, true); assert.equal(pinch.stopped, true);
   f.flush();
-  assert.equal(nativeWheels, 1);
-  assert.equal(callsOf(f, 'move').length, 1);
-  assert.equal(callsOf(f, 'move')[0].zoom, 10.15);
-  assert.deepEqual(callsOf(f, 'move')[0].data, { pinch: true, round: false });
+  assert.equal(nativeWheels, 0);
+  assert.equal(callsOf(f, 'move').length, 2);
+  assert.equal(callsOf(f, 'move')[1].zoom, 11.125);
+  assert.deepEqual(callsOf(f, 'move')[1].data, { pinch: true, round: false });
   f.cleanup();
 });
 
@@ -93,11 +96,11 @@ test('trackpad deltas remain continuous and settle to zoomSnap only after the ge
     f.dispatch('wheel', { ctrlKey: true, deltaY: -1 }); f.flush(); f.advance(5);
   }
   assert.equal(callsOf(f, 'move').length, 30);
-  assert.ok(Math.abs(callsOf(f, 'move').at(-1).zoom - 10.3) < 1e-9);
+  assert.ok(Math.abs(callsOf(f, 'move').at(-1).zoom - 10.75) < 1e-9);
   assert.equal(callsOf(f, 'settle').length, 0);
-  f.advance(201);
+  f.advance(81);
   assert.equal(callsOf(f, 'settle').length, 1);
-  assert.equal(callsOf(f, 'settle')[0].zoom, 10.25);
+  assert.equal(callsOf(f, 'settle')[0].zoom, 10.75);
   f.cleanup();
 });
 
@@ -115,10 +118,10 @@ test('the geographic point under the cursor remains fixed throughout continuous 
 test('line and page wheel units clamp smoothly to map zoom bounds', () => {
   const f = fixture();
   f.dispatch('wheel', { ctrlKey: true, deltaY: -1, deltaMode: 1 }); f.flush();
-  assert.equal(callsOf(f, 'move').at(-1).zoom, 10.16);
-  f.advance(201);
+  assert.equal(callsOf(f, 'move').at(-1).zoom, 10.4);
+  f.advance(81);
   f.dispatch('wheel', { ctrlKey: true, deltaY: -1, deltaMode: 2 }); f.flush();
-  assert.equal(callsOf(f, 'move').at(-1).zoom, 16.25);
+  assert.equal(callsOf(f, 'move').at(-1).zoom, 19);
   f.dispatch('wheel', { ctrlKey: true, deltaY: -10000 }); f.flush();
   assert.equal(callsOf(f, 'move').at(-1).zoom, 19);
   const count = callsOf(f, 'move').length;

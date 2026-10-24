@@ -5,7 +5,7 @@ export function context(extra = {}) {
   const target = { console, setTimeout, clearTimeout, JSON, ...extra };
   target.window = target;
   const ctx = vm.createContext(target);
-  for (const name of ["firebase-config.js", "form-model.js", "firebase-submit.js", "place-search.js", "adaptive-mode.js"]) vm.runInContext(read(name), ctx);
+  for (const name of ["loading-bar.js", "firebase-config.js", "form-model.js", "firebase-submit.js", "place-search.js", "adaptive-mode.js"]) vm.runInContext(read(name), ctx);
   return ctx;
 }
 export function plain(value) { return JSON.parse(JSON.stringify(value)); }

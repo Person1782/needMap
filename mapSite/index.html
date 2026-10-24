@@ -22,6 +22,7 @@
         <label for="language-search">Search languages</label>
         <input id="language-search" type="search" placeholder="Language name" autocomplete="off" maxlength="80" />
         <p id="language-search-status" class="muted" role="status"></p>
+        <span class="context-loading-slot" data-loading-for="language-search-status" aria-hidden="true"></span>
         <ul id="language-results" class="language-results" aria-label="Available languages"></ul>
       </section>
     </div>
@@ -29,7 +30,7 @@
   <div class="workspace-bar">
     <div class="region-navigation">
       <button id="change-region" class="secondary-button" type="button" aria-expanded="false" aria-controls="region-menu">Change Region <svg class="region-chevron" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m5 7.5 5 5 5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-      <div class="region-current"><strong id="current-region">Worldwide</strong><span id="region-status" role="status">Finding your region…</span></div>
+      <div class="region-current"><strong id="current-region">Worldwide</strong><span id="region-status" role="status">Finding your region…</span><span class="context-loading-slot" data-loading-for="region-status" aria-hidden="true"></span></div>
       <section id="region-menu" class="region-menu" aria-label="Change region" hidden>
         <form id="region-search-form" role="search"><label for="region-search">Find a region anywhere in the world</label><div class="region-search-row"><input id="region-search" type="search" placeholder="Region, state, or country" autocomplete="off" maxlength="120" aria-describedby="region-search-hint" /><button class="primary-button" type="submit">Search</button></div></form>
         <p id="region-search-hint" class="muted">Search countries, states, provinces, and NeedMap regions worldwide.</p>
@@ -40,7 +41,7 @@
       </section>
     </div>
     <nav class="page-navigation" aria-label="Main navigation"><a id="map-tab" href="#explore-view" aria-current="page">Map</a><a id="analysis-tab" href="#analysis">Analysis</a><a id="plans-tab" href="#plans">Plans</a></nav>
-    <div class="status-wrap"><span id="live-dot" class="live-dot" aria-hidden="true"></span><span id="status" role="status">Connecting…</span></div>
+    <div class="status-wrap"><span id="live-dot" class="live-dot" aria-hidden="true"></span><span class="connection-status-stack"><span id="status" role="status">Connecting…</span><span class="context-loading-slot" data-loading-for="status" aria-hidden="true"></span></span></div>
   </div>
   <main class="workspace-content">
     <section id="explore-view" class="site-view explore-view" aria-label="Map and community reports" tabindex="-1">
@@ -70,7 +71,7 @@
     <section id="analysis-view" class="site-view analysis-view" aria-labelledby="analysis-title" tabindex="-1" hidden>
       <div class="analysis-shell">
         <div class="analysis-heading"><div><p class="eyebrow">Understand the need</p><h2 id="analysis-title">Regional analysis</h2><p id="analysis-scope" class="analysis-subtitle"></p></div><label class="analysis-filter" for="analysis-category">Infrastructure problem<span class="analysis-select"><span id="analysis-category-icon" class="service-icon" aria-hidden="true"></span><select id="analysis-category"><option value="all">All Problems</option></select><svg class="analysis-select-chevron" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m5 7.5 5 5 5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span></label></div>
-        <p id="analysis-status" class="analysis-status" role="status" aria-live="polite"></p>
+        <div class="analysis-status-stack"><p id="analysis-status" class="analysis-status" role="status" aria-live="polite"></p><span class="context-loading-slot" data-loading-for="analysis-status" aria-hidden="true"></span></div>
         <section class="analysis-map-section" aria-labelledby="analysis-map-title">
           <div class="analysis-map-heading"><h3 id="analysis-map-title">Reports and proposed services</h3><p id="analysis-map-note" class="analysis-note" role="status">Showing the selected region and problem.</p></div>
           <div id="analysis-overview-map" aria-label="Map of reports and proposed services in the selected region"></div>
@@ -87,7 +88,7 @@
         <section class="analysis-priorities" aria-labelledby="priority-title">
           <div class="analysis-section-heading"><h3 id="priority-title">Priority rankings</h3><span>Click a problem to inspect its evidence</span></div>
           <p class="analysis-note">Priority considers severity, people affected, service access, report frequency, and reported duration. The order is provisional where information is missing.</p>
-          <p id="analysis-ai-status" class="analysis-note" role="status"></p>
+          <div class="analysis-ai-status-stack"><p id="analysis-ai-status" class="analysis-note" role="status"></p><span class="context-loading-slot" data-loading-for="analysis-ai-status" aria-hidden="true"></span></div>
           <div id="analysis-rankings" class="analysis-rankings"></div>
         </section>
       </div>
@@ -116,7 +117,7 @@
           </div>
         </div>
         <p id="plans-scope" class="plans-scope"></p>
-        <p id="plans-status" class="plans-status" role="status" aria-live="polite"></p>
+        <div class="plans-status-stack"><p id="plans-status" class="plans-status" role="status" aria-live="polite"></p><span class="context-loading-slot" data-loading-for="plans-status" aria-hidden="true"></span></div>
         <div id="plans-results" class="plans-results"></div>
       </div>
     </section>

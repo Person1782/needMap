@@ -19,25 +19,28 @@ class Element {
   addEventListener(name, callback) { (this.listeners[name] ||= []).push(callback); }
 }
 
-function runI18n({ saved = null, country = null, packCode = null, packMessages = english, deferCountry = false, navigator = { languages: ["en-US"], onLine: true } } = {}) {
-  const requests = [], savedValues = [], events = [];
+function runI18n({ saved = null, country = null, packCode = null, packMessages = english, packStatus = 200, deferCountry = false, deferPacks = false, brokenXhrConstructor = false, navigator = { languages: ["en-US"], onLine: true } } = {}) {
+  const requests = [], savedValues = [], events = [], loadingEvents = [], loadingAreas = [], loadingLabels = [], activeLoading = new Set();
+  const pendingPacks = [];
   let pendingCountry = null;
   class XHR {
+    constructor() { if (brokenXhrConstructor) throw new Error("XHR unavailable"); }
     open(_method, url) { this.url = url; }
     setRequestHeader() {}
-    abort() {}
+    abort() { this.aborted = true; }
     send() {
       requests.push(this.url);
       if (deferCountry && this.url.includes("geojs")) { pendingCountry = this; return; }
+      if (deferPacks && !this.url.includes("geojs")) { pendingPacks.push(this); return; }
       this.respond();
     }
     respond() {
-      this.status = 200;
+      this.status = this.url.includes("geojs") ? 200 : packStatus;
       this.readyState = 4;
       this.responseText = this.url.includes("geojs")
         ? JSON.stringify({ country_code: country })
         : JSON.stringify({ locale: packCode || this.url.match(/locales\/(.+)\.json/)[1], messages: packMessages });
-      this.onreadystatechange();
+      if (typeof this.onreadystatechange === "function") this.onreadystatechange();
     }
   }
   const rootEvents = {};
@@ -49,6 +52,9 @@ function runI18n({ saved = null, country = null, packCode = null, packMessages =
   };
   const context = vm.createContext({
     console, JSON, encodeURIComponent, navigator, document, XMLHttpRequest: XHR,
+    NeedMapLoading: {
+      begin(key, labelKey, fallback, area) { activeLoading.add(key); loadingEvents.push(["begin", key]); loadingAreas.push([key, area]); loadingLabels.push([key, labelKey, fallback]); return () => { activeLoading.delete(key); loadingEvents.push(["end", key]); }; }
+    },
     localStorage: { getItem(key) { return key === "needmap-language-v1" ? saved : null; }, setItem(key, value) { savedValues.push([key, value]); } },
     setTimeout() { return 1; }, clearTimeout() {},
     addEventListener(name, callback) { (rootEvents[name] ||= []).push(callback); },
@@ -57,13 +63,15 @@ function runI18n({ saved = null, country = null, packCode = null, packMessages =
   });
   context.window = context;
   vm.runInContext(source, context);
-  return { api: context.NeedMapI18n, requests, savedValues, events, documentElement, document,
-    resolveCountry() { pendingCountry.respond(); } };
+  return { api: context.NeedMapI18n, requests, savedValues, events, documentElement, document, loadingEvents, loadingAreas, loadingLabels, activeLoading,
+    packRequests: pendingPacks, resolveCountry() { pendingCountry.respond(); }, resolvePack(index) { pendingPacks[index].respond(); } };
 }
 
 test("language registry and country defaults match the dashboard policy", () => {
   const { api } = runI18n({ saved: "en" });
-  assert.deepEqual(Array.from(api.getLanguages(), ({ code }) => code), codes);
+  const languages = Array.from(api.getLanguages());
+  assert.deepEqual(languages.map(({ code }) => code), codes);
+  assert.ok(languages.every(({ name, englishName }) => name && englishName));
   assert.equal(api.storageKey, "needmap-language-v1");
   assert.equal(api.countryLanguage("CH", ["fr-CH"]), "fr");
   assert.equal(api.countryLanguage("CH", ["it-CH"]), "de");
@@ -77,6 +85,8 @@ test("language registry and country defaults match the dashboard policy", () => 
   assert.equal(api.countryLanguage("MR", []), "ar");
   assert.equal(api.countryLanguage("TN", []), "ar");
   for (const code of countryCodes) assert.ok(codes.includes(api.countryLanguage(code, [])), code);
+  assert.match(source, /getElementById\("language-button-label"\)/);
+  assert.doesNotMatch(source, /picker\.button\.textContent\s*=/);
 });
 
 test("country language selection stays aligned with the map page", () => {
@@ -118,13 +128,76 @@ test("manual selection is saved and switching back to English restores English m
 test("English is ready immediately and a late IP response cannot override a manual choice", () => {
   const page = runI18n({ country: "TW", deferCountry: true });
   assert.equal(page.api.getLanguage(), "en");
+  assert.equal(page.activeLoading.has("language-region"), true);
   let completed = false;
   page.api.setLanguage("fr", (error) => { assert.equal(error, null); completed = true; });
   assert.equal(completed, true);
+  assert.equal(page.activeLoading.size, 0);
   assert.equal(page.api.getLanguage(), "fr");
   page.resolveCountry();
   assert.equal(page.api.getLanguage(), "fr");
   assert.deepEqual(page.requests, ["https://get.geojs.io/v1/ip/country.json", "./locales/fr.json"]);
+});
+
+test("language-pack success and error both release their loading state", () => {
+  const success = runI18n({ saved: "fr", packCode: "fr" });
+  assert.deepEqual(success.loadingEvents, [["begin", "language-pack-1"], ["end", "language-pack-1"]]);
+  assert.deepEqual(success.loadingAreas, [["language-pack-1", "language"]]);
+  assert.equal(success.activeLoading.size, 0);
+  const failed = runI18n({ saved: "fr", packCode: "fr", packStatus: 503 });
+  assert.deepEqual(failed.loadingEvents, [["begin", "language-pack-1"], ["end", "language-pack-1"]]);
+  assert.equal(failed.activeLoading.size, 0);
+  assert.equal(failed.api.getLanguage(), "en");
+});
+
+test("automatic region detection and locale packs both load at the language control", () => {
+  const traditionalChinese = JSON.parse(readFileSync(new URL("locales/zh-Hant.json", import.meta.url), "utf8")).messages;
+  const page = runI18n({ country: "TW", packCode: "zh-Hant", packMessages: traditionalChinese });
+  assert.deepEqual(page.loadingAreas, [
+    ["language-region", "language"],
+    ["language-pack-1", "language"]
+  ]);
+  assert.deepEqual(page.loadingLabels, [
+    ["language-region", "languageDetecting", "Detecting your language\u2026"],
+    ["language-pack-1", "languageLoading", "Loading selected language\u2026"]
+  ]);
+  assert.equal(page.api.t("languageDetecting"), "正在偵測您的語言…");
+  assert.equal(page.api.t("languageLoading"), "正在載入所選語言…");
+});
+
+test("a locale XHR construction failure releases its loading state", () => {
+  const page = runI18n({ saved: "fr", brokenXhrConstructor: true });
+  assert.deepEqual(page.loadingEvents, [["begin", "language-pack-1"], ["end", "language-pack-1"]]);
+  assert.equal(page.activeLoading.size, 0);
+  assert.equal(page.api.getLanguage(), "en");
+  assert.deepEqual(page.requests, []);
+});
+
+test("a replacement language aborts and releases the obsolete pack without affecting the newer load", () => {
+  const page = runI18n({ saved: "fr", deferPacks: true });
+  assert.equal(page.activeLoading.has("language-pack-1"), true);
+  assert.equal(page.packRequests.length, 1);
+
+  let completed = false;
+  page.api.setLanguage("ar", (error) => { assert.equal(error, null); completed = true; });
+  assert.equal(page.packRequests[0].aborted, true);
+  assert.equal(page.activeLoading.has("language-pack-1"), false);
+  assert.equal(page.activeLoading.has("language-pack-2"), true);
+  assert.equal(page.packRequests.length, 2);
+
+  page.resolvePack(0);
+  assert.equal(page.api.getLanguage(), "en");
+  assert.equal(page.activeLoading.has("language-pack-2"), true);
+  assert.equal(completed, false);
+
+  page.resolvePack(1);
+  assert.equal(page.api.getLanguage(), "ar");
+  assert.equal(page.activeLoading.size, 0);
+  assert.equal(completed, true);
+  assert.deepEqual(page.loadingEvents, [
+    ["begin", "language-pack-1"], ["end", "language-pack-1"],
+    ["begin", "language-pack-2"], ["end", "language-pack-2"]
+  ]);
 });
 
 test("every shipped pack is complete, preserves placeholders and contains real translations", () => {
@@ -141,6 +214,20 @@ test("every shipped pack is complete, preserves placeholders and contains real t
       if (pack.messages[index] === english[index]) identical++;
     }
     assert.ok(identical <= 8, code + " left " + identical + " English strings unchanged");
+  }
+});
+
+test("localized metadata does not reveal automatic connection handling", () => {
+  const slowConnectionTerms = {
+    ar: /البطيئة/, bn: /ধীর/, de: /langsam/i, es: /lent[ao]s?/i, fr: /lent(?:e|es)?/i,
+    hi: /धीमे/, id: /lambat/i, ja: /低速/, ko: /느린/, pt: /lent[oa]s?/i,
+    ru: /медлен/i, sw: /polepole/i, tr: /yavaş/i, ur: /سست/, vi: /chậm/i,
+    "zh-Hans": /慢速/, "zh-Hant": /慢速/
+  };
+  for (const code of codes.slice(1)) {
+    const pack = JSON.parse(readFileSync(new URL("locales/" + code + ".json", import.meta.url), "utf8"));
+    const description = pack.messages[keys.indexOf("metaDescription")];
+    assert.doesNotMatch(description, slowConnectionTerms[code], code + " meta description");
   }
 });
 

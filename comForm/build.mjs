@@ -2,7 +2,7 @@ import { readFile, writeFile, mkdir, rm, copyFile } from "node:fs/promises";
 import { gzipSync } from "node:zlib";
 import { minify } from "terser";
 import { parse } from "acorn";
-const scripts = ["i18n.js", "firebase-config.js", "form-model.js", "firebase-submit.js", "place-search.js", "adaptive-mode.js", "app.js"];
+const scripts = ["loading-bar.js", "i18n.js", "firebase-config.js", "form-model.js", "firebase-submit.js", "place-search.js", "adaptive-mode.js", "app.js"];
 const source = (await Promise.all(scripts.map((file) => readFile(new URL(file, import.meta.url), "utf8")))).join("\n");
 parse(source, { ecmaVersion: 5 });
 const localeCodes = ["es", "fr", "pt", "ar", "zh-Hans", "zh-Hant", "hi", "bn", "ur", "ru", "de", "id", "ja", "ko", "vi", "tr", "sw"];

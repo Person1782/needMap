@@ -7,9 +7,10 @@ const i18nSource = read('i18n.js');
 const i18nKeys = Function('return [' + i18nSource.match(/var KEYS = \[([\s\S]*?)\n  \];/)[1] + ']')();
 const i18nEnglish = Function('return [' + i18nSource.match(/var ENGLISH = \[([\s\S]*?)\n  \];/)[1] + ']')();
 const english = Object.fromEntries(i18nKeys.map((key, index) => [key, i18nEnglish[index]]));
-function mount({ write = (_id, _report, done) => done(null), online = true, saved = null, storageFailure = false, geolocation = true, search, hints = {}, preference = null, performance, mapUrl = '/map/' } = {}) {
-  let focused, locationSuccess, locationFailure, timerId = 0, draft = saved, writes = 0, savedPreference = preference;
+function mount({ write = (_id, _report, done) => done(null), online = true, saved = null, storageFailure = false, geolocation = true, search, searchFactory, hints = {}, legacyPreference = null, performance, mapUrl = '/map/' } = {}) {
+  let focused, locationSuccess, locationFailure, timerId = 0, draft = saved, writes = 0;
   const navigations = [];
+  const storageReads = [];
   const timers = new Map();
   class Element {
     value = ''; textContent = ''; disabled = false; hidden = false; attributes = {}; children = []; listeners = {};
@@ -37,15 +38,16 @@ function mount({ write = (_id, _report, done) => done(null), online = true, save
   const body = new Element('body');
   const ctx = context({ document: { body, getElementById: id => elements[id], createElement: () => new Element() }, navigator, performance, XMLHttpRequest: function () {},
     location: { hostname: '127.0.0.1', host: '127.0.0.1:5173', port: '5173', protocol: 'http:', assign(url) { navigations.push(url); } },
-    localStorage: { getItem(key) { if (storageFailure) throw new Error('blocked'); return key === 'needmap-connection-mode-v1' ? savedPreference : draft; }, setItem(key, value) { if (key === 'needmap-connection-mode-v1') savedPreference = value; else draft = value; }, removeItem() { draft = null; } },
+    localStorage: { getItem(key) { storageReads.push(key); if (storageFailure) throw new Error('blocked'); return key === 'needmap-connection-mode-v1' ? legacyPreference : draft; }, setItem(key, value) { if (key !== 'needmap-connection-mode-v1') draft = value; }, removeItem(key) { if (key !== 'needmap-connection-mode-v1') draft = null; } },
     addEventListener: rootEvents.addEventListener.bind(rootEvents), setTimeout: (callback, delay) => { timers.set(++timerId, { callback, delay }); return timerId; }, clearTimeout: id => timers.delete(id) });
   let language = 'en', overrides = {};
   ctx.NeedMapI18n = { t(key, parameters) { let value = overrides[key] || english[key] || key; return value.replace(/\{(\w+)\}/g, (_match, name) => parameters?.[name] ?? ''); }, getLanguage() { return language; } };
   ctx.NeedMapNetwork.createClient = () => ({ writeReport: (id, report, done) => { writes++; write(id, plain(report), done); } });
   if (search) ctx.NeedMapNetwork.request = search;
+  if (searchFactory) ctx.NeedMapPlaceSearch = searchFactory;
   vm.runInContext(read('app.js'), ctx);
-  return { elements, form, navigator, body, connection, navigations, window: rootEvents,
-    get focused() { return focused; }, get writes() { return writes; }, get saved() { return draft; }, get preference() { return savedPreference; },
+  return { elements, form, navigator, body, connection, navigations, window: rootEvents, loading: ctx.NeedMapLoading,
+    storageReads, get focused() { return focused; }, get writes() { return writes; }, get saved() { return draft; },
     locate: () => locationSuccess({ coords: valid.location }), rejectLocation: (code = 1) => locationFailure({ code }),
     changeLanguage(code, messages) { language = code; overrides = messages; rootEvents.dispatch('needmap-languagechange'); },
     slow() { for (const timer of timers.values()) if (timer.delay === 8000 || timer.delay === 15000) timer.callback(); },
@@ -54,7 +56,90 @@ function mount({ write = (_id, _report, done) => done(null), online = true, save
 
 test('no manual coordinate fields or remote scripts; submit requires successful initialization', () => {
   assert.doesNotMatch(html, /id="(?:latitude|longitude)"|type="module"|https:[^"']+\.js/);
+  assert.doesNotMatch(html, /id="(?:connection-mode|mode-status|mode-preference-note|mode-label)"/);
+  assert.doesNotMatch(html, /class="demo-banner"|data-i18n="demoBanner"|Connection mode|Slow connection mode/);
+  assert.match(html, /id="language-button"[^>]+aria-controls="language-panel"[^>]*>[\s\S]*?<span id="language-button-label">English<\/span>[\s\S]*?class="language-chevron"/);
+  assert.match(html, /<label for="language-search" data-i18n="languageSearch">Search languages<\/label>/);
   assert.match(html, /id="submit-button"[^>]+disabled/);
+  assert.match(html, /role="progressbar"(?![^>]*aria-valuenow)/);
+  assert.match(html, /<noscript><style>#loading-status \{ display: none !important; \}<\/style><\/noscript>/);
+  assert.doesNotMatch(html, /global-loading|position:\s*fixed/);
+  assert.match(html, /id="form-loading-label"[^>]*role="status"[^>]*aria-live="polite"/);
+  assert.match(html, /id="language-loading-label"[^>]*role="status"[^>]*aria-live="polite"/);
+  assert.match(html, /id="location-loading"[^>]*role="progressbar"[^>]*aria-labelledby="location-status"/);
+  assert.match(html, /id="search-loading"[^>]*role="progressbar"[^>]*aria-labelledby="place-search-status"/);
+  assert.match(html, /id="submission-loading"[^>]*role="progressbar"[^>]*aria-labelledby="form-status"/);
+  assert.doesNotMatch(html, /role="progressbar"[^>]*(?:aria-valuetext|aria-valuenow)/);
+  assert.ok(html.indexOf('src=".\/loading-bar.js"') < html.indexOf('src=".\/i18n.js"'));
+});
+
+test('loading state covers real asynchronous location, search, and submission work', () => {
+  let searchDone, submitDone;
+  const page = mount({
+    search: (_method, _url, _body, _token, done) => { searchDone = done; },
+    write: (_id, _report, done) => { submitDone = done; }
+  });
+  assert.equal(page.loading.isActive(), false);
+  page.elements['location-button'].dispatch('click');
+  assert.equal(page.loading.isActive('location'), true);
+  assert.equal(page.elements['location-loading'].hidden, false);
+  assert.equal(page.elements['location-loading-area'].attributes['aria-busy'], 'true');
+  assert.equal(page.elements['location-status'].attributes['aria-busy'], undefined);
+  assert.equal(page.elements['search-loading'].hidden, true);
+  page.elements['clear-location'].dispatch('click');
+  assert.equal(page.loading.isActive('location'), false);
+  assert.equal(page.elements['location-loading'].hidden, true);
+  page.elements['place-query'].value = 'Example town';
+  page.elements['place-search-button'].dispatch('click');
+  assert.equal(page.loading.isActive('place-search'), true);
+  assert.equal(page.elements['search-loading'].hidden, false);
+  assert.equal(page.elements['search-loading-area'].attributes['aria-busy'], 'true');
+  assert.equal(page.elements['place-search-status'].attributes['aria-busy'], undefined);
+  searchDone(new Error('offline'));
+  assert.equal(page.loading.isActive('place-search'), false);
+  page.fill();
+  page.form.dispatch('submit');
+  assert.equal(page.loading.isActive('submission'), true);
+  assert.equal(page.elements['submission-loading'].hidden, false);
+  assert.equal(page.elements['submission-loading-area'].attributes['aria-busy'], 'true');
+  assert.equal(page.elements['form-status'].attributes['aria-busy'], undefined);
+  submitDone(new Error('unconfirmed'));
+  assert.equal(page.loading.isActive(), false);
+  assert.equal(page.elements['submission-loading'].hidden, true);
+  assert.equal(page.elements['submission-loading-area'].attributes['aria-busy'], undefined);
+});
+
+test('validation and offline checks never start the loading bar, and cancellation ignores stale results', () => {
+  let searchDone;
+  const invalid = mount();
+  invalid.form.dispatch('submit');
+  assert.equal(invalid.loading.isActive(), false);
+  const offline = mount({ online: false });
+  offline.fill();
+  offline.form.dispatch('submit');
+  assert.equal(offline.loading.isActive(), false);
+  const pending = mount({ search: (_method, _url, _body, _token, done) => { searchDone = done; } });
+  pending.elements['place-query'].value = 'Example town';
+  pending.elements['place-search-button'].dispatch('click');
+  pending.form.reset();
+  assert.equal(pending.loading.isActive(), false);
+  searchDone(null, [{ lat: '40', lon: '-70', display_name: 'Example town' }]);
+  assert.equal(pending.loading.isActive(), false);
+});
+
+test('a late cancelled search cannot hide the loading bar for its replacement', () => {
+  const callbacks = [];
+  const page = mount({ searchFactory: () => (_query, callback) => { callbacks.push(callback); } });
+  page.elements['place-query'].value = 'First town';
+  page.elements['place-search-button'].dispatch('click');
+  page.elements['place-query'].dispatch('input');
+  page.elements['place-query'].value = 'Second town';
+  page.elements['place-search-button'].dispatch('click');
+  assert.equal(page.loading.isActive('place-search'), true);
+  callbacks[0](null, []);
+  assert.equal(page.loading.isActive('place-search'), true);
+  callbacks[1](null, []);
+  assert.equal(page.loading.isActive('place-search'), false);
 });
 test('invalid submissions focus a linked error summary without writes', () => {
   const page = mount(); page.form.dispatch('submit');
@@ -142,24 +227,18 @@ test('automatic slow mode keeps every field usable and remains after confirmed s
   }
 });
 
-test('manual slow choice persists independently of drafts and survives resets and reloads', () => {
-  const page = mount(); page.fill();
-  const draft = page.saved;
-  page.elements['connection-mode'].value = 'slow'; page.elements['connection-mode'].dispatch('change');
-  assert.equal(page.preference, 'slow'); assert.equal(page.saved, draft);
-  page.form.dispatch('submit'); assert.deepEqual(page.navigations, []);
-  const reloaded = mount({ preference: page.preference });
-  assert.equal(reloaded.elements['connection-mode'].value, 'slow');
-  reloaded.form.reset(); assert.equal(reloaded.preference, 'slow');
-  reloaded.elements['connection-mode'].value = 'auto'; reloaded.elements['connection-mode'].dispatch('change');
-  reloaded.fill(); reloaded.form.dispatch('submit'); assert.equal(reloaded.navigations.length, 1);
+test('legacy saved manual preference is ignored so current conditions decide automatically', () => {
+  const page = mount({ legacyPreference: 'slow', hints: { connection: { effectiveType: '4g', downlink: 20, rtt: 50 }, deviceMemory: 8 } });
+  assert.equal(page.body.getAttribute('data-connection-mode'), 'full');
+  assert.equal(page.storageReads.includes('needmap-connection-mode-v1'), false);
+  page.fill(); page.form.dispatch('submit');
+  assert.deepEqual(page.navigations, ['http://127.0.0.1:5174/?lang=en']);
 });
 
-test('degrading conditions, slow confirmation and manual switches during a send prevent navigation', () => {
+test('degrading conditions and slow confirmation during a send prevent navigation', () => {
   for (const degrade of [
     page => { page.navigator.connection.effectiveType = '2g'; page.connection.dispatch('change'); page.navigator.connection.effectiveType = '4g'; page.connection.dispatch('change'); },
-    page => page.slow(),
-    page => { page.elements['connection-mode'].value = 'slow'; page.elements['connection-mode'].dispatch('change'); }
+    page => page.slow()
   ]) {
     let finish;
     const page = mount({ hints: { connection: { effectiveType: '4g' } }, write: (_id, _report, done) => { finish = done; } });
@@ -183,13 +262,6 @@ test('failed or offline submissions never navigate or expose a submitted-report 
   }
 });
 
-test('unavailable preference storage still supports manual slow mode for the current visit', () => {
-  const page = mount({ storageFailure: true });
-  page.elements['connection-mode'].value = 'slow'; page.elements['connection-mode'].dispatch('change');
-  page.fill(); page.form.dispatch('submit');
-  assert.deepEqual(page.navigations, []); assert.match(page.elements['mode-preference-note'].textContent, /cannot save/);
-});
-
 test('configured production map destination is used by both automatic and explicit navigation', () => {
   const page = mount({ mapUrl: 'https://map.needmap.example/' }); page.fill(); page.form.dispatch('submit');
   assert.deepEqual(page.navigations, ['https://map.needmap.example/?lang=en']);
@@ -203,11 +275,9 @@ test('a language change rerenders dynamic errors and status without changing com
   page.form.dispatch('submit');
   page.changeLanguage('es', {
     errorCategory: 'Elige una categoría de servicio.', errorSeverity: 'Elige un nivel de urgencia.',
-    errorLocation: 'Añade una ubicación aproximada.', modeFast: 'El mapa se abrirá después de confirmar.',
-    modeLabelFull: 'Formulario comunitario completo', submitReport: 'Enviar informe', useLocation: 'Usar mi ubicación', findPlace: 'Buscar lugar'
+    errorLocation: 'Añade una ubicación aproximada.', submitReport: 'Enviar informe', useLocation: 'Usar mi ubicación', findPlace: 'Buscar lugar'
   });
   assert.equal(page.elements['category-error'].textContent, 'Elige una categoría de servicio.');
-  assert.equal(page.elements['mode-status'].textContent, 'El mapa se abrirá después de confirmar.');
   assert.equal(page.elements.summary.value, 'Resident text stays exactly as entered.');
   assert.equal(page.elements['map-link'].href, 'http://127.0.0.1:5174/?lang=es');
 });

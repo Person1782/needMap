@@ -10,6 +10,13 @@ const local = { id: "KE-30", name: "Nairobi", country: "Kenya", countryCode: "KE
 const report = (id, category, summary = "Service unavailable") => ({ id, category, summary, severity: "high", submittedAt: { seconds: 1700000000 } });
 const source = { id: "water", publisher: "WHO/UNICEF", title: "Basic water access", url: "https://data.worldbank.org/indicator/SH.H2O.BASW.ZS", usedFor: "Water access" };
 const evidence = { status: "ready", indicators: [{ id: "gap", title: "People without basic water", description: "Share of people without basic drinking water service.", category: "water", kind: "access_gap_percent", value: 20, unit: "%", year: 2024, source, sources: [source], eligibleForScore: true, scope: { regionId: "KE", countryCode: "KE", name: "Kenya" } }], sources: [source] };
+const populationSource = { id: "population", publisher: "UN Population Division via World Bank", title: "Population", url: "https://data.worldbank.org/indicator/SP.POP.TOTL", usedFor: "Same-year population input" };
+const affectedEvidence = (extra = {}) => ({ status: "ready", indicators: [{
+  id: "affected", title: "Estimated people without basic drinking water service", description: "Published national estimate; it does not count people affected by reports.",
+  category: "water", kind: "affected_population", value: 250, unit: "people", year: 2024,
+  source, sources: [source, populationSource], eligibleForScore: true,
+  scope: { regionId: "KE", countryCode: "KE", name: "Kenya" }, ...extra,
+}], sources: [source, populationSource] });
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 function fixture(options = {}) {
   const { document, window } = parseHTML(html);
@@ -206,16 +213,94 @@ test("destroying the page cancels in-flight evidence and suppresses late renderi
   assert.equal(page.text("#analysis-status"), before);
 });
 
-test("AI provider failure is explicit and does not replace public statistics or reports", async () => {
+test("AI provider failure falls back to a cited local evidence review without replacing statistics or reports", async () => {
   const page = fixture({ reviewComplaints: async () => { throw new Error("Provider unavailable"); } });
   try {
     page.workspace.update({ region: country, reports: [report("a", "water")], reportsReady: true }); page.workspace.setVisible(true);
     await new Promise((resolve) => setTimeout(resolve, 650));
-    assert.match(page.text("#analysis-ai-status"), /AI review is unavailable/);
+    assert.match(page.text("#analysis-ai-status"), /completed the review from the cited evidence using its built-in fallback/);
+    assert.doesNotMatch(page.text("#analysis-ai-status"), /unavailable/i);
     assert.match(page.text("#analysis-rankings"), /People without basic water: 20 %/);
     assert.match(page.text("#analysis-overview"), /Total reports1/);
     assert.match(page.text("#analysis-rankings"), /Service unavailable/);
+    assert.match(page.text(".priority-ai-line"), /AI review: NeedMap checked the cited severity, affected-population, and report inputs/);
+    assert.match(page.text(".priority-ai-line"), /no external AI output was used/);
   } finally { page.workspace.destroy(); }
+});
+
+test("each rank gives one concise sourced reason and one honest AI-review sentence", async () => {
+  const unsafeTextSource = { ...source, publisher: "<img src=x onerror=alert(1)>", usedFor: "Affected-population input" };
+  const published = affectedEvidence({ title: "<img src=x> Estimated people without water", source: unsafeTextSource, sources: [unsafeTextSource, populationSource] });
+  let suppliedPriorityContexts;
+  const page = fixture({
+    loadEvidence: async () => published,
+    reviewComplaints: async (_, __, options) => {
+      suppliedPriorityContexts = options.priorityContexts;
+      const water = suppliedPriorityContexts.find((context) => context.category === "water");
+      return { insights: [{ reportId: "water", quote: "Water has been unavailable", durationQuote: "for 3 months" }], reviewedCount: 1,
+        priorityReviews: [{ category: "water", decision: "severity_outweighs_population",
+          severitySourceIds: water.severity.sources.map((item) => item.id), populationSourceIds: water.affectedPopulation.sources.map((item) => item.id) }] };
+    },
+  });
+  try {
+    page.workspace.update({ region: country, reports: [report("water", "water", "Water has been unavailable for 3 months")], reportsReady: true });
+    page.workspace.setVisible(true);
+    assert.match(page.text(".priority-ai-line"), /AI review: Checking exact report excerpts and explicit durations; AI does not set the rank\./);
+    await new Promise((resolve) => setTimeout(resolve, 650));
+    const explanation = page.query('.priority-row[data-category="water"] .priority-reason');
+    assert.equal(explanation.querySelectorAll("p").length, 2, "one reason sentence plus one AI-review sentence");
+    assert.match(explanation.querySelector("h4").textContent, /AI review: Why it ranks here/);
+    assert.match(explanation.querySelector("p").textContent, /Rank #1: Safe water and sanitation are essential/);
+    assert.match(explanation.querySelector("p").textContent, /1 of 1 reports were high urgency/);
+    assert.match(explanation.querySelector("p").textContent, /<img src=x> Estimated people without water: 250 people in Kenya/);
+    assert.match(explanation.querySelector("p").textContent, /2024; published input, not a confirmed count from reports/);
+    assert.doesNotMatch(explanation.textContent, /\/\s*100|out of 100/i);
+    assert.equal(explanation.querySelector("img"), null, "provider text must render as text, not markup");
+    const links = [...explanation.querySelectorAll(".priority-source-link")];
+    assert.equal(links.length, 3);
+    assert.equal(links[0].textContent, "World Health Organization", "severity consequence has its own citation");
+    assert.match(links[0].getAttribute("href"), /who\.int\/news-room\/fact-sheets\/detail\/drinking-water/);
+    assert.equal(links[1].textContent, unsafeTextSource.publisher);
+    assert.equal(links[1].getAttribute("href"), unsafeTextSource.url);
+    assert.match(links[1].getAttribute("title"), /Used for: Affected-population input/);
+    const suppliedWater = suppliedPriorityContexts.find((context) => context.category === "water");
+    assert.equal(suppliedWater.severity.weight, 30);
+    assert.equal(suppliedWater.affectedPopulation.weight, 25);
+    assert.equal(suppliedWater.affectedPopulation.value, 250);
+    assert.equal(suppliedWater.affectedPopulation.year, 2024);
+    assert.match(page.text(".priority-ai-line"), /AI review: Checked 1 reports overall and verified 1 exact excerpts plus 1 explicit durations used in this rank; AI did not set the rank\./);
+  } finally { page.workspace.destroy(); }
+});
+
+test("ranking reasons distinguish pending, missing, zero-report and context-only evidence", async () => {
+  let resolveEvidence;
+  const pending = fixture({ loadEvidence: () => new Promise((resolve) => { resolveEvidence = resolve; }) });
+  try {
+    pending.workspace.update({ region: country, reports: [report("water", "water")], reportsReady: true }); pending.workspace.setVisible(true);
+    assert.match(pending.text(".priority-reason"), /population evidence is still loading/);
+    resolveEvidence({ status: "unavailable", indicators: [] }); await tick();
+    assert.match(pending.text(".priority-reason"), /no exact-region population input was available/);
+    assert.match(pending.text(".priority-reason"), /severity therefore carried more weight and the order is provisional/);
+  } finally { pending.workspace.destroy(); }
+
+  const reports = fixture({ loadEvidence: async () => affectedEvidence() });
+  try {
+    reports.workspace.update({ region: country, reports: [], reportsReady: false }); reports.workspace.setVisible(true); await tick();
+    assert.match(reports.text(".priority-reason"), /community reports are still loading/);
+    assert.match(reports.text(".priority-ai-line"), /Waiting for community reports/);
+    reports.workspace.update({ region: country, reports: [], reportsReady: true });
+    assert.match(reports.text(".priority-reason"), /no community report added an urgency signal/);
+    assert.match(reports.text(".priority-ai-line"), /No community reports were available to check/);
+  } finally { reports.workspace.destroy(); }
+
+  const context = fixture({ loadEvidence: async () => affectedEvidence({ eligibleForScore: false }) });
+  try {
+    context.workspace.update({ region: local, reports: [], reportsReady: true }); context.workspace.setVisible(true); await tick();
+    assert.match(context.text(".priority-reason"), /Not ranked:/);
+    const links = [...context.document.querySelectorAll(".priority-reason .priority-source-link")];
+    assert.equal(links.length, 1, "country context cannot become a local population input");
+    assert.equal(links[0].textContent, "World Health Organization", "only category severity context remains cited");
+  } finally { context.workspace.destroy(); }
 });
 
 test("a late AI result cannot appear in a newly selected region", async () => {
@@ -445,4 +530,73 @@ test("invalid locations and map failures preserve report text without substituti
     if (oldObserver === undefined) delete page.window.IntersectionObserver;
     else page.window.IntersectionObserver = oldObserver;
   }
+});
+
+test("cancelled Analysis population work releases only its own loading token", async () => {
+  const pending = [], active = new Set(); let sequence = 0;
+  const page = fixture({
+    loadEvidence: async () => ({ status: "unavailable", indicators: [] }),
+    loadPopulation: (context, { signal }) => new Promise((resolve) => pending.push({ context, signal, resolve })),
+    onLoading({ key }) { const token = `${key}:${++sequence}`; active.add(token); return () => active.delete(token); },
+  });
+  try {
+    page.workspace.update({ region: country, reports: [locatedReport("first")], reportsReady: true });
+    page.workspace.setVisible(true); await tick();
+    assert.equal(pending.length, 1);
+    assert.equal([...active].filter((token) => token.startsWith("analysis-population:")).length, 1);
+    page.workspace.update({ region: local, reports: [locatedReport("second")], reportsReady: true });
+    assert.equal(pending[0].signal.aborted, true);
+    assert.equal(pending.length, 2);
+    assert.equal([...active].filter((token) => token.startsWith("analysis-population:")).length, 1);
+    pending[0].resolve({ status: "ready", value: 1 }); await tick();
+    assert.equal([...active].filter((token) => token.startsWith("analysis-population:")).length, 1, "a stale completion cannot clear the replacement request");
+    pending[1].resolve({ status: "ready", value: 2, year: 2025, reportCount: 1 }); await tick();
+    assert.equal([...active].filter((token) => token.startsWith("analysis-population:")).length, 0);
+  } finally { page.workspace.destroy(); }
+  assert.equal(active.size, 0);
+});
+
+test("hiding Analysis cancels evidence and AI work, releases loaders, and reloads on revisit", async () => {
+  const evidenceRequests = [], aiRequests = [], active = new Set(); let sequence = 0;
+  const abortable = (requests, signal) => new Promise((resolve, reject) => {
+    const request = { signal, resolve, reject }; requests.push(request);
+    signal.addEventListener("abort", () => {
+      const error = new Error("cancelled"); error.name = "AbortError"; reject(error);
+    }, { once: true });
+  });
+  const page = fixture({
+    loadEvidence: (_, { signal }) => abortable(evidenceRequests, signal),
+    reviewComplaints: (_, __, { signal }) => abortable(aiRequests, signal),
+    onLoading({ key }) { const token = `${key}:${++sequence}`; active.add(token); return () => active.delete(token); },
+  });
+  try {
+    page.workspace.update({ region: country, reports: [report("a", "water")], reportsReady: true });
+    page.workspace.setVisible(true);
+    await tick();
+    assert.equal(evidenceRequests.length, 1); assert.equal(aiRequests.length, 0, "AI waits for cited public inputs");
+    assert.equal([...active].filter((token) => /analysis-(?:evidence|ai):/.test(token)).length, 1);
+
+    page.workspace.setVisible(false); await tick();
+    assert.equal(evidenceRequests[0].signal.aborted, true);
+    assert.equal([...active].filter((token) => /analysis-(?:evidence|ai):/.test(token)).length, 0);
+
+    page.workspace.setVisible(true);
+    await tick();
+    assert.equal(evidenceRequests.length, 2); assert.equal(aiRequests.length, 0);
+    evidenceRequests[1].resolve(evidence);
+    await new Promise((resolve) => setTimeout(resolve, 650));
+    assert.equal(aiRequests.length, 1);
+    assert.equal([...active].filter((token) => /analysis-(?:evidence|ai):/.test(token)).length, 1);
+    page.workspace.setVisible(false); await tick();
+    assert.equal(aiRequests[0].signal.aborted, true);
+    assert.equal([...active].filter((token) => /analysis-(?:evidence|ai):/.test(token)).length, 0);
+
+    page.workspace.setVisible(true);
+    await new Promise((resolve) => setTimeout(resolve, 650));
+    assert.equal(aiRequests.length, 2);
+    aiRequests[1].resolve({ insights: [], priorityReviews: [], reviewedCount: 1 });
+    await tick();
+    assert.equal([...active].filter((token) => /analysis-(?:evidence|ai):/.test(token)).length, 0);
+  } finally { page.workspace.destroy(); }
+  assert.equal(active.size, 0);
 });
