@@ -48,6 +48,7 @@ function formatCoordinates(position, number) {
 
 export function createPlansWorkspace({
   i18n,
+  dynamicTranslator,
   document = globalThis.document,
   createLocationMap,
   loadPopulation = loadReportPopulation,
@@ -74,6 +75,21 @@ export function createPlansWorkspace({
     if (className) element.className = className;
     return element;
   };
+  const bindDynamic = (target, text, sourceLanguage) => dynamicTranslator?.bind
+    ? dynamicTranslator.bind(target, text || "", { sourceLanguage })
+    : Object.assign(target, { textContent: text || "", dir: "auto" });
+  const dynamicValue = (text, sourceLanguage = "en") => {
+    const value = typeof text === "string" ? text : "";
+    void dynamicTranslator?.translate?.(value, { sourceLanguage });
+    return dynamicTranslator?.cached?.(value) || value;
+  };
+  function dynamicTemplate(target, template, marker, text, sourceLanguage = "en") {
+    target.replaceChildren();
+    const index = template.indexOf(marker);
+    if (index < 0) { target.textContent = template.replace(marker, text); return target; }
+    target.append(document.createTextNode(template.slice(0, index)), bindDynamic(node("span"), text, sourceLanguage), document.createTextNode(template.slice(index + marker.length)));
+    return target;
+  }
   const icon = (key) => {
     const element = node("span", undefined, "service-icon");
     element.setAttribute("aria-hidden", "true");
@@ -225,8 +241,7 @@ export function createPlansWorkspace({
       const item = node("li", undefined, "plan-report");
       const link = node("a", tr("plans.openReport", { number: index + 1 }, `Report ${index + 1} · open in Analysis`));
       link.href = citation.analysisHref;
-      const copy = node("p", citation.summary || tr("explore.noDescription", {}, "No description provided."));
-      copy.dir = "auto";
+      const copy = bindDynamic(node("p"), citation.summary || tr("explore.noDescription", {}, "No description provided."), citation.summary ? citation.language || citation.locale : i18n?.code);
       item.append(link, copy); list.append(item);
     });
     section.append(list);
@@ -244,7 +259,7 @@ export function createPlansWorkspace({
       const list = node("ul", undefined, "plan-source-list");
       for (const source of sources) {
         const item = node("li");
-        const link = node("a", source.title); link.href = source.url; link.target = "_blank"; link.rel = "noreferrer";
+        const link = bindDynamic(node("a"), source.title, "en"); link.href = source.url; link.target = "_blank"; link.rel = "noreferrer";
         const year = source.publishedYear || source.year;
         const rawUse = source.usedFor.join(" ");
         const searchable = `${source.id || ""} ${source.url} ${rawUse}`.toLowerCase();
@@ -256,7 +271,10 @@ export function createPlansWorkspace({
           if (/cost|pricing|unit.rate|unit-cost|usd|price guide/.test(searchable)) purposes.push(tr("plans.sourceCost", {}, "Cost benchmark used for the preliminary estimate."));
         }
         const use = purposes.length ? [...new Set(purposes)].join(" ") : rawUse;
-        item.append(link, node("span", `${source.publisher}${year ? ` · ${year}` : ""}`), node("span", tr("plans.usedFor", { purpose: use }, `Used for: ${use}`)));
+        const publisher = node("span");
+        publisher.append(bindDynamic(node("span"), source.publisher, "en"));
+        if (year) publisher.append(document.createTextNode(` · ${year}`));
+        item.append(link, publisher, node("span", tr("plans.usedFor", { purpose: use }, `Used for: ${use}`)));
         list.append(item);
       }
       box.append(list);
@@ -291,7 +309,7 @@ export function createPlansWorkspace({
   }
 
   function fallbackMap(container, geometry, candidate) {
-    return renderPlansLocationFallback(container, { geometry, candidate, i18n });
+    return renderPlansLocationFallback(container, { geometry, candidate, i18n, dynamicTranslator });
   }
 
   function mountCandidateMap({ mapContainer, area, candidate }) {
@@ -309,14 +327,15 @@ export function createPlansWorkspace({
     const header = node("header", undefined, "plan-card-header");
     const title = node("div", undefined, "plan-card-title");
     const heading = node("h3");
-    heading.append(icon(candidate.iconKey), document.createTextNode(candidate.locationLabel || candidate.region?.name || tr("map.approximateArea", {}, "Approximate map area")));
+    const locationName = candidate.locationLabel || candidate.region?.name || tr("map.approximateArea", {}, "Approximate map area");
+    heading.append(icon(candidate.iconKey), bindDynamic(node("span"), locationName, candidate.locationLabel || candidate.region?.name ? "en" : i18n?.code));
     title.append(heading, node("p", `${typeName(candidate.type)} · ${formatCoordinates(candidate.position, number)}`));
     header.append(node("span", String(candidate.rank), "plan-rank"), title);
     const grid = node("div", undefined, "plan-card-grid");
     const mapPanel = node("div", undefined, "plan-map-panel");
     const mapContainer = node("div", undefined, "plan-map");
     mapContainer.setAttribute("role", "region");
-    mapContainer.setAttribute("aria-label", tr("plans.mapLabel", { rank: candidate.rank, location: candidate.locationLabel }, `Recommended location ${candidate.rank} and its highlighted planning area`));
+    mapContainer.setAttribute("aria-label", tr("plans.mapLabel", { rank: candidate.rank, location: dynamicTranslator?.cached?.(candidate.locationLabel) || candidate.locationLabel }, `Recommended location ${candidate.rank} and its highlighted planning area`));
     const area = areaByCandidate.get(candidate.id) || makeArea(candidate);
     areaByCandidate.set(candidate.id, area);
     mapPanel.append(mapContainer);
@@ -330,7 +349,7 @@ export function createPlansWorkspace({
     const cost = candidate.estimates.cost;
     const timeline = candidate.estimates.timeline;
     const costGeography = usesTranslatedEvidenceCopy()
-      ? (cost?.specificity === "global" ? tr("plans.globalBenchmark", {}, "global") : region?.label || region?.name || tr("plans.globalBenchmark", {}, "global"))
+      ? (cost?.specificity === "global" ? tr("plans.globalBenchmark", {}, "global") : dynamicValue(region?.label || region?.name) || tr("plans.globalBenchmark", {}, "global"))
       : cost?.scope || (cost?.specificity === "global" ? tr("plans.globalBenchmark", {}, "global") : cost?.specificity);
     estimates.append(
       estimateBox(tr("plans.estimatedCost", {}, "Estimated cost"), costText(cost), cost?.status === "estimated"
@@ -351,7 +370,7 @@ export function createPlansWorkspace({
     if (model.status === "ready") return tr("plans.statusReady", { count: model.candidates.length }, `${model.candidates.length} report-supported recommended locations.`);
     if (model.reason === "reports-loading") return tr("plans.statusLoading", {}, "Loading community reports…");
     if (model.reason === "reports-unavailable") return tr("plans.statusUnavailable", {}, "Community reports are unavailable, so locations cannot be recommended.");
-    if (model.reason === "no-matching-reports") return tr("plans.noMatchingReports", { type: typeName(model.type), region: region?.name }, `No ${typeName(model.type)} reports have been submitted in ${region?.name}.`);
+    if (model.reason === "no-matching-reports") return tr("plans.noMatchingReports", { type: typeName(model.type), region: dynamicValue(region?.name) }, `No ${typeName(model.type)} reports have been submitted in ${dynamicValue(region?.name)}.`);
     if (model.reason === "insufficient-reports") return tr("plans.needTwoReports", {}, "At least two usable reports are needed for a report-supported location.");
     if (model.reason === "region-boundary-unavailable") return tr("plans.boundaryLoading", {}, "The region boundary is still loading. NeedMap will update the plan when it is ready.");
     return tr("plans.noCluster", {}, "The reports do not yet support a distinct recommended location.");
@@ -370,7 +389,8 @@ export function createPlansWorkspace({
       type,
       estimateEvidence: evidenceFor(type, region),
     });
-    byId("plans-scope").textContent = tr("plans.scope", { region: region?.name || "Worldwide", type: typeName(type) }, `${region?.name || "Worldwide"} · ${typeName(type)}`);
+    const regionMarker = "\u0000REGION\u0000";
+    dynamicTemplate(byId("plans-scope"), tr("plans.scope", { region: regionMarker, type: typeName(type) }, `${regionMarker} · ${typeName(type)}`), regionMarker, region?.name || "Worldwide");
     byId("plans-status").textContent = statusText();
     results.replaceChildren();
     if (!model.candidates.length) results.append(node("div", statusText(), "plans-empty"));

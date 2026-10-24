@@ -3,7 +3,7 @@ import { createPopulationAreaFallback } from "./population-area-fallback.js";
 const safeTaskUrl = (url) => /^https:\/\/api\.worldpop\.org\/v2\/tasks\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(url || "");
 
 /** Calculation details are built only when the user opens the population card. */
-export function createPopulationDetails({ document, createMap, i18n } = {}) {
+export function createPopulationDetails({ document, createMap, i18n, dynamicTranslator } = {}) {
   let dialog = null, map = null, previousFocus = null, destroyed = false;
   const tr = (key, values = {}, fallback = key) => i18n ? i18n.t(key, values) : Object.entries(values).reduce((text, [name, value]) => text.replaceAll(`{${name}}`, value), fallback);
   const number = (value, digits = 0) => i18n ? i18n.number(value, { maximumFractionDigits: digits }) : value.toLocaleString(undefined, { maximumFractionDigits: digits });
@@ -12,6 +12,12 @@ export function createPopulationDetails({ document, createMap, i18n } = {}) {
     const element = document.createElement(tag);
     if (text !== undefined) element.textContent = text;
     if (className) element.className = className;
+    return element;
+  };
+  const dynamicNode = (tag, text, className, sourceLanguage = "en") => {
+    const element = node(tag, undefined, className);
+    if (dynamicTranslator?.bind) dynamicTranslator.bind(element, text, { sourceLanguage });
+    else element.textContent = text;
     return element;
   };
   function close() {
@@ -55,7 +61,11 @@ export function createPopulationDetails({ document, createMap, i18n } = {}) {
     const title = node("h2", tr("population.title", {}, "How nearby residents are estimated")); title.id = "population-details-title";
     const dismiss = node("button", tr("population.close", {}, "Close"), "population-close"); dismiss.type = "button"; dismiss.addEventListener("click", close);
     header.append(title, dismiss);
-    const scope = node("p", `${region?.label || region?.name || tr("population.selectedRegion", {}, "Selected region")} · ${category}`, "population-scope");
+    const scope = node("p", undefined, "population-scope");
+    const originalRegion = region?.label || region?.name || tr("population.selectedRegion", {}, "Selected region");
+    const displayedRegion = region?.translatedLabel || region?.displayLabel || region?.translatedName || region?.displayName;
+    scope.append(displayedRegion ? node("span", displayedRegion) : dynamicNode("span", originalRegion),
+      document.createTextNode(" · "), node("span", category));
     const explanation = node("p", tr("population.explanation", {}, "This estimates residents living near the selected reports. It does not confirm how many people experience the problem."), "population-explanation"); explanation.id = "population-details-explanation";
     shell.append(header, scope, explanation);
     const ready = population?.status === "ready" && Number.isFinite(population.value) && population.value >= 0 &&
@@ -117,8 +127,9 @@ export function createPopulationDetails({ document, createMap, i18n } = {}) {
     } else {
       const knownMessages = new Set(["Some reports have no usable location, so their nearby population cannot be estimated.", "No reports in this selection.", "No report neighborhoods fall inside the selected region.", "Population data is unavailable for this selection. No estimate is shown."]);
       const fallback = tr("population.noEstimate", {}, "No verified population estimate is available for this selection, so there is no calculation to display.");
-      const message = population?.status === "loading" ? tr("population.loadingMessage", {}, "The population estimate is still being calculated. The details will appear here when the estimate is ready.") : population?.message && !knownMessages.has(population.message) ? population.message : fallback;
-      shell.append(node("p", message, "population-limits"));
+      const rawProviderMessage = population?.status !== "loading" && population?.message && !knownMessages.has(population.message);
+      const message = population?.status === "loading" ? tr("population.loadingMessage", {}, "The population estimate is still being calculated. The details will appear here when the estimate is ready.") : rawProviderMessage ? population.message : fallback;
+      shell.append(rawProviderMessage ? dynamicNode("p", message, "population-limits") : node("p", message, "population-limits"));
       dialog.append(shell); document.body.append(dialog); show();
     }
     dismiss.focus();

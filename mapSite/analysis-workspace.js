@@ -7,7 +7,7 @@ import { createPopulationDetails } from "./population-details.js";
 import { buildEvidenceReviewFallback } from "./analysis-ai.js";
 
 /** Shared region/reports come from the map; external work starts only on Analysis. */
-export function createAnalysisWorkspace({ document = globalThis.document, i18n, loadEvidence = loadAnalysisEvidence, loadPopulation = loadReportPopulation, reviewComplaints, firebaseApp, createReportMap, createOverviewMap, createPopulationMap, onLoading } = {}) {
+export function createAnalysisWorkspace({ document = globalThis.document, i18n, dynamicTranslator, loadEvidence = loadAnalysisEvidence, loadPopulation = loadReportPopulation, reviewComplaints, firebaseApp, createReportMap, createOverviewMap, createPopulationMap, onLoading } = {}) {
   const byId = (id) => document.getElementById(id);
   const filter = byId("analysis-category");
   const tr = (key, values = {}, fallback = key) => i18n ? i18n.t(key, values) : Object.entries(values).reduce((text, [name, value]) => text.replaceAll(`{${name}}`, value), fallback);
@@ -25,6 +25,18 @@ export function createAnalysisWorkspace({ document = globalThis.document, i18n, 
     if (className) result.className = className;
     return result;
   };
+  const bindDynamic = (target, text, sourceLanguage) => dynamicTranslator?.bind
+    ? dynamicTranslator.bind(target, text || "", { sourceLanguage })
+    : Object.assign(target, { textContent: text || "", dir: "auto" });
+  function dynamicTemplate(target, template, marker, text, sourceLanguage = "en") {
+    target.replaceChildren();
+    const index = template.indexOf(marker);
+    if (index < 0) { target.textContent = template.replace(marker, text); return target; }
+    target.append(document.createTextNode(template.slice(0, index)));
+    target.append(bindDynamic(node("span"), text, sourceLanguage));
+    target.append(document.createTextNode(template.slice(index + marker.length)));
+    return target;
+  }
   const icon = (category) => { const item = node("span", undefined, "service-icon"); item.setAttribute("aria-hidden", "true"); item.innerHTML = serviceIconSvg(category); return item; };
   const evidenceKey = (fact) => fact?.category === "water" ? fact.kind === "affected_population" ? "waterAffected" : fact.kind === "access_gap_percent" ? "waterGap" : "water" : fact?.category === "healthcare" ? "health"
     : fact?.category === "broadband" ? fact.kind === "access_gap_percent" ? "internetGap" : "internet" : fact?.category === "food" ? fact.kind === "affected_population" ? "foodAffected" : "food"
@@ -49,10 +61,18 @@ export function createAnalysisWorkspace({ document = globalThis.document, i18n, 
     target.append(document.createTextNode(before));
     sources.forEach((source, index) => {
       if (index) target.append(document.createTextNode(separator));
-      const link = node("a", source.publisher, "priority-source-link");
+      const link = bindDynamic(node("a", undefined, "priority-source-link"), source.publisher, "en");
       link.href = source.url; link.target = "_blank"; link.rel = "noopener noreferrer";
       const use = source.usedFor || source.uses?.[0];
-      if (use) link.title = tr("analysis.sourceUsedFor", { use }, `Used for: ${use}`);
+      if (use) {
+        const language = i18n?.code;
+        link.title = tr("analysis.sourceUsedFor", { use: dynamicTranslator?.cached?.(use) || use }, `Used for: ${use}`);
+        void dynamicTranslator?.translate?.(use, { sourceLanguage: "en" }).then((translated) => {
+          if ((!i18n || i18n.code === language) && link.isConnected !== false) {
+            link.title = tr("analysis.sourceUsedFor", { use: translated }, `Used for: ${translated}`);
+          }
+        });
+      }
       target.append(link);
     });
     target.append(document.createTextNode(after));
@@ -114,7 +134,9 @@ export function createAnalysisWorkspace({ document = globalThis.document, i18n, 
           ? tr("analysis.rankReasonPopulationLoading", {}, "population evidence is still loading.")
           : tr("analysis.rankReasonPopulationUnavailable", {}, "no exact-region population input was available, so NeedMap did not guess; severity therefore carried more weight and the order is provisional.")));
       } else {
-        const place = affected.scope?.name || region.label || region.name;
+        const placeSource = affected.scope?.name || region.label || region.name;
+        void dynamicTranslator?.translate?.(placeSource, { sourceLanguage: "en" });
+        const place = dynamicTranslator?.cached?.(placeSource) || placeSource;
         explanation.append(document.createTextNode(`${tr("analysis.rankReasonPopulation", {
           title: factTitle(affected), population: number(affected.value), unit: unitName(affected.unit), place, year: affected.year,
         }, `severity weighs slightly more than ${factTitle(affected)}: ${number(affected.value)} ${unitName(affected.unit)} in ${place} (`)}`));
@@ -251,7 +273,7 @@ export function createAnalysisWorkspace({ document = globalThis.document, i18n, 
   }
   function openPopulationDetails() {
     if (!visible || destroyed) return;
-    populationDetails ||= createPopulationDetails({ document, createMap: createPopulationMap, i18n });
+    populationDetails ||= createPopulationDetails({ document, createMap: createPopulationMap, i18n, dynamicTranslator });
     populationDetails.open(populationContext());
   }
   function clearOverviewMap() {
@@ -388,7 +410,8 @@ export function createAnalysisWorkspace({ document = globalThis.document, i18n, 
       }
       chart.append(axis, list);
     }
-    note.append(document.createTextNode(tr("analysis.chartNote", { region: region.label || region.name }, `Reports submitted in ${region.label || region.name}. Open a problem below to read its reports.`)));
+    const regionMarker = "\u0000REGION\u0000";
+    dynamicTemplate(note, tr("analysis.chartNote", { region: regionMarker }, `Reports submitted in ${regionMarker}. Open a problem below to read its reports.`), regionMarker, region.label || region.name);
     if (model.overview.syntheticReports) note.append(document.createTextNode(tr("analysis.demoIncluded", { count: model.overview.syntheticReports }, ` Includes ${number(model.overview.syntheticReports)} demonstration ${model.overview.syntheticReports === 1 ? "report" : "reports"}.`)));
     if (connectionFailed) note.append(document.createTextNode(tr("analysis.lastLoaded", {}, " Showing the last loaded reports while the connection is unavailable.")));
   }
@@ -399,7 +422,8 @@ export function createAnalysisWorkspace({ document = globalThis.document, i18n, 
     const overview = model.overview;
     renderOverviewMap(model);
     renderReportChart(model);
-    byId("analysis-scope").textContent = tr("analysis.scope", { region: region.label || region.name, category: selectedCategory === "all" ? tr("category.all", {}, "All Problems") : categoryName(selectedCategory) }, `${region.label || region.name} · ${selectedCategory === "all" ? "All Problems" : categoryName(selectedCategory)}`);
+    const scopeRegionMarker = "\u0000REGION\u0000";
+    dynamicTemplate(byId("analysis-scope"), tr("analysis.scope", { region: scopeRegionMarker, category: selectedCategory === "all" ? tr("category.all", {}, "All Problems") : categoryName(selectedCategory) }, `${scopeRegionMarker} · ${selectedCategory === "all" ? "All Problems" : categoryName(selectedCategory)}`), scopeRegionMarker, region.label || region.name);
     byId("analysis-category-icon").innerHTML = serviceIconSvg(selectedCategory);
     byId("analysis-status").textContent = !reportsReady ? connectionFailed ? tr("analysis.statusReportsFailed", {}, "Community reports could not be loaded. Public statistics are shown where available.") : tr("analysis.statusLoading", {}, "Loading community reports…")
       : connectionFailed ? tr("analysis.statusConnection", {}, "The report connection is unavailable. Counts may be out of date.")
@@ -450,10 +474,15 @@ export function createAnalysisWorkspace({ document = globalThis.document, i18n, 
         item.dataset.reportId = report.id;
         item.tabIndex = -1;
         const copy = node("div", undefined, "analysis-report-copy");
-        const reportText = node("p", report.summary || tr("explore.noDescription", {}, "No description provided.")); reportText.dir = "auto";
+        const reportText = bindDynamic(node("p"), report.summary || tr("explore.noDescription", {}, "No description provided."), report.summary ? report.language || report.locale : i18n?.code);
         copy.append(reportText, node("small", tr("analysis.reportMeta", { urgency: urgencyName(report.severity || "unknown"), date: dateLabel(report.submittedAt), demo: report.isSynthetic ? tr("analysis.demoReport", {}, " · Demonstration report") : "" }, `${report.severity || "Unknown"} reported urgency · ${dateLabel(report.submittedAt)}${report.isSynthetic ? " · Demonstration report" : ""}`)));
         const insight = insights.find((entry) => entry.reportId === report.id);
-        if (insight?.quote) { const quote = node("blockquote", tr("analysis.aiExcerpt", { quote: insight.quote }, `AI-selected supporting excerpt: “${insight.quote}”`)); quote.dir = "auto"; copy.append(quote); }
+        if (insight?.quote) {
+          const quote = node("blockquote");
+          const quoteMarker = "\u0000QUOTE\u0000";
+          dynamicTemplate(quote, tr("analysis.aiExcerpt", { quote: quoteMarker }, `AI-selected supporting excerpt: “${quoteMarker}”`), quoteMarker, insight.quote, report.language || report.locale);
+          copy.append(quote);
+        }
         item.append(copy);
         if (getReportCoordinates(report)) {
           item.classList.add("has-location-map");

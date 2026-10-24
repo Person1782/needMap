@@ -8,7 +8,7 @@ import { CANDIDATE_MARKER_Z_INDEX, REPORT_MARKER_Z_INDEX, separatedCandidateIcon
 
 const colors = { low: '#2f8a69', medium: '#d28b27', high: '#c34e42', unknown: '#526575' };
 
-export function createAnalysisOverviewMap(L, container, { reportPopup, candidatePopup, i18n, onLoading } = {}) {
+export function createAnalysisOverviewMap(L, container, { reportPopup, candidatePopup, i18n, dynamicTranslator, onLoading } = {}) {
   let map;
   let popups;
   let viewport;
@@ -64,7 +64,7 @@ export function createAnalysisOverviewMap(L, container, { reportPopup, candidate
           const color = Object.hasOwn(colors, report.severity) ? colors[report.severity] : colors.unknown;
           const icon = L.divIcon({ className: '', html: `<span class="report-marker" style="background:${color}" aria-hidden="true">${serviceIconSvg(report.category)}</span>`, iconSize: [26, 26], iconAnchor: [13, 13] });
           const marker = L.marker(point, { icon, zIndexOffset: REPORT_MARKER_Z_INDEX, title: tr("map.reportTitle", { category: categoryName(report.category), urgency: tr(`urgency.${report.severity || "unknown"}`, {}, report.severity || "unknown") }, `${report.category} report`) }).addTo(reportsLayer);
-          popups.register(marker, () => reportPopup ? reportPopup(report) : safeText(container, report.summary || tr("analysis.communityReports", {}, "Community report")));
+          popups.register(marker, () => reportPopup ? reportPopup(report) : safeText(container, report.summary || tr("analysis.communityReports", {}, "Community report"), dynamicTranslator, report.language || report.locale));
         }
         for (const candidate of recommendations) {
           if (category !== 'all' && candidate.category !== category) continue;
@@ -98,6 +98,9 @@ export function createAnalysisOverviewMap(L, container, { reportPopup, candidate
   }
 }
 
-function safeText(container, value) {
-  const node = container.ownerDocument.createElement('p'); node.textContent = value; return node;
+function safeText(container, value, dynamicTranslator, sourceLanguage) {
+  const node = container.ownerDocument.createElement('p');
+  if (dynamicTranslator?.bind) dynamicTranslator.bind(node, value, { sourceLanguage });
+  else node.textContent = value;
+  return node;
 }

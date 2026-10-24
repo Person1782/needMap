@@ -40,7 +40,7 @@ function decimal(value) {
  * and reports retain their real relative positions instead of becoming a
  * decorative placeholder.
  */
-export function renderPlansLocationFallback(container, { candidate, geometry, i18n } = {}) {
+export function renderPlansLocationFallback(container, { candidate, geometry, i18n, dynamicTranslator } = {}) {
   if (!container?.ownerDocument) throw new TypeError("A Plans map container is required.");
   const document = container.ownerDocument;
   const tr = (key, values = {}, fallback = key) => i18n
@@ -165,8 +165,10 @@ export function renderPlansLocationFallback(container, { candidate, geometry, i1
       "data-longitude": longitude,
     });
     const title = svgNode(document, "title");
-    title.textContent = typeof report?.summary === "string" && report.summary.trim()
+    const reportTitle = typeof report?.summary === "string" && report.summary.trim()
       ? report.summary.trim() : tr("plans.reportLocations", {}, "Supporting report location");
+    if (dynamicTranslator?.bind) dynamicTranslator.bind(title, reportTitle, { sourceLanguage: report?.language || report?.locale });
+    else title.textContent = reportTitle;
     marker.append(title);
     svg.append(marker);
   }

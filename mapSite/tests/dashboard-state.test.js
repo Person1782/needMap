@@ -16,6 +16,20 @@ test('search, category, urgency, and viewport filters combine without altering r
   assert.equal(reportSnapshotKey(reports), reportSnapshotKey([...reports].reverse()));
   assert.notEqual(reportSnapshotKey(reports), reportSnapshotKey([report('a', { summary: 'Changed need' })]));
 });
+test('search includes translated display fields while preserving the source report', () => {
+  const source = report('translated', {
+    translatedSummary: 'Besoin urgent en eau potable',
+    translatedCategory: 'Approvisionnement en eau',
+    translatedRegionName: 'Baie de San Francisco',
+    display: { summary: 'Eau indisponible', region: 'Californie' },
+    searchAliases: ['service hydrique'],
+  });
+  const before = structuredClone(source);
+  for (const query of ['potable', 'approvisionnement', 'san francisco', 'californie', 'hydrique']) {
+    assert.deepEqual(filterReports([source], { query }).map((item) => item.id), ['translated'], query);
+  }
+  assert.deepEqual(source, before);
+});
 test('map, analysis, and plans share region navigation without legacy planner controls', async () => {
   const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
   assert.match(html, /id="plans-view"/);

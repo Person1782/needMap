@@ -5,7 +5,7 @@ import { createRegionPicker } from "../region-picker.js";
 import { countRegions, searchRegions } from "../region-navigation.js";
 
 const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
-function mount({ selectedId = "country-2", liveDirectory = false } = {}) {
+function mount({ selectedId = "country-2", liveDirectory = false, i18n, dynamicTranslator, displayRegion } = {}) {
   const entries = [...Array.from({ length: 250 }, (_, index) => ({
     id: `country-${index}`, label: `Country ${String(index).padStart(3, "0")}`, kind: "country",
   })), ...Array.from({ length: 145 }, (_, index) => ({
@@ -47,7 +47,7 @@ function mount({ selectedId = "country-2", liveDirectory = false } = {}) {
     select: (id) => { selections.push(id); selectedId = id; },
     worldwide: () => { worldwide += 1; }, detect: () => { detections += 1; },
   };
-  const picker = createRegionPicker({ navigation, document });
+  const picker = createRegionPicker({ navigation, document, i18n, dynamicTranslator, displayRegion });
   return { elements, picker, document, entries, queries, selections, get worldwide() { return worldwide; }, get detections() { return detections; },
     buttons: () => elements["region-results"].querySelectorAll("button") };
 }
@@ -173,6 +173,33 @@ test("world and global search aliases find Worldwide without treating it as a co
   page.elements["region-search"].value = "Kenya"; page.elements["region-search"].dispatch("input");
   assert.ok(page.buttons().length > 0);
   assert.ok(page.buttons().every((button) => button.getAttribute("data-region-id") !== "world"));
+});
+
+test("localized display labels are searchable and keep the original navigation label", () => {
+  const displayRegion = (region) => region.id === "country-4" ? "Pays quatre" : "";
+  const page = mount({ displayRegion }); page.picker.open();
+  page.elements["region-search"].value = "Pays quatre";
+  page.elements["region-search"].dispatch("input");
+  assert.equal(page.buttons().length, 1);
+  assert.equal(page.buttons()[0].textContent, "Pays quatre");
+  assert.equal(page.buttons()[0].getAttribute("data-region-source-label"), "Country 004");
+  page.buttons()[0].dispatch("click");
+  assert.deepEqual(page.selections, ["country-4"]);
+  assert.equal(page.entries.find((entry) => entry.id === "country-4").label, "Country 004");
+});
+
+test("dynamic translation can update a visible subregion label without changing its ID", () => {
+  const calls = [];
+  const dynamicTranslator = {
+    cached: (text) => text,
+    bind(button, text, options) { calls.push({ text, options }); button.textContent = `Traduit ${text}`; return button; },
+  };
+  const page = mount({ dynamicTranslator }); page.picker.open();
+  page.elements["region-search"].value = "Region 001";
+  page.elements["region-search"].dispatch("input");
+  assert.equal(page.buttons()[0].textContent, "Traduit Region 001");
+  assert.equal(page.buttons()[0].getAttribute("data-region-id"), "region-1");
+  assert.deepEqual(calls.at(-1), { text: "Region 001", options: { sourceLanguage: "en" } });
 });
 
 test("destroy removes listeners and prevents stale result controls from navigating", () => {

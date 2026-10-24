@@ -1,10 +1,12 @@
 import { WORLD_REGION } from "./region-navigation.js";
 
 const worldAliases = ["worldwide", "world", "global", "all regions", "global regions"];
+const normalizeSearch = (value) => String(value || "").normalize("NFD")
+  .replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase().trim();
 
 /** Show Worldwide above all countries initially, then every matching region. */
 export function createRegionPicker({ navigation, document = globalThis.document, i18n,
-  ids = {}, rootSelector = ".region-navigation" }) {
+  dynamicTranslator, displayRegion, ids = {}, rootSelector = ".region-navigation" }) {
   const byId = (id) => document.getElementById(id);
   const names = {
     menu: "region-menu", search: "region-search", results: "region-results",
@@ -21,6 +23,27 @@ export function createRegionPicker({ navigation, document = globalThis.document,
   const listeners = [];
   let destroyed = false;
   const tr = (key, values, fallback) => i18n ? i18n.t(key, values) : fallback;
+  const originalLabel = (region) => region?.label || region?.name || "";
+  function countryLabel(region) {
+    if (region?.kind !== "country") return "";
+    const code = String(region.countryCode || region.id || "").toUpperCase();
+    if (!/^[A-Z]{2}$/.test(code) || typeof Intl?.DisplayNames !== "function") return "";
+    try { return new Intl.DisplayNames([i18n?.code || "en"], { type: "region" }).of(code) || ""; }
+    catch { return ""; }
+  }
+  function displayLabel(region) {
+    const supplied = typeof displayRegion === "function" ? displayRegion(region, { language: i18n?.code || "en" }) : "";
+    return supplied || region?.translatedLabel || region?.displayLabel || countryLabel(region) ||
+      dynamicTranslator?.cached?.(originalLabel(region)) || originalLabel(region);
+  }
+  const localizedValues = (region) => [
+    displayLabel(region), region?.translatedName, region?.translatedLabel,
+    region?.displayName, region?.displayLabel,
+  ].filter((value) => typeof value === "string" && value.trim());
+  function localizedMatches(region, query) {
+    const normalized = normalizeSearch(query);
+    return normalized && localizedValues(region).some((value) => normalizeSearch(value).includes(normalized));
+  }
   const listen = (target, type, callback) => {
     target.addEventListener(type, callback);
     listeners.push(() => target.removeEventListener(type, callback));
@@ -32,17 +55,33 @@ export function createRegionPicker({ navigation, document = globalThis.document,
     const kind = searching ? undefined : "country";
     const catalogTotal = navigation.count(query, { kind });
     const normalized = query.trim().toLowerCase().replace(/\s+/g, " ");
-    const includeWorld = !searching || worldAliases.some((alias) => alias.startsWith(normalized));
-    const total = catalogTotal + (includeWorld ? 1 : 0);
+    const worldLabel = displayLabel(WORLD_REGION);
+    const includeWorld = !searching || worldAliases.some((alias) => alias.startsWith(normalized)) || localizedMatches(WORLD_REGION, query);
     results.replaceChildren(); results.scrollTop = 0;
-    const matches = [...(includeWorld ? [WORLD_REGION] : []), ...navigation.search(query, { kind, limit: Infinity })];
+    const localizedMatchesById = new Map();
+    if (searching) {
+      for (const region of navigation.search("", { kind, limit: Infinity })) {
+        if (localizedMatches(region, query)) localizedMatchesById.set(region.id, region);
+      }
+    }
+    const directMatches = navigation.search(query, { kind, limit: Infinity });
+    const matchesById = new Map([...localizedMatchesById, ...directMatches.map((region) => [region.id, region])]);
+    const catalogMatches = [...matchesById.values()];
+    const total = catalogMatches.length + (includeWorld ? 1 : 0);
+    const matches = [...(includeWorld ? [WORLD_REGION] : []), ...catalogMatches];
     const current = navigation.getSelected()?.id;
     matches.forEach((region) => {
       const item = document.createElement("li");
       const button = document.createElement("button");
       button.type = "button";
-      button.textContent = region.label || region.name;
+      const sourceLabel = originalLabel(region);
+      const shownLabel = region.id === WORLD_REGION.id ? worldLabel : displayLabel(region);
+      button.textContent = shownLabel;
       button.setAttribute("data-region-id", region.id);
+      button.setAttribute("data-region-source-label", sourceLabel);
+      if (dynamicTranslator?.bind && shownLabel === sourceLabel && region.kind !== "country") {
+        dynamicTranslator.bind(button, sourceLabel, { sourceLanguage: "en" });
+      }
       if (region.id === current) button.setAttribute("aria-current", "true");
       button.addEventListener("click", () => { if (!destroyed) navigation.select(region.id); });
       item.append(button); results.append(item);

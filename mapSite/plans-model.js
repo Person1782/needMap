@@ -344,6 +344,8 @@ export function buildPlanModel({
     const citations = reportsInCandidate.map((report) => ({
       reportId: report.id,
       summary: typeof report.summary === "string" ? report.summary : "",
+      language: typeof report.language === "string" ? report.language : undefined,
+      locale: typeof report.locale === "string" ? report.locale : undefined,
       severity: typeof report.severity === "string" ? report.severity : "unknown",
       category: typeof report.category === "string" ? report.category : definition.baseCategory,
       baseCategory: definition.baseCategory,

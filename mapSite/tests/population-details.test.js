@@ -9,14 +9,14 @@ const population = { status: "ready", value: 1234.56, areaKm2: 1.4, radiusMeters
   taskUrl: "https://api.worldpop.org/v2/tasks/5f4280c3-7af9-4f79-93c8-20da95313887",
   components: [{ index: 0, population: 1000, areaKm2: 1 }, { index: 1, population: 234.56, areaKm2: 0.4 }] };
 const context = { population, reports: [{ id: "a", latitude: 0, longitude: 0 }], region: { label: "Selected region" }, category: "Water supply" };
-function setup({ failMap = false } = {}) {
+function setup({ failMap = false, dynamicTranslator } = {}) {
   const { document, window } = parseHTML('<html><body><button id="trigger">Estimate</button></body></html>');
   let active = document.body;
   Object.defineProperty(document, "activeElement", { get: () => active });
   window.HTMLElement.prototype.focus = function () { active = this; };
   const trigger = document.getElementById("trigger"); trigger.focus();
   const calls = [];
-  const controller = createPopulationDetails({ document, createMap(container, options) {
+  const controller = createPopulationDetails({ document, dynamicTranslator, createMap(container, options) {
     const call = { container, options, destroyed: 0 }; calls.push(call);
     if (failMap) throw new Error("Tiles unavailable");
     return { destroy() { call.destroyed++; } };
@@ -127,4 +127,20 @@ test("returns focus to a refreshed overview card after asynchronous population c
   controller.update(context);
   controller.close();
   assert.equal(document.activeElement, replacement);
+});
+
+test("uses the translated region display without replacing the source region value", () => {
+  const translations = [];
+  const dynamicTranslator = { bind(element, text, options) {
+    translations.push({ text, options });
+    element.textContent = `Région : ${text}`;
+    return element;
+  } };
+  const { document, controller } = setup({ dynamicTranslator });
+  const region = { label: "Northern California" };
+  controller.open({ ...context, region });
+  assert.match(document.querySelector(".population-scope").textContent, /^Région : Northern California · Water supply$/);
+  assert.deepEqual(translations, [{ text: "Northern California", options: { sourceLanguage: "en" } }]);
+  assert.deepEqual(region, { label: "Northern California" });
+  controller.destroy();
 });

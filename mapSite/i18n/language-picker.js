@@ -2,7 +2,7 @@ import { SUPPORTED_LANGUAGES } from "./index.js";
 
 const normalize = (value) => String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
 
-export function createLanguagePicker({ i18n, document = globalThis.document } = {}) {
+export function createLanguagePicker({ i18n, document = globalThis.document, onBeforeSelect } = {}) {
   const toggle = document.getElementById("change-language");
   const menu = document.getElementById("language-menu");
   const search = document.getElementById("language-search");
@@ -50,7 +50,10 @@ export function createLanguagePicker({ i18n, document = globalThis.document } = 
     if (!button) return;
     const status = document.getElementById("language-search-status");
     status.dataset.error = "false"; status.textContent = "";
-    try { await i18n.select(button.dataset.language); close({ restoreFocus: true }); }
+    try {
+      onBeforeSelect?.(button.dataset.language);
+      await i18n.select(button.dataset.language); close({ restoreFocus: true });
+    }
     catch { status.dataset.error = "true"; status.textContent = i18n.t("language.loadError"); }
   });
   listen(results, "keydown", (event) => {
