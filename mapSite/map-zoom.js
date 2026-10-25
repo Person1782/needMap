@@ -83,6 +83,9 @@ export function attachMapZoom(map, scheduler = {}) {
   }
   function resetWheel() { cancelTimer(wheelTimer); wheelTimer = undefined; endWheel(); }
   function onWheel(event) {
+    // The capture listener runs before popup handlers. Let a shared report
+    // list scroll natively, while preserving pinch-to-zoom over the same list.
+    if (!event.ctrlKey && event.target?.closest?.('.report-location-popup')) return;
     // Handle mouse wheels, trackpad scrolling, and browser pinch-wheel events
     // through one continuous path. Leaflet's default wheel handler batches
     // input before moving, which makes otherwise identical maps feel delayed.

@@ -1,5 +1,5 @@
 export const REPORT_MARKER_Z_INDEX = 1000;
-export const CANDIDATE_MARKER_Z_INDEX = 0;
+export const CANDIDATE_MARKER_Z_INDEX = 2000;
 
 export function separatedCandidateIconOptions(html, { size = 36, stem = 18, className = "" } = {}) {
   if (!Number.isFinite(size) || size <= 0 || !Number.isFinite(stem) || stem < 0) {

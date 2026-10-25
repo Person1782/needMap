@@ -7,9 +7,10 @@ import { createPopulationDetails } from "./population-details.js";
 import { buildEvidenceReviewFallback } from "./analysis-ai.js";
 
 /** Shared region/reports come from the map; external work starts only on Analysis. */
-export function createAnalysisWorkspace({ document = globalThis.document, i18n, dynamicTranslator, loadEvidence = loadAnalysisEvidence, loadPopulation = loadReportPopulation, reviewComplaints, firebaseApp, createReportMap, createOverviewMap, createPopulationMap, onLoading } = {}) {
+export function createAnalysisWorkspace({ document = globalThis.document, i18n, dynamicTranslator, loadEvidence = loadAnalysisEvidence, loadPopulation = loadReportPopulation, reviewComplaints, firebaseApp, createReportMap, createOverviewMap, createPopulationMap, onLoading, onDemonstrationReportsChange } = {}) {
   const byId = (id) => document.getElementById(id);
   const filter = byId("analysis-category");
+  const demonstrationToggle = byId("analysis-demo-proposals");
   const tr = (key, values = {}, fallback = key) => i18n ? i18n.t(key, values) : Object.entries(values).reduce((text, [name, value]) => text.replaceAll(`{${name}}`, value), fallback);
   const number = (value, digits = 0) => Number.isFinite(value) ? (i18n ? i18n.number(value, { maximumFractionDigits: digits }) : value.toLocaleString(undefined, { maximumFractionDigits: digits })) : tr("common.unknown", {}, "Unknown");
   const categoryName = (value) => ANALYSIS_CATEGORIES.some((entry) => entry.id === value) ? tr(`category.${value}`, {}, ANALYSIS_CATEGORIES.find((entry) => entry.id === value).label) : value;
@@ -179,7 +180,14 @@ export function createAnalysisWorkspace({ document = globalThis.document, i18n, 
     filter.replaceChildren(...options);
   }
   refreshFilterOptions();
-  let region = null, reports = [], recommendations = [], reportsReady = false, connectionFailed = false;
+  let region = null, reports = [], recommendations = [], reportsReady = false, connectionFailed = false, recommendationState = "ready";
+  let includeDemonstrationReports = false;
+  function refreshDemonstrationControl() {
+    if (demonstrationToggle) demonstrationToggle.checked = includeDemonstrationReports;
+    const label = byId("analysis-demo-proposals-label");
+    if (label) label.textContent = tr("candidate.includeDemonstrations", {}, "Show all proposed services");
+  }
+  refreshDemonstrationControl();
   let overviewMap = null, overviewKey = "", populationDetails, pendingFocus;
   let visible = false, destroyed = false, evidence = null, evidenceState = "idle", evidenceRevision = 0, evidenceController;
   let insights = [], aiState = "idle", aiRevision = 0, aiController, aiTimer, reportKey = "", reviewResult = null;
@@ -285,7 +293,7 @@ export function createAnalysisWorkspace({ document = globalThis.document, i18n, 
     const scopedReports = model.rankings.flatMap((ranking) => ranking.reports.map((report) => ({ ...report, category: ranking.category })));
     const scopedRecommendations = recommendations.map((item) => ({ ...item, category: categoryForReport(item) }))
       .filter((item) => model.category === "all" || item.category === model.category);
-    const key = JSON.stringify([region.id, region.geometry, model.category, reportsReady, connectionFailed, scopedReports, scopedRecommendations]);
+    const key = JSON.stringify([region.id, region.geometry, model.category, reportsReady, connectionFailed, recommendationState, includeDemonstrationReports, scopedReports, scopedRecommendations]);
     if (key === overviewKey) return;
     try {
       overviewMap ||= createOverviewMap(container);
@@ -296,6 +304,15 @@ export function createAnalysisWorkspace({ document = globalThis.document, i18n, 
         services: `${number(scopedRecommendations.length)} ${tr(scopedRecommendations.length === 1 ? "common.location" : "common.locations", {}, scopedRecommendations.length === 1 ? "proposed service location" : "proposed service locations")}`,
         last: connectionFailed ? tr("analysis.lastLoaded", {}, " · Last loaded reports") : "",
       }, `${number(scopedReports.length)} reports · ${number(scopedRecommendations.length)} proposed service locations. Hover for details; click to keep them open.`);
+      if (note && reportsReady && recommendationState === "loading") {
+        note.textContent += ` ${tr("candidate.worldLoading", {}, "Loading additional regional analyses…")}`;
+      } else if (note && reportsReady && recommendationState === "partial") {
+        note.textContent += ` ${tr("candidate.worldPartial", {}, "Some regional analyses could not be loaded. Available proposals are shown.")}`;
+      } else if (note && reportsReady && scopedReports.length && !scopedRecommendations.length) {
+        note.textContent += ` ${includeDemonstrationReports
+          ? tr("plans.noCluster", {}, "The reports do not yet support a distinct recommended location.")
+          : tr("candidate.needReports", {}, "Proposed services need at least two reports in the same region and category.")}`;
+      }
     } catch {
       clearOverviewMap();
       if (note) note.textContent = tr("analysis.mapFailed", {}, "The map could not be loaded. Reports are still available below.");
@@ -412,7 +429,6 @@ export function createAnalysisWorkspace({ document = globalThis.document, i18n, 
     }
     const regionMarker = "\u0000REGION\u0000";
     dynamicTemplate(note, tr("analysis.chartNote", { region: regionMarker }, `Reports submitted in ${regionMarker}. Open a problem below to read its reports.`), regionMarker, region.label || region.name);
-    if (model.overview.syntheticReports) note.append(document.createTextNode(tr("analysis.demoIncluded", { count: model.overview.syntheticReports }, ` Includes ${number(model.overview.syntheticReports)} demonstration ${model.overview.syntheticReports === 1 ? "report" : "reports"}.`)));
     if (connectionFailed) note.append(document.createTextNode(tr("analysis.lastLoaded", {}, " Showing the last loaded reports while the connection is unavailable.")));
   }
   function render() {
@@ -438,9 +454,7 @@ export function createAnalysisWorkspace({ document = globalThis.document, i18n, 
       metric(tr("analysis.mostReported", {}, "Most reported problem"), reportsReady && common ? categoryName(common.category) : reportsReady ? tr("analysis.noReports", {}, "No reports") : tr("common.unknown", {}, "Unknown"), common ? `${number(common.count)} ${tr("common.reports", {}, "reports")}${common.tied?.length > 1 ? ` · ${tr("analysis.tied", { count: common.count }, "tied for most reported")}` : ""}` : tr("analysis.basedOnReports", {}, "Based on reports in the selected filter"), common?.category),
       populationMetric()
     );
-    byId("analysis-data-note").textContent = [
-      overview.syntheticReports ? tr("analysis.demoWarning", { count: overview.syntheticReports }, `${number(overview.syntheticReports)} of these reports are marked as demonstration data. They are not evidence of real local demand.`) : "",
-    ].filter(Boolean).join(" ");
+    byId("analysis-data-note").textContent = "";
     const expanded = new Set([...byId("analysis-rankings").querySelectorAll("details[open]")].map((row) => row.dataset.category));
     clearReportMaps();
     const rows = [];
@@ -475,7 +489,7 @@ export function createAnalysisWorkspace({ document = globalThis.document, i18n, 
         item.tabIndex = -1;
         const copy = node("div", undefined, "analysis-report-copy");
         const reportText = bindDynamic(node("p"), report.summary || tr("explore.noDescription", {}, "No description provided."), report.summary ? report.language || report.locale : i18n?.code);
-        copy.append(reportText, node("small", tr("analysis.reportMeta", { urgency: urgencyName(report.severity || "unknown"), date: dateLabel(report.submittedAt), demo: report.isSynthetic ? tr("analysis.demoReport", {}, " · Demonstration report") : "" }, `${report.severity || "Unknown"} reported urgency · ${dateLabel(report.submittedAt)}${report.isSynthetic ? " · Demonstration report" : ""}`)));
+        copy.append(reportText, node("small", tr("analysis.reportMeta", { urgency: urgencyName(report.severity || "unknown"), date: dateLabel(report.submittedAt), demo: "" }, `${report.severity || "Unknown"} reported urgency · ${dateLabel(report.submittedAt)}`)));
         const insight = insights.find((entry) => entry.reportId === report.id);
         if (insight?.quote) {
           const quote = node("blockquote");
@@ -577,6 +591,9 @@ export function createAnalysisWorkspace({ document = globalThis.document, i18n, 
       byId("analysis-rankings").replaceChildren();
     }
     region = next.region; reports = next.reports; recommendations = next.recommendations || []; reportsReady = next.reportsReady; connectionFailed = !!next.connectionFailed;
+    recommendationState = next.recommendationState || "ready";
+    includeDemonstrationReports = next.includeDemonstrationReports === true;
+    refreshDemonstrationControl();
     const key = JSON.stringify(reports.map((report) => [report.id, report.summary, report.category, report.severity, report.submittedAt]));
     if (changedRegion || key !== reportKey) {
       reportKey = key; cancelAI(); insights = []; reviewResult = null; aiState = "idle";
@@ -585,8 +602,14 @@ export function createAnalysisWorkspace({ document = globalThis.document, i18n, 
   }
   const onFilter = () => { clearReportMaps(); byId("analysis-rankings").replaceChildren(); ensurePopulation({ deferLoadingBind: true }); render(); };
   filter.addEventListener("change", onFilter);
+  const onDemonstrationChange = () => {
+    includeDemonstrationReports = demonstrationToggle.checked === true;
+    onDemonstrationReportsChange?.(includeDemonstrationReports);
+    render();
+  };
+  demonstrationToggle?.addEventListener("change", onDemonstrationChange);
   const stopLanguage = i18n?.subscribe(() => {
-    refreshFilterOptions(); overviewKey = ""; clearReportMaps();
+    refreshFilterOptions(); refreshDemonstrationControl(); overviewKey = ""; clearReportMaps();
     if (visible) { render(); populationDetails?.update(populationContext()); }
   }) || (() => {});
   function focusReport(category, reportId) {
@@ -598,5 +621,5 @@ export function createAnalysisWorkspace({ document = globalThis.document, i18n, 
     onFilter();
     return true;
   }
-  return { update, focusReport, setVisible(value) { visible = value; if (value) { render(); ensurePopulation(); ensureEvidence(); ensureAI(); } else { clearReportMaps(); clearOverviewMap(); populationDetails?.close(); cancelPopulation(); cancelEvidence(); cancelAI(); } }, destroy() { destroyed = true; stopLanguage(); clearReportMaps(); clearOverviewMap(); populationDetails?.destroy(); cancelPopulation(); cancelEvidence(); cancelAI(); filter.removeEventListener("change", onFilter); } };
+  return { update, focusReport, setVisible(value) { visible = value; if (value) { render(); ensurePopulation(); ensureEvidence(); ensureAI(); } else { clearReportMaps(); clearOverviewMap(); populationDetails?.close(); cancelPopulation(); cancelEvidence(); cancelAI(); } }, destroy() { destroyed = true; stopLanguage(); clearReportMaps(); clearOverviewMap(); populationDetails?.destroy(); cancelPopulation(); cancelEvidence(); cancelAI(); filter.removeEventListener("change", onFilter); demonstrationToggle?.removeEventListener("change", onDemonstrationChange); } };
 }

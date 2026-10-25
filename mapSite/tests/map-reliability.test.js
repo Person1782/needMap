@@ -30,7 +30,7 @@ test("regions and candidate placements stay near the date line", () => {
   assert.equal(pointInGeometry(179.5, 0, geometry), true);
   assert.equal(pointInGeometry(-179.5, 0, geometry), true);
   assert.equal(pointInGeometry(0, 0, geometry), false);
-  const position = weightedGeometricMedian([report("a", 179.5), report("b", -179.5)]);
+  const position = weightedGeometricMedian([report("a", 179.99), report("b", -179.99)]);
   assert.ok(Math.abs(position.longitude) > 179);
   assert.equal(pointInGeometry(position.longitude, position.latitude, geometry), true);
 });
@@ -47,14 +47,30 @@ test("median does not stop at a coincident report unless its weight balances the
 
 test("recommendations exclude invalid coordinates and reports outside the assigned region", () => {
   const candidates = buildRecommendations([
-    report("a", 0), report("b", 1), { ...report("bad", 1), latitude: NaN },
+    report("a", 0), report("b", 0.01), { ...report("bad", 1), latitude: NaN },
     report("outside", 80), null,
   ]);
   assert.equal(candidates.length, 1);
   assert.equal(candidates[0].signals.length, 2);
+  assert.equal(pointInGeometry(candidates[0].position.longitude, candidates[0].position.latitude, region.geometry), true);
   assert.deepEqual(buildRecommendations(null), []);
-  assert.equal(buildRecommendations([report("a", 0), report("b", 1)].map((item) =>
+  assert.equal(buildRecommendations([report("a", 0), report("b", 0.01)].map((item) =>
     ({ ...item, category: "constructor", severity: "constructor" })))[0].urgencyScore, 2);
+});
+
+test("recommendations respect excluded region geometry for both reports and placement", () => {
+  const partition = { ...region, geometry: square(-0.1, -0.1, 0.1, 0.1),
+    excludedGeometry: square(-0.01, -0.01, 0.01, 0.01) };
+  const reports = [report("west", -0.02), report("east", 0.02), report("excluded", 0, "high")]
+    .map((item) => ({ ...item, region: partition }));
+  const candidates = buildRecommendations(reports);
+  assert.equal(candidates.length, 1);
+  const [candidate] = candidates;
+  assert.deepEqual(candidate.signals.map(({ id }) => id).sort(), ["east", "west"]);
+  assert.equal(pointInGeometry(candidate.position.longitude, candidate.position.latitude, partition.geometry), true);
+  assert.equal(pointInGeometry(candidate.position.longitude, candidate.position.latitude, partition.excludedGeometry), false);
+  assert.deepEqual(buildRecommendations([report("a", 0), report("b", 0.001)]
+    .map((item) => ({ ...item, region: partition }))), []);
 });
 
 test("service queries reject missing coordinates and handle unknown category names", () => {
@@ -122,7 +138,7 @@ test("a failed detailed boundary lookup retains its verified base boundary", asy
     return { ok: true, json: async () => ({ osm_id: 50, osm_type: "relation", name: "Village", type: "village", geojson: square(40, 40, 42, 42) }) };
   });
   t.mock.method(console, "warn", () => {});
-  const result = await enrichSignalsWithRegions([{ latitude: 41, longitude: 41 }]);
+  const result = await enrichSignalsWithRegions([{ latitude: 41, longitude: 41 }], { bundledResolver: async () => null });
   assert.equal(result[0].region.name, "Village");
   assert.equal(calls, 2);
 });

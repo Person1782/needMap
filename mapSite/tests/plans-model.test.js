@@ -8,6 +8,8 @@ import {
   planTypeForReport,
   reportsForPlanType,
 } from "../plans-model.js";
+import { haversineDistance } from "../decision-tools.js";
+import { pointInGeometry } from "../regions.js";
 
 const square = (west, south, east, north) => ({ type: "Polygon", coordinates: [
   [[west, south], [east, south], [east, north], [west, north], [west, south]],
@@ -21,6 +23,21 @@ const report = (id, longitude = 0, extra = {}) => ({
 const pair = (prefix, longitude, extra = {}) => [
   report(`${prefix}-a`, longitude, extra), report(`${prefix}-b`, longitude + 0.01, extra),
 ];
+const assertRegionalSupport = (candidates) => {
+  for (const candidate of candidates) {
+    assert.ok(candidate.supportingReports.length >= 2);
+    assert.equal(pointInGeometry(candidate.position.longitude, candidate.position.latitude, candidate.region.geometry), true);
+    if (candidate.region.excludedGeometry) {
+      assert.equal(pointInGeometry(candidate.position.longitude, candidate.position.latitude, candidate.region.excludedGeometry), false);
+    }
+    for (const report of candidate.supportingReports) {
+      assert.equal(pointInGeometry(report.longitude, report.latitude, candidate.region.geometry), true);
+      if (candidate.region.excludedGeometry) {
+        assert.equal(pointInGeometry(report.longitude, report.latitude, candidate.region.excludedGeometry), false);
+      }
+    }
+  }
+};
 const source = (usedFor = "Cost estimate") => ({
   id: `source-${usedFor.toLowerCase().replaceAll(" ", "-")}`,
   title: `${usedFor} source`, publisher: "Public agency",
@@ -89,6 +106,11 @@ test("returns at most three ranked candidates deterministically for a selected t
     reversed.candidates.map(({ id, rank, position, urgencyScore }) => ({ id, rank, position, urgencyScore })));
   assert.equal(first.matchedReportCount, 8);
   assert.equal(first.contributingReportCount, 8);
+  assert.deepEqual(first.candidates.flatMap((candidate) => candidate.supportingReports.map(({ id }) => id)).sort(), reports.filter((report) => !report.id.startsWith("pharmacy")).map(({ id }) => id).sort());
+  const scores = first.candidates.map((candidate) => candidate.urgencyScore);
+  assert.deepEqual(scores, [...scores].sort((first, second) => second - first));
+  assert.equal(Math.round(scores.reduce((sum, score) => sum + score, 0) * 100), 1034);
+  assertRegionalSupport(first.candidates);
 });
 
 test("selected regions exclude outside reports while Worldwide ranks across report regions", () => {
@@ -141,8 +163,8 @@ test("location labels use the nearest supporting report and break equal-distance
   const leftRegion = { ...region, id: "left-place", name: "Left place", hierarchy: "Left place, Test Region" };
   const rightRegion = { ...region, id: "right-place", name: "Right place", hierarchy: "Right place, Test Region" };
   const reports = [
-    report("b-report", -1, { region: leftRegion }),
-    report("a-report", 1, { region: rightRegion }),
+    report("b-report", -0.01, { region: leftRegion }),
+    report("a-report", 0.01, { region: rightRegion }),
   ];
   const model = buildPlanModel({ reports, region, type: "hospital", currentYear: 2026 });
   assert.equal(model.candidates.length, 1);
@@ -150,6 +172,7 @@ test("location labels use the nearest supporting report and break equal-distance
   assert.equal(model.candidates[0].locationHierarchy, "Right place, Test Region");
   assert.ok(Number.isFinite(model.candidates[0].position.latitude));
   assert.ok(Number.isFinite(model.candidates[0].position.longitude));
+  assertRegionalSupport(model.candidates);
 });
 
 test("derives a transparent bounded service radius from contributing report distances", () => {
@@ -158,27 +181,61 @@ test("derives a transparent bounded service radius from contributing report dist
   assert.equal(close.candidates[0].serviceArea.cappedAtMaximum, false);
   assert.match(close.candidates[0].serviceArea.formula, /clamp/);
   assert.match(close.candidates[0].serviceArea.assumption, /not a verified service boundary/);
+  assertRegionalSupport(close.candidates);
 
+  const wider = buildPlanModel({ reports: [report("local-a", -0.02), report("local-b", 0.02)], region, type: "hospital", currentYear: 2026 });
+  assert.ok(wider.candidates[0].serviceArea.radiusKm > PLAN_TYPES.hospital.serviceRadius.minKm);
+  assert.equal(wider.candidates[0].serviceArea.cappedAtMaximum, false);
+  assertRegionalSupport(wider.candidates);
+});
+
+test("distant reports in one region create a plan while its capped service display remains explicit", () => {
   const farRegion = { ...region, id: "wide", geometry: square(-50, -20, 50, 20) };
   const far = buildPlanModel({ reports: [report("far-a", -40), report("far-b", 40)], region: farRegion, type: "hospital", currentYear: 2026 });
-  assert.equal(far.candidates[0].serviceArea.radiusKm, PLAN_TYPES.hospital.serviceRadius.maxKm);
-  assert.equal(far.candidates[0].serviceArea.cappedAtMaximum, true);
-  assert.equal(far.candidates[0].serviceArea.allSupportingReportsInside, false);
+  assert.equal(far.status, "ready");
+  assert.equal(far.matchedReportCount, 2);
+  assert.equal(far.contributingReportCount, 2);
+  assert.equal(far.candidates.length, 1);
+  const [candidate] = far.candidates;
+  assert.ok(Math.abs(candidate.position.longitude) < 1e-9);
+  assert.equal(candidate.serviceArea.radiusKm, PLAN_TYPES.hospital.serviceRadius.maxKm);
+  assert.equal(candidate.serviceArea.cappedAtMaximum, true);
+  assert.equal(candidate.serviceArea.allSupportingReportsInside, false);
+  assert.ok(candidate.supportingReports.every((report) => haversineDistance(candidate.position, report) > PLAN_TYPES.hospital.serviceRadius.maxKm));
+  assertRegionalSupport(far.candidates);
 });
 
 test("keeps candidates inside boundaries with holes and date-line geometry", () => {
-  const holed = { ...region, id: "hole", geometry: square(-10, -10, 10, 10) };
-  holed.geometry.coordinates.push(square(-2, -2, 2, 2).coordinates[0]);
-  const holeModel = buildPlanModel({ reports: [report("west", -3), report("east", 3)], region: holed, type: "hospital", currentYear: 2026 });
+  const holed = { ...region, id: "hole", geometry: square(-0.1, -0.1, 0.1, 0.1) };
+  holed.geometry.coordinates.push(square(-0.01, -0.01, 0.01, 0.01).coordinates[0]);
+  const holeModel = buildPlanModel({ reports: [report("west", -0.02), report("east", 0.02)], region: holed, type: "hospital", currentYear: 2026 });
   assert.equal(holeModel.candidates.length, 1);
   assert.notDeepEqual(holeModel.candidates[0].position, { latitude: 0, longitude: 0 });
+  assert.equal(pointInGeometry(holeModel.candidates[0].position.longitude, holeModel.candidates[0].position.latitude, holed.geometry), true);
+  assertRegionalSupport(holeModel.candidates);
 
-  const dateline = { ...region, id: "dateline", geometry: square(178, -3, -178, 3) };
-  const dateReports = pair("date", 179, { region: dateline });
-  dateReports[1].longitude = -179;
+  const dateline = { ...region, id: "dateline", geometry: square(179.9, -0.1, -179.9, 0.1) };
+  const dateReports = [report("date-a", 179.99, { region: dateline }), report("date-b", -179.99, { region: dateline })];
   const dateModel = buildPlanModel({ reports: dateReports, region: dateline, type: "hospital", currentYear: 2026 });
   assert.equal(dateModel.candidates.length, 1);
-  assert.ok(Math.abs(dateModel.candidates[0].position.longitude) > 178);
+  assert.ok(Math.abs(dateModel.candidates[0].position.longitude) > 179.9);
+  assertRegionalSupport(dateModel.candidates);
+});
+
+test("plans keep supporting reports and proposed points outside excluded region partitions", () => {
+  const partition = { ...region, geometry: square(-0.1, -0.1, 0.1, 0.1),
+    excludedGeometry: square(-0.01, -0.01, 0.01, 0.01) };
+  const model = buildPlanModel({
+    reports: [report("west", -0.02), report("east", 0.02), report("excluded", 0, { severity: "high" })],
+    region: partition, type: "hospital", currentYear: 2026,
+  });
+  assert.equal(model.candidates.length, 1);
+  assert.equal(model.contributingReportCount, 2);
+  const [candidate] = model.candidates;
+  assert.deepEqual(candidate.supportingReports.map(({ id }) => id).sort(), ["east", "west"]);
+  assert.equal(pointInGeometry(candidate.position.longitude, candidate.position.latitude, partition.geometry), true);
+  assert.equal(pointInGeometry(candidate.position.longitude, candidate.position.latitude, partition.excludedGeometry), false);
+  assertRegionalSupport(model.candidates);
 });
 
 test("applies exact-region evidence before country and global evidence", () => {
@@ -274,4 +331,35 @@ test("reports-loading, connection-failure, no-match, and demonstration states st
   assert.equal(noMatch.reason, "no-matching-reports");
   const demo = buildPlanModel({ reports: pair("demo", 0, { isSynthetic: true }), region, type: "hospital", currentYear: 2026 });
   assert.ok(demo.notices.some((notice) => /demonstration data/.test(notice)));
+  assert.deepEqual(demo.candidates, []);
+  assert.equal(demo.usableReportCount, 0);
+  assert.equal(demo.contributingReportCount, 0);
+  assert.equal(demo.excluded.demonstrationReports, 2);
+  assert.equal(demo.reason, "insufficient-reports");
+});
+
+test("demonstration reports cannot complete a pair or change real plan support", () => {
+  const demo = pair("demo", 10, { isSynthetic: true, severity: "high" });
+  const real = pair("real", 0);
+  const single = buildPlanModel({ reports: [real[0], ...demo], region, type: "hospital" });
+  assert.deepEqual(single.candidates, []);
+  assert.equal(single.usableReportCount, 1);
+  assert.equal(single.reason, "insufficient-reports");
+  assert.equal(single.excluded.demonstrationReports, 2);
+
+  const clean = buildPlanModel({ reports: real, region, type: "hospital" });
+  const mixed = buildPlanModel({ reports: [...real, ...demo], region, type: "hospital" });
+  assert.deepEqual(mixed.candidates, clean.candidates, "Demo urgency, positions and citations must not influence a plan");
+  assert.equal(mixed.usableReportCount, 2);
+  assert.equal(mixed.contributingReportCount, 2);
+  assert.equal(mixed.excluded.demonstrationReports, 2);
+});
+
+test("Plans only counts excluded demonstration reports inside the selected planning region", () => {
+  const reports = [report("inside", 0, { isSynthetic: true }), report("outside", 30, { isSynthetic: true })];
+  const model = buildPlanModel({ reports, region, type: "hospital" });
+  assert.deepEqual(model.candidates, []);
+  assert.equal(model.excluded.demonstrationReports, 1);
+  assert.equal(model.excluded.outsideRegion, 1);
+  assert.equal(model.usableReportCount, 0);
 });

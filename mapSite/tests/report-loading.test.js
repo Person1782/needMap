@@ -1,7 +1,20 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
-import { createInitialReportLoadGate, INITIAL_REPORT_LOAD_WATCHDOG_MS } from "../report-loading.js";
+import { createInitialReportLoadGate, INITIAL_REPORT_LOAD_WATCHDOG_MS, loadedReportConnectionMessage } from "../report-loading.js";
+
+test("loaded connection status counts unresolved reports and clears only when they have regions", () => {
+  const reports = [{ id: "a", region: null }, { id: "b" }, { id: "c", region: { id: "local" } }];
+  assert.deepEqual(loadedReportConnectionMessage(reports), {
+    key: "connection.regionsUnavailable", values: { count: 2 },
+  });
+  // A metadata-only server snapshot must retain the unresolved count.
+  assert.deepEqual(loadedReportConnectionMessage([...reports]), loadedReportConnectionMessage(reports));
+  assert.deepEqual(loadedReportConnectionMessage(reports.map((report) => ({ ...report, region: { id: "local" } }))), {
+    key: "connection.live", values: { count: 3 },
+  });
+  assert.deepEqual(loadedReportConnectionMessage([]), { key: "connection.noReports", values: {} });
+});
 
 function eventTarget() {
   const listeners = new Map();

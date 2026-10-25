@@ -1,10 +1,12 @@
 import { serviceIconSvg } from './service-icons.js';
 import { getReportCoordinates } from './report-location-map.js';
 import { createMapPopups } from './map-popups.js';
+import { createReportLocationPopups } from './report-location-popups.js';
 import { attachMapZoom } from './map-zoom.js';
 import { attachMapViewport, MAP_WORLD_BOUNDS, MAP_VIEWPORT_OPTIONS } from './map-viewport.js';
 import { trackLeafletTileLayer } from './leaflet-loading.js';
-import { CANDIDATE_MARKER_Z_INDEX, REPORT_MARKER_Z_INDEX, separatedCandidateIconOptions } from './map-marker-layout.js';
+import { REPORT_MARKER_Z_INDEX } from './map-marker-layout.js';
+import { createCandidateMarkerLayer } from './candidate-marker-layer.js';
 
 const colors = { low: '#2f8a69', medium: '#d28b27', high: '#c34e42', unknown: '#526575' };
 
@@ -14,6 +16,7 @@ export function createAnalysisOverviewMap(L, container, { reportPopup, candidate
   let viewport;
   let detachZoom;
   let pendingFit;
+  let candidateMarkers;
   let stopTileLoading = () => {};
   const tr = (key, values = {}, fallback = key) => i18n ? i18n.t(key, values) : Object.entries(values).reduce((text, [name, value]) => text.replaceAll(`{${name}}`, value), fallback);
   const categoryName = (category) => tr(`category.${category}`, {}, String(category || "other").replaceAll("_", " "));
@@ -47,36 +50,40 @@ export function createAnalysisOverviewMap(L, container, { reportPopup, candidate
     const candidatesLayer = L.layerGroup().addTo(map);
     const boundaryLayer = L.layerGroup().addTo(map);
     popups = createMapPopups(L, map, { document: container.ownerDocument });
+    candidateMarkers = createCandidateMarkerLayer(L, map, {
+      layer: candidatesLayer, popups,
+      renderPopup: (candidate) => candidatePopup ? candidatePopup(candidate) : safeText(container, categoryName(candidate.category)),
+      titleFor: (candidate) => tr("map.suggestedTitle", { type: categoryName(candidate.category), rank: candidate.locationRank || 1 }, `${categoryName(candidate.category)} · suggested location ${candidate.locationRank || 1}`),
+      groupTitleFor: (count) => tr("candidate.group", { count: i18n?.number(count) || count }, "{count} proposed service locations"),
+    });
     translateControls(); map.on("popupopen", translateControls);
     const stopLanguage = i18n?.subscribe(translateControls) || (() => {});
     return {
       update({ region, reports = [], recommendations = [], category = 'all' } = {}) {
         if (!map) return;
         popups.close();
-        reportsLayer.clearLayers(); candidatesLayer.clearLayers(); boundaryLayer.clearLayers();
+        reportsLayer.clearLayers(); boundaryLayer.clearLayers();
         if (region?.geometry) L.geoJSON(region.geometry, { style: { color: '#005ea8', weight: 2, fillOpacity: .025 }, interactive: false }).addTo(boundaryLayer);
         const points = [];
-        for (const report of reports) {
-          if (category !== 'all' && report.category !== category) continue;
+        const selectedReports = reports.filter((report) => category === 'all' || report.category === category);
+        const locationPopup = createReportLocationPopups(selectedReports,
+          (report) => reportPopup ? reportPopup(report) : safeText(container, report.summary || tr("analysis.communityReports", {}, "Community report"), dynamicTranslator, report.language || report.locale),
+          { document: container.ownerDocument, groupLabel: (count) => tr("analysis.reportCount", { count }, "{count} reports") });
+        for (const report of selectedReports) {
           const point = getReportCoordinates(report);
           if (!point) continue;
           points.push(point);
           const color = Object.hasOwn(colors, report.severity) ? colors[report.severity] : colors.unknown;
           const icon = L.divIcon({ className: '', html: `<span class="report-marker" style="background:${color}" aria-hidden="true">${serviceIconSvg(report.category)}</span>`, iconSize: [26, 26], iconAnchor: [13, 13] });
           const marker = L.marker(point, { icon, zIndexOffset: REPORT_MARKER_Z_INDEX, title: tr("map.reportTitle", { category: categoryName(report.category), urgency: tr(`urgency.${report.severity || "unknown"}`, {}, report.severity || "unknown") }, `${report.category} report`) }).addTo(reportsLayer);
-          popups.register(marker, () => reportPopup ? reportPopup(report) : safeText(container, report.summary || tr("analysis.communityReports", {}, "Community report"), dynamicTranslator, report.language || report.locale));
+          popups.register(marker, () => locationPopup(report));
         }
-        for (const candidate of recommendations) {
-          if (category !== 'all' && candidate.category !== category) continue;
+        const selectedCandidates = recommendations.filter((candidate) => category === 'all' || candidate.category === category);
+        for (const candidate of selectedCandidates) {
           const point = getReportCoordinates(candidate.position);
-          if (!point) continue;
-          points.push(point);
-          const rank = [1, 2, 3].includes(candidate.locationRank) ? candidate.locationRank : 1;
-          const type = categoryName(candidate.category);
-          const icon = L.divIcon(separatedCandidateIconOptions(`<span class="candidate-marker" aria-hidden="true">${serviceIconSvg(candidate.category, type)}<b>${rank}</b></span>`));
-          const marker = L.marker(point, { icon, zIndexOffset: CANDIDATE_MARKER_Z_INDEX, title: tr("map.suggestedTitle", { type, rank }, `${type} · suggested location ${rank}`) }).addTo(candidatesLayer);
-          popups.register(marker, () => candidatePopup ? candidatePopup(candidate) : safeText(container, type));
+          if (point) points.push(point);
         }
+        candidateMarkers.update(selectedCandidates);
         pendingFit = { points, bounds: region?.bounds };
         applyPendingFit();
       },
@@ -85,14 +92,14 @@ export function createAnalysisOverviewMap(L, container, { reportPopup, candidate
         stopTileLoading();
         pendingFit = undefined;
         map.off('resize', applyPendingFit); map.off('popupopen', translateControls); stopLanguage();
-        viewport?.destroy(); popups.destroy(); detachZoom?.();
+        viewport?.destroy(); candidateMarkers?.destroy(); popups.destroy(); detachZoom?.();
         const old = map; map = null; old?.remove();
       },
     };
   } catch (error) {
     stopTileLoading();
     map?.off('resize', applyPendingFit);
-    viewport?.destroy(); popups?.destroy(); detachZoom?.();
+    viewport?.destroy(); candidateMarkers?.destroy(); popups?.destroy(); detachZoom?.();
     try { map?.remove(); } catch { /* Preserve the creation failure. */ }
     throw error;
   }

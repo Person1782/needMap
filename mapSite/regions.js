@@ -254,6 +254,11 @@ function regionHierarchy(result, name) {
   return [...new Set(values)].filter((value) => value !== name).join(", ");
 }
 
+function resultCountryCode(result) {
+  const value = result?.address?.country_code;
+  return typeof value === "string" && /^[a-z]{2}$/i.test(value) ? value.toUpperCase() : "";
+}
+
 function normalizeResult(result, latitude, longitude, zoom) {
   const component = containingComponent(result?.geojson, longitude, latitude);
   if (!component) return null;
@@ -277,6 +282,7 @@ function normalizeResult(result, latitude, longitude, zoom) {
     id: `${osmType}-${osmId}-${component.componentIndex}`,
     osmId: `${osmType}-${osmId}`,
     name,
+    countryCode: resultCountryCode(result),
     hierarchy: regionHierarchy(result, name),
     type: result.addresstype || result.type || "administrative region",
     population,
@@ -347,31 +353,67 @@ function knownRegionFor(latitude, longitude) {
     pointInGeometry(longitude, latitude, region.geometry));
 }
 
-async function resolveRegion(report, signal) {
+async function defaultBundledResolver(report, options) {
+  const { resolveBundledReportRegion } = await import("./bundled-report-regions.js");
+  return resolveBundledReportRegion(report, options);
+}
+
+async function resolveRegion(report, signal, bundledResolver) {
   signal?.throwIfAborted();
   const { latitude, longitude } = report;
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude) ||
       Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return null;
+  try {
+    const bundled = await bundledResolver(report, { signal });
+    signal?.throwIfAborted();
+    if (bundled && pointInGeometry(longitude, latitude, bundled.geometry) &&
+        (!bundled.excludedGeometry || !pointInGeometry(longitude, latitude, bundled.excludedGeometry))) return bundled;
+  } catch (error) {
+    signal?.throwIfAborted();
+    // Missing static files must not prevent the existing verified remote lookup.
+    console.warn("NeedMap bundled report region lookup failed:", error);
+  }
   const known = knownRegionFor(latitude, longitude);
   if (known) return known;
 
   const baseResult = await lookup(latitude, longitude, 10, signal);
-  const baseRegion = normalizeResult(
+  signal?.throwIfAborted();
+  const expectedCountry = resultCountryCode(baseResult);
+  let baseZoom = 10;
+  let baseRegion = normalizeResult(
     baseResult,
     latitude,
     longitude,
     10,
   );
+  if (!baseRegion) {
+    // Reverse lookup can return a city Point even with polygon_geojson enabled.
+    // Widen to county/state/country, accepting only an actual containing polygon
+    // and retaining the country identified by the original response.
+    for (const zoom of [8, 5, 3]) {
+      signal?.throwIfAborted();
+      try {
+        const result = await lookup(latitude, longitude, zoom, signal);
+        signal?.throwIfAborted();
+        if (expectedCountry && resultCountryCode(result) !== expectedCountry) continue;
+        const region = normalizeResult(result, latitude, longitude, zoom);
+        if (region) { baseRegion = region; baseZoom = zoom; break; }
+      } catch (error) {
+        signal?.throwIfAborted();
+        console.warn("NeedMap broader region lookup failed:", error);
+      }
+    }
+  }
   if (!baseRegion) return null;
 
-  const targetZoom = adaptiveZoom(baseRegion);
+  const targetZoom = baseZoom === 10 ? adaptiveZoom(baseRegion) : baseZoom;
   let selectedRegion = baseRegion;
 
-  if (targetZoom !== 10) {
+  if (targetZoom !== baseZoom) {
     try {
       const adaptiveResult = await lookup(latitude, longitude, targetZoom, signal);
       const adaptiveRegion = normalizeResult(adaptiveResult, latitude, longitude, targetZoom);
-      if (adaptiveRegion) selectedRegion = adaptiveRegion;
+      if (adaptiveRegion && (!expectedCountry || adaptiveRegion.countryCode === expectedCountry)) selectedRegion = adaptiveRegion;
     } catch (error) {
       signal?.throwIfAborted();
       // A more detailed boundary is optional; retain the verified base region.
@@ -394,7 +436,9 @@ async function resolveRegion(report, signal) {
   return finalRegion;
 }
 
-export async function enrichSignalsWithRegions(signals, { onProgress, signal: abortSignal } = {}) {
+export async function enrichSignalsWithRegions(signals, {
+  onProgress, signal: abortSignal, bundledResolver = defaultBundledResolver,
+} = {}) {
   const enrichedSignals = [];
 
   for (let index = 0; index < signals.length; index += 1) {
@@ -403,7 +447,7 @@ export async function enrichSignalsWithRegions(signals, { onProgress, signal: ab
     onProgress?.(index, signals.length);
 
     try {
-      const region = await resolveRegion(signal, abortSignal);
+      const region = await resolveRegion(signal, abortSignal, bundledResolver);
       enrichedSignals.push({ ...signal, region });
     } catch (error) {
       abortSignal?.throwIfAborted();

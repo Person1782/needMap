@@ -54,12 +54,12 @@
   ];
   var ENGLISH = [
     "Share an anonymous service-access concern with NeedMap using a small, accessible form.",
-    "Report a concern | NeedMap Community", "Skip to report form", "Demonstration \u00b7 Not an official government service",
+    "Report a concern | NeedMap Community", "Skip to report form", "Not an official government service",
     "Community reporting", "Lightweight community form", "A concern today. Better planning tomorrow.",
     "What could be easier to reach?", "Tell us about a service your community needs. No account, photos or downloads required.",
     "Keep it anonymous.", "Reports are public. Leave out names, contact details, home addresses and medical information. Locations are rounded to an approximate map area.",
     "Connection mode", "Automatic", "Slow connection mode", "The form adapts to your connection and device. Slow connection mode keeps you here after submission.",
-    "Your choice is remembered on this device.", "Your community report", "All three sections are required. This form submits demonstration data.",
+    "Your choice is remembered on this device.", "Your community report", "All three sections are required.",
     "JavaScript is needed to send a report. Enable it and reload this page. The form uses a small script without any large libraries.",
     "Loading the form. If this message remains, reload when your connection improves or try another browser.",
     "You are offline. You can keep writing. Reconnect and select Submit report when ready.", "Check the following fields", "Report details",
@@ -73,7 +73,7 @@
     "Town, region or country", "Find place", "Matching places", "Place search:", "Describe the concern",
     "What makes the service hard to reach?", "Use general details, without personal information. Maximum 280 characters.",
     "The nearest pharmacy is hard to reach by bus in the evening.", "Your draft is saved on this phone for 7 days. Clear form removes it. Nothing is sent until you submit.",
-    "Submit report", "Clear form", "Your report will be publicly visible in the demonstration workspace. It does not request a direct response.",
+    "Submit report", "Clear form", "Your report will be publicly visible on NeedMap. It does not request a direct response.",
     "Open the Map page", "when you are ready. The map uses more data.", "Need emergency help?",
     "Contact your local emergency service. This form is not monitored for emergencies.", "NeedMap Community \u00b7 Better-informed community planning",
     "Language: {language}", "Choose a language", "Search languages", "No matching languages.",

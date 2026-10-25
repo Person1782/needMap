@@ -4,7 +4,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/12.19.0/fireba
 import { CustomProvider, initializeAppCheck } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-app-check.js";
 import { collection, getFirestore, onSnapshot } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
 import { firebaseConfig } from "./firebase-config.js";
-import { buildRecommendations } from "./analysis.js";
+import { buildRecommendationsForRegion } from "./analysis.js";
+import { loadWorldwideAnalysisRegions } from "./worldwide-analysis-regions.js";
 import { enrichSignalsWithRegions } from "./regions.js";
 import { normalizeReport, filterReports, reportSnapshotKey } from "./dashboard-state.js";
 import { createRegionNavigation, regionContains, WORLD_REGION } from "./region-navigation.js";
@@ -15,9 +16,11 @@ import { createAnalysisWorkspace } from "./analysis-workspace.js";
 import { createReportLocationMap } from "./report-location-map.js";
 import { createAnalysisOverviewMap } from "./analysis-overview-map.js";
 import { createMapPopups } from "./map-popups.js";
+import { createReportLocationPopups } from "./report-location-popups.js";
 import { attachMapZoom } from "./map-zoom.js";
 import { attachMapViewport, MAP_WORLD_BOUNDS, MAP_VIEWPORT_OPTIONS } from "./map-viewport.js";
-import { CANDIDATE_MARKER_Z_INDEX, REPORT_MARKER_Z_INDEX, separatedCandidateIconOptions } from "./map-marker-layout.js";
+import { REPORT_MARKER_Z_INDEX } from "./map-marker-layout.js";
+import { createCandidateMarkerLayer } from "./candidate-marker-layer.js";
 import { reviewComplaints } from "./analysis-ai.js";
 import "./analysis.css";
 import { createPopulationAreaMap } from "./population-area-map.js";
@@ -32,7 +35,7 @@ import { createPlanLocalCostLoader } from "./plans-local-cost.js";
 import "./plans.css";
 import { createLoadingBar } from "./loading-bar.js";
 import { trackLeafletTileLayer } from "./leaflet-loading.js";
-import { createInitialReportLoadGate } from "./report-loading.js";
+import { createInitialReportLoadGate, loadedReportConnectionMessage } from "./report-loading.js";
 
 const loadingTargetSelectors = Object.freeze({
   boot: "#map",
@@ -40,6 +43,7 @@ const loadingTargetSelectors = Object.freeze({
   "dynamic-language": ".language-navigation",
   "reports-connection": "#status",
   "report-region-enrichment": "#status",
+  "worldwide-analysis": "#candidate-status",
   region: "#region-status",
   "main-map-tiles": "#map",
   "analysis-evidence": "#analysis-status",
@@ -154,11 +158,17 @@ const reportsLayer = L.layerGroup().addTo(map);
 const candidatesLayer = L.layerGroup().addTo(map);
 const mapPopups = createMapPopups(L, map);
 let reportPopupDisposers = [];
-let candidatePopupDisposers = [];
+const candidateMarkers = createCandidateMarkerLayer(L, map, {
+  layer: candidatesLayer, popups: mapPopups, renderPopup: candidatePopup,
+  titleFor: (candidate) => i18n.t("map.suggestedTitle", { type: facilityLabel(candidate.analysis.facilityType), rank: candidate.locationRank || 1 }),
+  groupTitleFor: (count) => i18n.t("candidate.group", { count: i18n.number(count) }),
+});
 const selectedRegionLayer = L.layerGroup().addTo(map);
 const colors = { low: "#2f8a69", medium: "#d28b27", high: "#c34e42", unknown: "#526575" };
 let reports = [];
 let recommendations = [];
+let analysisRecommendations = [];
+let analysisIncludesDemonstrations = true;
 let selectedRegion = WORLD_REGION;
 let pendingRegionFit = false;
 let snapshotKey = "";
@@ -167,15 +177,18 @@ let regionController;
 let resolving = false;
 let connectionFailed = false;
 let reportsReady = false;
+let worldwideAnalysisRegions = [];
+let worldwideAnalysisState = "idle";
 let connectionMessage = { key: "connection.connecting", values: {} };
 let regionMessage = { key: "region.finding", values: {} };
 let planCostLoader;
 function setConnectionMessage(key, values = {}) { connectionMessage = { key, values }; status.textContent = i18n.t(key, values); }
 setConnectionMessage("connection.connecting");
 loadingBar.set("reports-connection", true, i18n.t("connection.connecting"));
-const analysisWorkspace = createAnalysisWorkspace({ i18n, dynamicTranslator, firebaseApp, reviewComplaints, onLoading, createPopulationMap: (container, options) => createPopulationAreaMap(L, container, { ...options, i18n, onLoading }), createOverviewMap: (container) => createAnalysisOverviewMap(L, container, { reportPopup, candidatePopup, i18n, dynamicTranslator, onLoading }), createReportMap: (container, report) => createReportLocationMap(L, container, report, { onLoading, loadingLabel: () => i18n.t("analysis.loadingMap") }) });
+const analysisWorkspace = createAnalysisWorkspace({ i18n, dynamicTranslator, firebaseApp, reviewComplaints, onLoading, onDemonstrationReportsChange(value) { analysisIncludesDemonstrations = value; updateCandidates(); }, createPopulationMap: (container, options) => createPopulationAreaMap(L, container, { ...options, i18n, onLoading }), createOverviewMap: (container) => createAnalysisOverviewMap(L, container, { reportPopup, candidatePopup, i18n, dynamicTranslator, onLoading }), createReportMap: (container, report) => createReportLocationMap(L, container, report, { onLoading, loadingLabel: () => i18n.t("analysis.loadingMap") }) });
 function updateAnalysis() {
-  analysisWorkspace.update({ region: selectedRegion, reports: regionReports(), recommendations, reportsReady, connectionFailed });
+  analysisWorkspace.update({ region: selectedRegion, reports: regionReports(), recommendations: analysisRecommendations, includeDemonstrationReports: analysisIncludesDemonstrations, reportsReady, connectionFailed,
+    recommendationState: selectedRegion.kind === "world" ? worldwideAnalysisState : "ready" });
 }
 const plansWorkspace = createPlansWorkspace({
   i18n,
@@ -282,7 +295,8 @@ function reportPopup(report) {
   meta.append(document.createTextNode(`${label(report.severity)} ${i18n.t("urgency.label")} · `));
   meta.append(translatedText(element("span"), report.region?.name || i18n.t("map.approximateArea"), report.region ? "en" : i18n.code));
   meta.append(document.createTextNode(` · ${i18n.t("map.approximate")}`));
-  content.append(heading, copy, meta);
+  content.append(heading);
+  content.append(copy, meta);
   return content;
 }
 function selectedReports() {
@@ -299,6 +313,9 @@ function selectedReports() {
 }
 function renderReports() {
   const selected = selectedReports();
+  const locationPopup = createReportLocationPopups(selected, reportPopup, {
+    document, groupLabel: (count) => i18n.t("analysis.reportCount", { count }),
+  });
   $("#report-count").textContent = selected.length;
   $("#urgent-count").textContent = selected.filter((report) => report.severity === "high").length;
   const regionMarker = "\u0000REGION\u0000";
@@ -321,7 +338,7 @@ function renderReports() {
   selected.forEach((report) => {
     const icon = L.divIcon({ className: "", html: `<span class="report-marker" style="background:${colors[report.severity] || colors.unknown}" aria-hidden="true">${serviceIconSvg(report.category)}</span>`, iconSize: [26, 26], iconAnchor: [13, 13] });
     const marker = L.marker([report.latitude, report.longitude], { icon, zIndexOffset: REPORT_MARKER_Z_INDEX, title: i18n.t("map.reportTitle", { category: label(report.category), urgency: label(report.severity) }) }).addTo(reportsLayer);
-    reportPopupDisposers.push(mapPopups.register(marker, () => reportPopup(report)));
+    reportPopupDisposers.push(mapPopups.register(marker, () => locationPopup(report)));
     const card = element("button", undefined, "report-card");
     card.type = "button";
     const heading = element("span", undefined, "report-card-heading");
@@ -329,12 +346,12 @@ function renderReports() {
     title.append(iconElement(report.category), element("span", label(report.category)));
     heading.append(title, element("span", label(report.severity), `urgency-tag ${report.severity}`));
     const reportCopy = translatedText(element("span", undefined, "report-copy"), report.summary || i18n.t("explore.noDescription"), report.summary ? report.language || report.locale : i18n.code);
-    const place = translatedText(element("small"), report.region?.name || i18n.t("explore.locating"), report.region ? "en" : i18n.code);
+    const place = translatedText(element("small"), report.region?.name || i18n.t(resolving ? "explore.locating" : "map.approximateArea"), report.region ? "en" : i18n.code);
     card.append(heading, reportCopy, place);
     card.addEventListener("click", () => {
       map.setView([report.latitude, report.longitude], 14);
       // Map movement may rebuild markers when the viewport filter is enabled.
-      mapPopups.openAt([report.latitude, report.longitude], () => reportPopup(report));
+      mapPopups.openAt([report.latitude, report.longitude], () => locationPopup(report));
     });
     reportList.append(card);
   });
@@ -358,28 +375,47 @@ function candidatePopup(candidate) {
   return content;
 }
 function renderCandidates() {
-  for (const dispose of candidatePopupDisposers) dispose();
-  candidatePopupDisposers = [];
-  candidatesLayer.clearLayers();
-  recommendations.forEach((candidate) => {
-    const rank = [1, 2, 3].includes(candidate.locationRank) ? candidate.locationRank : 1;
-    const icon = L.divIcon(separatedCandidateIconOptions(`<span class="candidate-marker" aria-hidden="true">${serviceIconSvg(candidate.category, candidate.analysis.facilityType)}<b>${rank}</b></span>`));
-    const marker = L.marker([candidate.position.latitude, candidate.position.longitude], { icon, zIndexOffset: CANDIDATE_MARKER_Z_INDEX, title: i18n.t("map.suggestedTitle", { type: facilityLabel(candidate.analysis.facilityType), rank }) }).addTo(candidatesLayer);
-    candidatePopupDisposers.push(mapPopups.register(marker, () => candidatePopup(candidate)));
-  });
+  candidateMarkers.update(recommendations);
 }
 function updateCandidates() {
-  const scoped = regionReports();
   // An explicitly selected boundary defines the service-planning area.
-  const candidates = buildRecommendations(selectedRegion.geometry ? scoped.map((report) => ({ ...report, region: selectedRegion })) : scoped);
+  const candidates = buildRecommendationsForRegion(reports, selectedRegion, { analysisRegions: worldwideAnalysisRegions, includeDemonstrationReports: true });
   recommendations = candidates;
+  analysisRecommendations = analysisIncludesDemonstrations
+    ? candidates
+    : buildRecommendationsForRegion(reports, selectedRegion, { analysisRegions: worldwideAnalysisRegions });
   renderCandidates();
   const candidateStatus = $("#candidate-status");
   candidateStatus.textContent = candidates.length
     ? i18n.t("candidate.count", { count: i18n.number(candidates.length) })
     : resolving && !selectedRegion.geometry ? i18n.t("candidate.finding") : i18n.t("candidate.needReports");
+  const world = selectedRegion.kind === "world";
+  if (world && worldwideAnalysisState === "loading") {
+    candidateStatus.textContent = `${candidates.length ? `${candidateStatus.textContent} ` : ""}${i18n.t("candidate.worldLoading")}`;
+  } else if (world && worldwideAnalysisState === "partial") {
+    candidateStatus.textContent += ` ${i18n.t("candidate.worldPartial")}`;
+  }
+  loadingBar.set("worldwide-analysis", world && worldwideAnalysisState === "loading", i18n.t("candidate.worldLoading"));
   if (connectionFailed) candidateStatus.textContent += i18n.t("candidate.outdated");
   updateAnalysis(); updatePlans();
+}
+
+async function refreshWorldwideAnalyses(enriched, revision, signal) {
+  worldwideAnalysisState = "loading";
+  updateCandidates();
+  try {
+    // Load the boundaries for all proposals shown by Map and Analysis.
+    // Report metadata and the model defaults remain unchanged.
+    const result = await loadWorldwideAnalysisRegions(enriched, { signal, includeDemonstrationReports: true });
+    if (revision !== regionRevision || signal.aborted) return;
+    worldwideAnalysisRegions = result.regions;
+    worldwideAnalysisState = result.failures.length ? "partial" : "ready";
+  } catch (error) {
+    if (revision !== regionRevision || signal.aborted) return;
+    console.error("NeedMap worldwide analyses:", error);
+    worldwideAnalysisState = "partial";
+  }
+  updateCandidates();
 }
 
 [search, category, urgency, viewport].forEach((control) => control.addEventListener("input", renderReports));
@@ -528,7 +564,10 @@ const unsubscribe = onSnapshot(collection(db, "incomingSignals"), { includeMetad
   if (nextKey === snapshotKey) {
     if (!fromCache) {
       liveDot.className = "live-dot connected";
-      if (!resolving) setConnectionMessage(reports.length ? "connection.live" : "connection.noReports", reports.length ? { count: reports.length } : {});
+      if (!resolving) {
+        const message = loadedReportConnectionMessage(reports);
+        setConnectionMessage(message.key, message.values);
+      }
     } else if (connectionFailed) {
       liveDot.className = "live-dot error";
       setConnectionMessage("connection.unavailable");
@@ -541,6 +580,8 @@ const unsubscribe = onSnapshot(collection(db, "incomingSignals"), { includeMetad
   regionController = new AbortController();
   const revision = ++regionRevision;
   reports = incoming;
+  worldwideAnalysisRegions = [];
+  worldwideAnalysisState = "idle";
   resolving = reports.length > 0;
   refreshCategories();
   renderReports();
@@ -563,17 +604,19 @@ const unsubscribe = onSnapshot(collection(db, "incomingSignals"), { includeMetad
     if (revision !== regionRevision) return;
     reports = enriched;
     resolving = false;
-    const missing = reports.filter((report) => !report.region).length;
+    const message = loadedReportConnectionMessage(reports);
     if (!reportsReady) setConnectionMessage("connection.connecting");
     else if (connectionFailed) setConnectionMessage("connection.unavailable");
-    else setConnectionMessage(missing ? "connection.regionsUnavailable" : "connection.live", { count: missing || reports.length });
+    else setConnectionMessage(message.key, message.values);
     renderReports();
     updateCandidates();
+    void refreshWorldwideAnalyses(enriched, revision, regionController.signal);
   }).catch((error) => {
     if (revision !== regionRevision) return;
     console.error("NeedMap region lookup:", error);
     resolving = false;
-    setConnectionMessage("connection.regionUnavailable");
+    setConnectionMessage(connectionFailed ? "connection.unavailable" : !reportsReady ? "connection.connecting" : "connection.regionUnavailable");
+    renderReports();
     updateCandidates();
   }).finally(stopEnrichmentLoading);
 }, (error) => {
@@ -582,6 +625,7 @@ const unsubscribe = onSnapshot(collection(db, "incomingSignals"), { includeMetad
   regionController?.abort();
   regionRevision += 1;
   resolving = false;
+  if (worldwideAnalysisState === "loading") worldwideAnalysisState = "partial";
   connectionFailed = true;
   setConnectionMessage("connection.unavailable");
   liveDot.className = "live-dot error";
@@ -590,6 +634,6 @@ const unsubscribe = onSnapshot(collection(db, "incomingSignals"), { includeMetad
 loadingBar.finish("boot");
 window.addEventListener("pagehide", (event) => {
   if (event.persisted) return;
-  unsubscribe(); reportLoadGate.destroy(); stopLanguageSubscription(); stopDynamicTranslation(); if (dynamicTranslationFrame) cancelAnimationFrame(dynamicTranslationFrame); document.removeEventListener("pointerdown", prepareDynamicTranslation, true); languagePicker.destroy(); dynamicTranslator.destroy(); regionController?.abort(); planCostLoader.destroy(); stopMainTileLoading(); regionNavigation.destroy(); regionPicker.destroy(); plansRegionPicker.destroy(); mapViewport.destroy(); analysisWorkspace.destroy(); plansWorkspace.destroy(); mapPopups.destroy(); detachMapZoom(); loadingBar.destroy();
+  unsubscribe(); reportLoadGate.destroy(); stopLanguageSubscription(); stopDynamicTranslation(); if (dynamicTranslationFrame) cancelAnimationFrame(dynamicTranslationFrame); document.removeEventListener("pointerdown", prepareDynamicTranslation, true); languagePicker.destroy(); dynamicTranslator.destroy(); regionController?.abort(); planCostLoader.destroy(); stopMainTileLoading(); regionNavigation.destroy(); regionPicker.destroy(); plansRegionPicker.destroy(); mapViewport.destroy(); analysisWorkspace.destroy(); plansWorkspace.destroy(); candidateMarkers.destroy(); mapPopups.destroy(); detachMapZoom(); loadingBar.destroy();
   window.removeEventListener("hashchange", showPage);
 });

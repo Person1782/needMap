@@ -20,3 +20,5 @@
 .analysis-population-button{display:block;width:100%;text-align:left;font:inherit;color:inherit;cursor:pointer}.analysis-population-button:hover{border-color:#005ea8;background:#f7fbfe}.analysis-population-button .metric-detail-hint{display:flex;align-items:center;gap:6px;margin-top:12px;color:#005ea8;font-size:.73rem;font-weight:650}.analysis-population-button .metric-detail-hint svg{width:15px;height:15px}
 
 .analysis-ai-status-stack>.analysis-note{margin-bottom:5px}
+
+.analysis-demo-control{display:flex;align-items:center;gap:8px;padding:12px 20px;border-top:1px solid #d6e0e8;font-size:.85rem;cursor:pointer}.analysis-demo-control input{width:16px;height:16px;accent-color:#005ea8}

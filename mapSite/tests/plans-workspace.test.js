@@ -157,6 +157,66 @@ test("Plans never creates a recommendation from one report and never fabricates 
   } finally { workspace.destroy(); }
 });
 
+test("Plans keeps insufficient-support states localized without demo labels or unnecessary map and population requests", () => {
+  for (const [code, messages] of [["en", englishMessages], ["ar", arabicMessages]]) {
+    const { document, window } = parseHTML(html);
+    const i18n = localizedI18n(code, messages);
+    let mapsCreated = 0, populationCalls = 0;
+    const workspace = createPlansWorkspace({
+      document, i18n,
+      createLocationMap() { mapsCreated += 1; return { update() {}, destroy() {} }; },
+      async loadPopulation() { populationCalls += 1; return { status: "unavailable" }; },
+    });
+    try {
+      select(window, document.getElementById("plans-type"), "water_facility");
+      const reports = [report("a", 37, -122.1), report("b", 37.02, -122)]
+        .map((item) => ({ ...item, isSynthetic: true }));
+      workspace.update({ region, reports, reportsReady: true });
+      workspace.setVisible(true);
+      assert.equal(document.querySelectorAll(".plan-card").length, 0);
+      assert.equal(document.getElementById("plans-results").textContent.includes(
+        i18n.t("analysis.demoWarning", { count: i18n.number(2) })), false, code);
+      assert.ok(document.getElementById("plans-results").textContent.includes(i18n.t("plans.needTwoReports")), code);
+
+      workspace.update({ region, reports: [{ ...reports[0], isSynthetic: false }, reports[1]], reportsReady: true });
+      assert.equal(document.querySelectorAll(".plan-card").length, 0, "One real report plus a demo does not support a plan");
+      assert.equal(document.getElementById("plans-results").textContent.includes(
+        i18n.t("analysis.demoWarning", { count: i18n.number(1) })), false, code);
+      assert.ok(document.getElementById("plans-results").textContent.includes(i18n.t("plans.needTwoReports")), code);
+      assert.equal(mapsCreated, 0);
+      assert.equal(populationCalls, 0);
+    } finally { workspace.destroy(); }
+  }
+});
+
+test("a provenance-only update removes an unsupported plan and cancels its pending population estimate", async () => {
+  const { document, window } = parseHTML(html);
+  let populationSignal, finishPopulation, calls = 0;
+  const workspace = createPlansWorkspace({
+    document,
+    createLocationMap: () => ({ update() {}, destroy() {} }),
+    loadPopulation(context, { signal }) {
+      calls += 1; populationSignal = signal;
+      return new Promise((resolve) => { finishPopulation = resolve; });
+    },
+  });
+  try {
+    select(window, document.getElementById("plans-type"), "water_facility");
+    const reports = [report("a", 37, -122.1), report("b", 37.02, -122)];
+    workspace.update({ region, reports, reportsReady: true });
+    workspace.setVisible(true);
+    assert.equal(document.querySelectorAll(".plan-card").length, 1);
+    assert.equal(calls, 1);
+    workspace.update({ region, reports: reports.map((item) => ({ ...item, isSynthetic: true })), reportsReady: true });
+    assert.equal(populationSignal.aborted, true);
+    assert.equal(document.querySelectorAll(".plan-card").length, 0);
+    assert.equal(calls, 1);
+    finishPopulation({ status: "ready", value: 1234, year: 2025 });
+    await tick();
+    assert.equal(document.querySelectorAll(".plan-card").length, 0, "Late population results cannot restore a rejected plan");
+  } finally { workspace.destroy(); }
+});
+
 test("Plans translates dynamic estimate explanations instead of leaking English evidence prose", async () => {
   const { document, window } = parseHTML(html);
   const i18n = localizedI18n("ar", arabicMessages);

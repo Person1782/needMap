@@ -187,6 +187,28 @@ async function resolveSelection(entry, request, storage, signal) {
   return region;
 }
 
+/** Load a catalog boundary without changing the visitor's selected region. */
+export async function loadNavigationRegion(entry, {
+  signal, request = policyLimitedFetch, fetchImpl = globalThis.fetch, storage,
+} = {}) {
+  signal?.throwIfAborted();
+  const descriptor = catalog.find((candidate) => candidate.id === entry?.id);
+  if (!descriptor) throw new Error("Choose a region from the verified directory.");
+  if (descriptor.boundaryFile) {
+    const records = await loadWorldRegionSet(descriptor, { signal, fetchImpl });
+    signal?.throwIfAborted();
+    const region = records.find((candidate) => candidate.id === descriptor.id &&
+      candidate.kind === descriptor.kind && candidate.countryCode === descriptor.countryCode);
+    if (!region) throw new Error("The requested verified boundary is unavailable.");
+    const { searchText, ...details } = descriptor;
+    return { ...region, ...details };
+  }
+  if (storage === undefined) {
+    try { storage = globalThis.localStorage; } catch { /* Blocked storage only disables caching. */ }
+  }
+  return resolveSelection(descriptor, request, storage, signal);
+}
+
 export async function loadIpRegion({
   signal, fetchImpl = globalThis.fetch, endpoint = IP_LOCATION_ENDPOINT, timeoutMs = 8000,
 } = {}) {

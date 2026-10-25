@@ -18,6 +18,17 @@ const affectedEvidence = (extra = {}) => ({ status: "ready", indicators: [{
   scope: { regionId: "KE", countryCode: "KE", name: "Kenya" }, ...extra,
 }], sources: [source, populationSource] });
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+async function waitFor(condition, message, timeout = 5000) {
+  const deadline = Date.now() + timeout;
+  while (!condition()) {
+    assert.ok(Date.now() < deadline, typeof message === "function" ? message() : message);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+}
+const waitForAIReview = (page) => waitFor(
+  () => /completed the review|AI reviewed|AI review is unavailable/.test(page.text("#analysis-ai-status")),
+  () => `AI review did not reach a terminal state: ${page.text("#analysis-ai-status")}`,
+);
 function fixture(options = {}) {
   const { document, window } = parseHTML(html);
   const workspace = createAnalysisWorkspace({ document, loadEvidence: async () => evidence, loadPopulation: async () => ({ status: "unavailable" }), ...options });
@@ -95,6 +106,153 @@ test("overview map follows report and recommendation filters without resetting o
   } finally { page.workspace.destroy(); }
   assert.equal(destroyed, 2);
 });
+
+test("overview explains regional support only when loaded reports have no scoped proposed location", () => {
+  const page = fixture({ createOverviewMap: () => ({ update() {}, destroy() {} }) });
+  const reports = [report("water", "water"), report("food", "food")];
+  try {
+    page.workspace.update({ region: country, reports, recommendations: [], reportsReady: false });
+    page.workspace.setVisible(true);
+    assert.doesNotMatch(page.text("#analysis-map-note"), /at least two reports/);
+    page.workspace.update({ region: country, reports, recommendations: [], reportsReady: true });
+    assert.match(page.text("#analysis-map-note"), /at least two reports in the same region and category/);
+    page.workspace.update({ region: country, reports, recommendations: [{ id: "water-location", category: "water" }], reportsReady: true });
+    assert.doesNotMatch(page.text("#analysis-map-note"), /at least two reports/);
+    page.choose("food");
+    assert.match(page.text("#analysis-map-note"), /at least two reports in the same region and category/);
+    page.workspace.update({ region: country, reports: [], recommendations: [], reportsReady: true });
+    assert.doesNotMatch(page.text("#analysis-map-note"), /at least two reports/);
+  } finally { page.workspace.destroy(); }
+});
+test("Worldwide keeps available locations visible while additional analyses load or fail", async () => {
+  const page = fixture({
+    loadEvidence: async () => ({ status: "unavailable", indicators: [] }),
+    createOverviewMap: () => ({ update() {}, destroy() {} }),
+  });
+  const context = { region: { id: "world", kind: "world", name: "Worldwide" },
+    reports: [report("water", "water", "Water unavailable")],
+    recommendations: [{ id: "water-service", category: "water" }], reportsReady: true };
+  try {
+    page.workspace.update({ ...context, recommendationState: "loading" });
+    page.workspace.setVisible(true); await tick();
+    assert.match(page.text("#analysis-map-note"), /1 proposed service location/);
+    assert.match(page.text("#analysis-map-note"), /Loading additional regional analyses/);
+    assert.doesNotMatch(page.text("#analysis-map-note"), /at least two reports/);
+    page.workspace.update({ ...context, recommendationState: "partial" });
+    assert.match(page.text("#analysis-map-note"), /Some regional analyses could not be loaded/);
+    assert.match(page.text("#analysis-map-note"), /1 proposed service location/);
+    page.workspace.update({ ...context, recommendationState: "ready" });
+    assert.doesNotMatch(page.text("#analysis-map-note"), /could not be loaded|Loading additional/);
+  } finally { page.workspace.destroy(); }
+});
+
+test("Analysis preserves supplied reports and proposals without provenance labels", () => {
+  const updates = [];
+  const page = fixture({ createOverviewMap: () => ({ update: (context) => updates.push(context), destroy() {} }) });
+  const reports = [report("water", "water"), report("health", "healthcare"), report("food", "food")]
+    .map((item, index) => ({ ...item, isSynthetic: index < 2 }));
+  const recommendations = [
+    { id: "water-location", category: "water", evidenceMode: "demonstration" },
+    { id: "health-location", category: "healthcare", demonstrationReportCount: 2 },
+    { id: "food-location", category: "food", evidenceMode: "community", demonstrationReportCount: 0 },
+  ];
+  const before = structuredClone({ reports, recommendations });
+  const context = { region: country, reports, recommendations, reportsReady: true };
+  const assertNoLabels = () => {
+    for (const selector of ["#analysis-map-note", "#analysis-data-note", "#report-chart-note", "#analysis-rankings"]) {
+      assert.doesNotMatch(page.text(selector), /demo(?:nstration)?|synthetic/i, selector);
+    }
+  };
+  try {
+    page.workspace.update(context); page.workspace.setVisible(true);
+    assert.equal(updates.at(-1).reports.length, 3);
+    assert.equal(updates.at(-1).reports.filter((item) => item.isSynthetic).length, 2);
+    assert.equal(updates.at(-1).recommendations.length, 3);
+    assert.match(page.text("#analysis-map-note"), /3 proposed service locations/);
+    assert.match(page.text("#analysis-overview"), /Total reports3/);
+    assertNoLabels();
+    page.choose("healthcare");
+    assert.deepEqual(updates.at(-1).recommendations.map(({ id }) => id), ["health-location"]);
+    assert.match(page.text("#analysis-overview"), /Total reports1/);
+    assertNoLabels();
+    page.choose("food");
+    assert.deepEqual(updates.at(-1).recommendations.map(({ id }) => id), ["food-location"]);
+    assertNoLabels();
+
+    page.choose("all");
+    page.workspace.update({ ...context, region: local, recommendations: [], connectionFailed: true });
+    assert.equal(updates.at(-1).region.id, local.id);
+    assert.equal(updates.at(-1).reports.length, 3);
+    assert.match(page.text("#analysis-map-note"), /at least two reports/);
+    assert.match(page.text("#report-chart-note"), /last loaded reports/);
+    assertNoLabels();
+    assert.deepEqual({ reports, recommendations }, before, "Presentation must not remove stored provenance flags or change proposal metadata");
+  } finally { page.workspace.destroy(); }
+});
+
+test("Analysis retains the proposed-service toggle callback, controlled state and lifecycle with neutral wording", () => {
+  const changes = [], updates = [];
+  const page = fixture({
+    onDemonstrationReportsChange: (checked) => changes.push(checked),
+    createOverviewMap: () => ({ update: (context) => updates.push(context), destroy() {} }),
+  });
+  const context = { region: country, reports: [{ ...report("water", "water"), isSynthetic: true }], recommendations: [], reportsReady: true };
+  try {
+    page.workspace.update(context); page.workspace.setVisible(true);
+    const checkbox = page.query("#analysis-demo-proposals");
+    assert.equal(checkbox.checked, false, "The controlled option still defaults false when omitted");
+    assert.equal(page.text("#analysis-demo-proposals-label"), "Show all proposed services");
+    assert.match(page.text("#analysis-map-note"), /at least two reports/);
+    checkbox.checked = true; checkbox.dispatchEvent(new page.window.Event("change"));
+    assert.deepEqual(changes, [true]);
+    assert.match(page.text("#analysis-map-note"), /do not yet support a distinct recommended location/);
+    assert.equal(updates.at(-1).reports.length, 1);
+    assert.equal(updates.at(-1).reports[0].isSynthetic, true);
+    assert.deepEqual(updates.at(-1).recommendations, [], "Only the app recomputes proposals");
+    assert.doesNotMatch(page.text("#analysis-map-note"), /demo(?:nstration)?|synthetic/i);
+
+    page.workspace.update({ ...context, includeDemonstrationReports: true, recommendationState: "loading" });
+    assert.equal(checkbox.checked, true);
+    assert.match(page.text("#analysis-map-note"), /Loading additional regional analyses/);
+    page.workspace.update({ ...context, includeDemonstrationReports: true, recommendationState: "partial" });
+    assert.match(page.text("#analysis-map-note"), /Some regional analyses could not be loaded/);
+    page.workspace.update({ ...context, region: local, includeDemonstrationReports: true });
+    assert.equal(checkbox.checked, true);
+    assert.equal(updates.at(-1).region.id, local.id);
+    assert.match(page.text("#analysis-map-note"), /do not yet support a distinct recommended location/);
+    checkbox.checked = false; checkbox.dispatchEvent(new page.window.Event("change"));
+    assert.deepEqual(changes, [true, false]);
+    assert.match(page.text("#analysis-map-note"), /at least two reports/);
+    page.workspace.destroy();
+    checkbox.checked = true; checkbox.dispatchEvent(new page.window.Event("change"));
+    assert.deepEqual(changes, [true, false], "Destroy still releases the checkbox listener");
+  } finally { page.workspace.destroy(); }
+});
+
+test("Analysis translates the neutral proposed-service control without changing its selection", () => {
+  let language = "first", changeLanguage;
+  const i18n = {
+    t(key) {
+      if (key === "candidate.includeDemonstrations") return `${language} all proposed services`;
+      return key;
+    },
+    number: (value) => String(value), date: () => "date", subscribe(callback) { changeLanguage = callback; return () => {}; },
+  };
+  const page = fixture({ i18n, createOverviewMap: () => ({ update() {}, destroy() {} }) });
+  try {
+    page.workspace.update({ region: country, reports: [report("water", "water")],
+      recommendations: [{ id: "water-location", category: "water", evidenceMode: "demonstration" }],
+      reportsReady: true, includeDemonstrationReports: true });
+    page.workspace.setVisible(true);
+    assert.equal(page.text("#analysis-demo-proposals-label"), "first all proposed services");
+    assert.doesNotMatch(page.text("#analysis-map-note"), /demonstration/i);
+    language = "second"; changeLanguage();
+    assert.equal(page.text("#analysis-demo-proposals-label"), "second all proposed services");
+    assert.equal(page.query("#analysis-demo-proposals").checked, true);
+    assert.doesNotMatch(page.text("#analysis-map-note"), /demonstration/i);
+  } finally { page.workspace.destroy(); }
+});
+
 test("Healthcare combines clinic and medication reports into one option, ranking, chart and overview map filter", async () => {
   const updates = [];
   const page = fixture({
@@ -217,7 +375,7 @@ test("AI provider failure falls back to a cited local evidence review without re
   const page = fixture({ reviewComplaints: async () => { throw new Error("Provider unavailable"); } });
   try {
     page.workspace.update({ region: country, reports: [report("a", "water")], reportsReady: true }); page.workspace.setVisible(true);
-    await new Promise((resolve) => setTimeout(resolve, 650));
+    await waitForAIReview(page);
     assert.match(page.text("#analysis-ai-status"), /completed the review from the cited evidence using its built-in fallback/);
     assert.doesNotMatch(page.text("#analysis-ai-status"), /unavailable/i);
     assert.match(page.text("#analysis-rankings"), /People without basic water: 20 %/);
@@ -246,7 +404,7 @@ test("each rank gives one concise sourced reason and one honest AI-review senten
     page.workspace.update({ region: country, reports: [report("water", "water", "Water has been unavailable for 3 months")], reportsReady: true });
     page.workspace.setVisible(true);
     assert.match(page.text(".priority-ai-line"), /AI review: Checking exact report excerpts and explicit durations; AI does not set the rank\./);
-    await new Promise((resolve) => setTimeout(resolve, 650));
+    await waitForAIReview(page);
     const explanation = page.query('.priority-row[data-category="water"] .priority-reason');
     assert.equal(explanation.querySelectorAll("p").length, 2, "one reason sentence plus one AI-review sentence");
     assert.match(explanation.querySelector("h4").textContent, /AI review: Why it ranks here/);
@@ -308,7 +466,7 @@ test("a late AI result cannot appear in a newly selected region", async () => {
   const page = fixture({ reviewComplaints: (_, reports, options) => { signal = options.signal; return new Promise((done) => { resolve = done; }); } });
   try {
     page.workspace.update({ region: country, reports: [report("a", "water", "Old region complaint")], reportsReady: true }); page.workspace.setVisible(true);
-    await new Promise((done) => setTimeout(done, 650));
+    await waitFor(() => typeof resolve === "function", "The initial AI request did not start");
     page.workspace.update({ region: local, reports: [], reportsReady: true });
     assert.equal(signal.aborted, true);
     resolve({ insights: [{ reportId: "a", quote: "Old region complaint" }], reviewedCount: 1 }); await tick();
@@ -338,7 +496,7 @@ test("report chart compares actual counts, updates both filters, and retains app
   } finally { page.workspace.destroy(); }
 });
 
-test("chart distinguishes loading, failed, empty, demonstration and stale reports", async () => {
+test("chart distinguishes loading, failed, empty and stale reports without provenance labels", async () => {
   const page = fixture();
   try {
     page.workspace.update({ region: country, reports: [], reportsReady: false }); page.workspace.setVisible(true);
@@ -350,7 +508,7 @@ test("chart distinguishes loading, failed, empty, demonstration and stale report
     assert.match(page.text("#analysis-report-chart"), /No reports have been submitted/);
     assert.equal(page.query(".report-chart-bar"), null, "National statistics must not create report bars");
     page.workspace.update({ region: country, reports: [{ ...report("d", "water"), isSynthetic: true }], reportsReady: true, connectionFailed: true });
-    assert.match(page.text("#report-chart-note"), /Includes 1 demonstration report\./);
+    assert.doesNotMatch(page.text("#report-chart-note"), /demonstration|synthetic/i);
     assert.match(page.text("#report-chart-note"), /last loaded reports/);
     page.choose("roads");
     assert.match(page.text("#analysis-report-chart"), /No reports match this problem/);
@@ -584,7 +742,7 @@ test("hiding Analysis cancels evidence and AI work, releases loaders, and reload
     await tick();
     assert.equal(evidenceRequests.length, 2); assert.equal(aiRequests.length, 0);
     evidenceRequests[1].resolve(evidence);
-    await new Promise((resolve) => setTimeout(resolve, 650));
+    await waitFor(() => aiRequests.length >= 1, "AI did not start after evidence resolved");
     assert.equal(aiRequests.length, 1);
     assert.equal([...active].filter((token) => /analysis-(?:evidence|ai):/.test(token)).length, 1);
     page.workspace.setVisible(false); await tick();
@@ -592,7 +750,7 @@ test("hiding Analysis cancels evidence and AI work, releases loaders, and reload
     assert.equal([...active].filter((token) => /analysis-(?:evidence|ai):/.test(token)).length, 0);
 
     page.workspace.setVisible(true);
-    await new Promise((resolve) => setTimeout(resolve, 650));
+    await waitFor(() => aiRequests.length >= 2, "AI did not restart when Analysis became visible");
     assert.equal(aiRequests.length, 2);
     aiRequests[1].resolve({ insights: [], priorityReviews: [], reviewedCount: 1 });
     await tick();

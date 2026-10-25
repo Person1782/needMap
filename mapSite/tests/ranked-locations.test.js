@@ -11,13 +11,29 @@ const report = (id, longitude, extra = {}) => ({
   id, latitude: 0, longitude, severity: "low", category: "healthcare", summary: "Medical care needed", region, ...extra,
 });
 const pair = (prefix, longitude, extra = {}) => [report(`${prefix}-a`, longitude, extra), report(`${prefix}-b`, longitude + 0.01, extra)];
+const assertRegionalSupport = (candidates) => {
+  const usedReports = new Set();
+  for (const candidate of candidates) {
+    assert.ok(candidate.signals.length >= 2);
+    assert.equal(pointInGeometry(candidate.position.longitude, candidate.position.latitude, candidate.region.geometry), true);
+    if (candidate.region.excludedGeometry) {
+      assert.equal(pointInGeometry(candidate.position.longitude, candidate.position.latitude, candidate.region.excludedGeometry), false);
+    }
+    for (const signal of candidate.signals) {
+      assert.equal(signal.region.id, candidate.region.id);
+      assert.equal(pointInGeometry(signal.longitude, signal.latitude, candidate.region.geometry), true);
+      assert.equal(usedReports.has(signal.id), false, `${signal.id} must support only one location`);
+      usedReports.add(signal.id);
+    }
+  }
+};
 
 test("three separated report groups produce three distinct ranked locations with disjoint evidence", () => {
   const reports = [...pair("west", -10), ...pair("center", 0, { severity: "high" }), ...pair("east", 10, { severity: "medium" })];
   const candidates = buildRecommendations(reports);
   assert.equal(candidates.length, 3);
   assert.deepEqual(candidates.map((item) => item.locationRank), [1, 2, 3]);
-  assert.deepEqual(candidates.map((item) => item.urgencyScore), [6, 4, 2]);
+  assert.deepEqual(candidates.map((item) => item.urgencyScore), [4, 2.34, 2]);
   assert.deepEqual(candidates.flatMap((item) => item.signals.map((signal) => signal.id)).sort(), reports.map((item) => item.id).sort());
   assert.equal(new Set(candidates.map((item) => item.id)).size, 3);
   for (const candidate of candidates) {
@@ -31,6 +47,7 @@ test("three separated report groups produce three distinct ranked locations with
   assert.ok(Math.abs(candidates[0].position.longitude) < 0.02);
   assert.ok(Math.abs(candidates[1].position.longitude - 10) < 0.02);
   assert.ok(Math.abs(candidates[2].position.longitude + 10) < 0.02);
+  assertRegionalSupport(candidates);
 });
 
 test("one, two, and three report groups require at least two unique reports each", () => {
@@ -38,8 +55,15 @@ test("one, two, and three report groups require at least two unique reports each
   assert.deepEqual(buildRecommendations([report("same", 0), report("same", 0)]), []);
   assert.equal(buildRecommendations(pair("only", 0))[0].id, "test:healthcare");
   assert.equal(buildRecommendations([...pair("one", -10), ...pair("two", 10)]).length, 2);
-  assert.ok(buildRecommendations([...pair("one", -10), ...pair("two", 10), report("extra", 0)]).length <= 2);
-  assert.equal(buildRecommendations([...pair("one", -10), ...pair("two", 10)], { minimumSize: 3 }).length, 1);
+  const withSingleton = buildRecommendations([...pair("one", -10), ...pair("two", 10), report("extra", 0)]);
+  assert.equal(withSingleton.length, 2);
+  assert.equal(withSingleton.flatMap((item) => item.signals).length, 5);
+  assert.ok(withSingleton.some((item) => item.signals.some((signal) => signal.id === "extra")));
+  assertRegionalSupport(withSingleton);
+  const largerMinimum = buildRecommendations([...pair("one", -10), ...pair("two", 10)], { minimumSize: 3 });
+  assert.equal(largerMinimum.length, 1);
+  assert.equal(largerMinimum[0].signals.length, 4);
+  assertRegionalSupport(largerMinimum);
 });
 
 test("coincident reports and reports within 250 meters do not fabricate additional locations", () => {
@@ -50,11 +74,13 @@ test("coincident reports and reports within 250 meters do not fabricate addition
   assert.equal(buildRecommendations(close).length, 1);
 });
 
-test("a solitary remote report cannot create its own proposed location", () => {
+test("a remote report in the same region contributes without creating a singleton location", () => {
   const reports = Array.from({ length: 5 }, (_, index) => report(`local-${index}`, index * 0.00001));
-  const candidates = buildRecommendations([...reports, report("remote", 10)]);
-  assert.equal(candidates.length, 1);
-  assert.equal(candidates[0].signals.length, 6);
+  const candidates = buildRecommendations([...reports, report("remote", 10, { severity: "high" })]);
+  assert.ok(candidates.length >= 1 && candidates.length <= 3);
+  assert.deepEqual(candidates.flatMap((candidate) => candidate.signals.map(({ id }) => id)).sort(), [...reports.map((signal) => signal.id), "remote"]);
+  assert.equal(Math.round(candidates.reduce((sum, candidate) => sum + candidate.urgencyScore, 0) * 100), 700);
+  assertRegionalSupport(candidates);
 });
 
 test("location IDs, ranks, positions, and evidence are deterministic under input reordering", () => {
@@ -66,18 +92,54 @@ test("location IDs, ranks, positions, and evidence are deterministic under input
   assert.deepEqual(changedText.map((item) => item.id), expected.map((item) => item.id));
 });
 
-test("rankings restart for each category and never exceed three locations", () => {
-  const reports = [-12, -4, 4, 12].flatMap((longitude, index) => pair(`medical-${index}`, longitude));
+test("rankings cover all regional reports using at most three locations per category", () => {
+  const reports = [-12, -4, 4, 12].flatMap((longitude, index) =>
+    pair(`medical-${index}`, longitude, { severity: ["low", "medium", "high", "high"][index] }));
   const candidates = buildRecommendations([...reports, ...pair("food", 2, { category: "food" })]);
   assert.equal(candidates.filter((item) => item.category === "healthcare").length, 3);
   assert.deepEqual(candidates.filter((item) => item.category === "healthcare").map((item) => item.locationRank), [1, 2, 3]);
   assert.equal(candidates.find((item) => item.category === "food").locationRank, 1);
   assert.equal(candidates.flatMap((item) => item.signals).length, 10);
+  assert.deepEqual(candidates.filter((item) => item.category === "healthcare").flatMap((item) => item.signals.map(({ id }) => id)).sort(), reports.map(({ id }) => id).sort());
+  const scores = candidates.filter((item) => item.category === "healthcare").map((item) => item.urgencyScore);
+  assert.deepEqual(scores, [...scores].sort((first, second) => second - first));
+  assert.equal(Math.round(scores.reduce((sum, score) => sum + score, 0) * 100), 1234);
+  assertRegionalSupport(candidates);
+});
+
+test("two high-urgency reports rank above three low-urgency reports at a weight of 2", () => {
+  const reports = [
+    report("low-a", 0), report("low-b", 0.0001), report("low-c", 0.0002),
+    ...pair("high", 1, { severity: "high" }),
+  ];
+  const candidates = buildRecommendations(reports);
+  assert.equal(candidates.length, 2);
+  assert.deepEqual(candidates.map((candidate) => candidate.urgencyScore), [4, 3]);
+  assert.deepEqual(candidates[0].signals.map(({ id }) => id), ["high-a", "high-b"]);
+  assertRegionalSupport(candidates);
+});
+
+test("mathematically equal decimal urgency totals retain the stable identifier tie-break", () => {
+  const reports = [
+    ...["low", "medium", "high"].map((severity, index) => report(`mixed-${index}`, 0, { severity })),
+    ...["high", "medium", "low"].map((severity, index) => report(`reversed-${index}`, 1, { severity })),
+  ];
+  const candidates = buildRecommendations(reports);
+  assert.equal(candidates.length, 2);
+  assert.deepEqual(candidates.map((candidate) => candidate.urgencyScore), [4.17, 4.17]);
+  assert.deepEqual(candidates.map(({ id }) => id), candidates.map(({ id }) => id).sort());
+  assert.deepEqual(buildRecommendations([...reports].reverse()), candidates);
+  assertRegionalSupport(candidates);
 });
 
 test("splitting and positions remain within a region that crosses the date line", () => {
   const datelineRegion = { ...region, id: "dateline", geometry: square(178, -3, -178, 3) };
-  const reports = [179, 179.9, -179].flatMap((longitude, index) => pair(`island-${index}`, longitude, { region: datelineRegion }));
+  const reports = [
+    ...pair("west", 179.7, { region: datelineRegion }),
+    report("crossing-a", 179.9975, { region: datelineRegion }),
+    report("crossing-b", -179.9975, { region: datelineRegion }),
+    ...pair("east", -179.7, { region: datelineRegion }),
+  ];
   const candidates = buildRecommendations(reports);
   assert.equal(candidates.length, 3);
   for (const { position } of candidates) {
@@ -85,15 +147,17 @@ test("splitting and positions remain within a region that crosses the date line"
     assert.equal(pointInGeometry(position.longitude, position.latitude, datelineRegion.geometry), true);
   }
   assert.deepEqual(buildRecommendations(reports.reverse()), candidates);
+  assertRegionalSupport(candidates);
 });
 
-test("suggestions stay on valid land components when a median falls in a boundary hole", () => {
-  const geometry = square(-10, -10, 10, 10);
-  geometry.coordinates.push(square(-2, -2, 2, 2).coordinates[0]);
+test("suggestions stay on valid land components when their center falls in a boundary hole", () => {
+  const geometry = square(-0.1, -0.1, 0.1, 0.1);
+  geometry.coordinates.push(square(-0.01, -0.01, 0.01, 0.01).coordinates[0]);
   const holeRegion = { ...region, geometry };
-  const candidates = buildRecommendations([report("west", -3, { region: holeRegion }), report("east", 3, { region: holeRegion })]);
+  const candidates = buildRecommendations([report("west", -0.02, { region: holeRegion }), report("east", 0.02, { region: holeRegion })]);
   assert.equal(candidates.length, 1);
   assert.equal(pointInGeometry(candidates[0].position.longitude, candidates[0].position.latitude, geometry), true);
+  assertRegionalSupport(candidates);
 });
 
 
@@ -106,8 +170,12 @@ test("legacy medication and healthcare reports form one shared regional group ca
   assert.equal(candidates.length, 3);
   assert.deepEqual(candidates.map((item) => item.locationRank), [1, 2, 3]);
   assert.ok(candidates.every((item) => item.category === "healthcare" && item.recommendationGroupId === "test:healthcare" && item.locationCount === 3));
-  assert.deepEqual(candidates.flatMap((item) => item.signals.map((signal) => signal.id)).sort(), reports.map((item) => item.id).sort());
+  const supportingIds = candidates.flatMap((item) => item.signals.map((signal) => signal.id));
+  assert.equal(supportingIds.length, 8);
+  assert.equal(new Set(supportingIds).size, 8);
+  assert.deepEqual([...supportingIds].sort(), reports.map(({ id }) => id).sort());
   assert.deepEqual(buildRecommendations([...reports].reverse()), candidates);
+  assertRegionalSupport(candidates);
 });
 
 test("one medication report and one healthcare report together meet the minimum support", () => {

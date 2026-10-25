@@ -1,7 +1,7 @@
 import { pointInGeometry } from "./regions.js";
 import { categoryForReport } from "./analysis-model.js";
 
-const EARTH_RADIUS_KM = 6371;
+const EARTH_RADIUS_KM = 6371.0088;
 
 export const MIN_CLUSTER_SIZE = 2;
 export const MAX_SERVICE_LOCATIONS = 3;
@@ -10,17 +10,19 @@ const MIN_SPLIT_IMPROVEMENT = 0.25;
 
 export const severityWeights = {
   low: 1,
-  medium: 2,
-  high: 3,
+  medium: 1.17,
+  high: 2,
 };
 
 function toRadians(value) {
   return value * Math.PI / 180;
 }
 
-function validSignal(signal) {
-  return signal && Number.isFinite(signal.latitude) && Number.isFinite(signal.longitude) &&
-    Math.abs(signal.latitude) <= 90 && Math.abs(signal.longitude) <= 180;
+/** Demo evidence is opt-in; community analysis excludes it by default. */
+export function isRecommendationEvidence(signal, { includeDemonstrationReports = false } = {}) {
+  return Boolean(signal && (signal.isSynthetic !== true || includeDemonstrationReports === true) &&
+    Number.isFinite(signal.latitude) && Number.isFinite(signal.longitude) &&
+    Math.abs(signal.latitude) <= 90 && Math.abs(signal.longitude) <= 180);
 }
 
 function signalWeight(signal) {
@@ -51,15 +53,21 @@ function geographicDistance(first, second) {
   return 2 * EARTH_RADIUS_KM * Math.asin(Math.sqrt(Math.min(1, Math.max(0, haversine))));
 }
 
-function groupSignalsByRegionAndCategory(signals) {
+function positionInRegion(position, region) {
+  return pointInGeometry(position.longitude, position.latitude, region.geometry) &&
+    (!region.excludedGeometry || !pointInGeometry(position.longitude, position.latitude, region.excludedGeometry));
+}
+
+function groupSignalsByRegionAndCategory(signals, options) {
   const groups = new Map();
 
   const seenReports = new Set();
-  signals.filter(validSignal)
-    .sort((first, second) => compareText(reportKey(first), reportKey(second)))
+  signals.filter((signal) => isRecommendationEvidence(signal, options))
+    .sort((first, second) => Number(first.isSynthetic === true) - Number(second.isSynthetic === true) ||
+      compareText(reportKey(first), reportKey(second)))
     .forEach((signal) => {
-    if (!validSignal(signal) || !signal.region?.id || !signal.region.geometry ||
-        !pointInGeometry(signal.longitude, signal.latitude, signal.region.geometry)) return;
+    if (!signal.region?.id || !signal.region.geometry ||
+        !positionInRegion(signal, signal.region)) return;
     const identity = typeof signal.id === "string" && signal.id ? `id:${signal.id}` : reportKey(signal);
     if (seenReports.has(identity)) return;
     seenReports.add(identity);
@@ -79,12 +87,21 @@ function groupSignalsByRegionAndCategory(signals) {
 }
 
 function clusterPosition(cluster) {
-  return constrainPositionToRegion(weightedGeometricMedian(cluster.signals), cluster);
+  // Grouping has already applied the caller's evidence mode. Use every accepted
+  // report here so demo-mode counts, urgency weights, and coordinates agree.
+  return constrainPositionToRegion(weightedGeographicCenter(cluster.signals, {
+    includeDemonstrationReports: true,
+  }), cluster);
 }
 
 function placementCost(cluster, position) {
   return cluster.signals.reduce((sum, signal) =>
     sum + signalWeight(signal) * geographicDistance(signal, position), 0);
+}
+
+function maxSupportingDistance(cluster, position = clusterPosition(cluster)) {
+  return cluster.signals.reduce((maximum, signal) =>
+    Math.max(maximum, geographicDistance(signal, position)), 0);
 }
 
 function clusterSignature(cluster) {
@@ -168,8 +185,34 @@ function supportedLocations(group, minimumSize) {
   return clusters;
 }
 
-export function weightedGeometricMedian(signals) {
-  signals = Array.isArray(signals) ? signals.filter(validSignal) : [];
+export function weightedGeographicCenter(signals, options) {
+  const reports = (Array.isArray(signals) ? signals : []).filter((signal) => isRecommendationEvidence(signal, options))
+    .sort((a, b) => compareText(reportKey(a), reportKey(b)));
+  if (!reports.length) throw new RangeError("At least one valid report location is required.");
+  let x = 0, y = 0, z = 0;
+  for (const report of reports) {
+    const latitude = toRadians(report.latitude), longitude = toRadians(report.longitude);
+    const weight = signalWeight(report);
+    x += weight * Math.cos(latitude) * Math.cos(longitude);
+    y += weight * Math.cos(latitude) * Math.sin(longitude);
+    z += weight * Math.sin(latitude);
+  }
+  // The spherical average avoids longitude discontinuities at the date line
+  // and distortion near the poles. A median would still snap to the heavier
+  // member of a pair even with a modest difference in urgency weights.
+  if (Math.hypot(x, y, z) < 1e-12) {
+    // Antipodal points have no unique average. Keep this calculation finite;
+    // the enclosing region still constrains the resulting planning point.
+    return { latitude: reports[0].latitude, longitude: reports[0].longitude };
+  }
+  return {
+    latitude: Math.atan2(z, Math.hypot(x, y)) * 180 / Math.PI,
+    longitude: longitudeDifference(Math.atan2(y, x) * 180 / Math.PI, 0),
+  };
+}
+
+export function weightedGeometricMedian(signals, options) {
+  signals = Array.isArray(signals) ? signals.filter((signal) => isRecommendationEvidence(signal, options)) : [];
   if (!signals.length) throw new RangeError("At least one valid report location is required.");
   const totalWeight = signals.reduce(
     (sum, signal) => sum + signalWeight(signal),
@@ -240,19 +283,23 @@ export function weightedGeometricMedian(signals) {
 
 export function inferServiceNeed(candidate) {
   const category = categoryForReport(candidate);
+  const demonstrationReportCount = candidate.signals.filter((signal) => signal.isSynthetic === true).length;
+  const evidenceDescription = demonstrationReportCount
+    ? `${demonstrationReportCount} demonstration and ${candidate.signals.length - demonstrationReportCount} non-demo reports`
+    : `${candidate.signals.length} non-demo reports`;
   const text = candidate.signals
     .map((signal) => signal.summary || "")
     .join(" ")
     .toLowerCase();
   const rules = [
-    { pattern: /\b(gas|fuel|petrol|refuel|gasoline)\b/, facilityType: "Gas station" },
-    { pattern: /\b(bus|public transit|transit stop|no car|shuttle|ride)\b/, facilityType: "Transit stop or shuttle hub" },
-    { pattern: /\b(?:pharmac(?:y|ies)|medications?|medicines?|prescriptions?)\b/, facilityType: "Pharmacy" },
-    { pattern: /\b(doctor|clinic|hospital|medical|health care|healthcare|meditation)\b/, facilityType: "Community health clinic" },
-    { pattern: /\b(grocery|groceries|fresh food|supermarket)\b/, facilityType: "Grocery store" },
-    { pattern: /\b(food pantry|food bank|meals|hungry)\b/, facilityType: "Food distribution point" },
-    { pattern: /\b(wifi|wi-fi|internet|broadband)\b/, facilityType: "Public internet access point" },
-    { pattern: /\b(water|drinking water)\b/, facilityType: "Community water station" },
+    { categories: ["fuel", "other"], pattern: /\b(gas|fuel|petrol|refuel|gasoline)\b/, facilityType: "Gas station" },
+    { categories: ["transportation"], pattern: /\b(bus|public transit|transit stop|no car|shuttle|ride)\b/, facilityType: "Transit stop or shuttle hub" },
+    { categories: ["healthcare"], pattern: /\b(?:pharmac(?:y|ies)|medications?|medicines?|prescriptions?)\b/, facilityType: "Pharmacy" },
+    { categories: ["healthcare"], pattern: /\b(doctor|clinic|hospital|medical|health care|healthcare)\b/, facilityType: "Community health clinic" },
+    { categories: ["food"], pattern: /\b(grocery|groceries|fresh food|supermarket)\b/, facilityType: "Grocery store" },
+    { categories: ["food"], pattern: /\b(food pantry|food bank|meals|hungry)\b/, facilityType: "Food distribution point" },
+    { categories: ["broadband"], pattern: /\b(wifi|wi-fi|internet|broadband)\b/, facilityType: "Public internet access point" },
+    { categories: ["water"], pattern: /\b(water|drinking water)\b/, facilityType: "Community water station" },
   ];
   const defaults = {
     transportation: "Transit access hub",
@@ -263,9 +310,10 @@ export function inferServiceNeed(candidate) {
     water: "Water and sanitation service point",
     broadband: "Public internet access point",
     emergency_response: "Emergency response station",
+    fuel: "Gas station",
     other: "Community service center",
   };
-  const match = rules.find((rule) => rule.pattern.test(text));
+  const match = rules.find((rule) => rule.categories.includes(category) && rule.pattern.test(text));
   const refinedCategory = ["education", "roads"].includes(category);
   const facilityType = candidate.category === "medication_access" ? "Pharmacy"
     : (refinedCategory ? defaults[category] : match?.facilityType) ||
@@ -299,14 +347,16 @@ export function inferServiceNeed(candidate) {
     : severityCounts.medium > 0
       ? "medium"
       : "emerging";
-  const decisionSummary = `${candidate.signals.length} ${category.replaceAll("_", " ")} reports within ${candidate.region.name} indicate repeated demand for a ${facilityType.toLowerCase()}.`;
+  const decisionSummary = demonstrationReportCount
+    ? `Demonstration analysis using ${evidenceDescription} within ${candidate.region.name} illustrates a possible ${facilityType.toLowerCase()}. This is not evidence of real local demand.`
+    : `${candidate.signals.length} ${category.replaceAll("_", " ")} reports within ${candidate.region.name} indicate repeated demand for a ${facilityType.toLowerCase()}.`;
 
   return {
     facilityType,
     rationale: decisionSummary,
     decisionSummary,
     needAnalysis: `The local fallback found ${severityCounts.high} high, ${severityCounts.medium} medium, and ${severityCounts.low} low urgency reports in the same named region and category. Repeated reports indicate a pattern worth validating through community outreach and service-capacity data.`,
-    placementRationale: `This is location ${candidate.locationRank || 1} of ${candidate.locationCount || 1} supported locations for this service category in ${candidate.region.name}. A spatial heuristic separates report groups only when each has at least two reports, locations are at least 250 meters apart, and splitting reduces weighted straight-line distance by at least 25%. Each point is an approximate urgency-weighted geographic median constrained to the verified region boundary. Locations are ranked by urgency score, then report count. This does not establish a globally optimal or build-ready site.`,
+    placementRationale: `This is location ${candidate.locationRank || 1} of ${candidate.locationCount || 1} supported locations for this service category in ${candidate.region.name}. Each location requires at least two unique ${demonstrationReportCount ? "" : "non-demo "}reports within the selected region; there is no distance cutoff.${demonstrationReportCount ? ` This demonstration uses ${evidenceDescription} and does not establish real local demand.` : ""} Splitting must reduce weighted straight-line distance by at least 25%. Each point is a geographic average constrained to the verified region boundary, with modest urgency weights: low 1, medium 1.17, high 2. Up to three locations, at least 250 meters apart, are ranked by the same lightly weighted report count. This does not establish a globally optimal or build-ready site or verified service coverage.`,
     priority,
     serviceComponents: [
       `Core ${facilityType.toLowerCase()} capacity sized after local demand validation`,
@@ -346,11 +396,7 @@ export function inferServiceNeed(candidate) {
 }
 
 function constrainPositionToRegion(position, cluster) {
-  if (pointInGeometry(
-    position.longitude,
-    position.latitude,
-    cluster.region.geometry,
-  )) {
+  if (positionInRegion(position, cluster.region)) {
     return position;
   }
 
@@ -369,32 +415,82 @@ function constrainPositionToRegion(position, cluster) {
     : position;
 }
 
+export function buildRecommendationsForRegion(signals, region, options = {}) {
+  // Scope before replacing report-region metadata. A pending/missing selected
+  // boundary must not accidentally fall back to reports from elsewhere.
+  if (region?.kind === "world") return buildWorldwideRecommendations(signals, options);
+  if (!region?.geometry) return [];
+  const scoped = (Array.isArray(signals) ? signals : [])
+    .filter((signal) => isRecommendationEvidence(signal, options) && positionInRegion(signal, region))
+    .map((signal) => ({ ...signal, region }));
+  return buildRecommendations(scoped, options);
+}
+
+/** Worldwide combines independently scoped analyses, never a worldwide report pool. */
+export function buildWorldwideRecommendations(signals, { analysisRegions = [], ...options } = {}) {
+  const reports = Array.isArray(signals) ? signals : [];
+  const detailed = buildRecommendations(reports, options);
+  const supportKey = (candidate) => JSON.stringify([candidate.category, candidate.signals.map((signal) =>
+    typeof signal.id === "string" && signal.id ? `id:${signal.id}` : reportKey(signal)).sort(compareText)]);
+  const unique = new Map(detailed.map((candidate) => [supportKey(candidate), candidate]));
+  const specificity = (region) => ({ needmap: 0, state: 1, country: 2 })[region.kind] ?? 3;
+  const scopes = (Array.isArray(analysisRegions) ? analysisRegions : [])
+    .filter((region) => region?.geometry && ["needmap", "state", "country"].includes(region.kind) &&
+      typeof region.id === "string" && /^[A-Z]{2}$/.test(region.countryCode || ""))
+    .sort((a, b) => specificity(a) - specificity(b) || compareText(a.id, b.id));
+  const seenScopes = new Set();
+  for (const region of scopes) {
+    if (seenScopes.has(region.id)) continue;
+    seenScopes.add(region.id);
+    // Extra scopes require a verified source assignment in the same country.
+    // Coordinate checks still decide membership in the additional boundary.
+    const scoped = reports.filter((report) => isRecommendationEvidence(report, options) && report.region?.geometry &&
+      report.region.countryCode === region.countryCode && positionInRegion(report, report.region));
+    for (const candidate of buildRecommendationsForRegion(scoped, region, options)) {
+      const key = supportKey(candidate);
+      if (!unique.has(key)) unique.set(key, candidate);
+    }
+  }
+  return [...unique.values()].sort(compareRecommendations);
+}
+
 export function buildRecommendations(
   signals,
-  { minimumSize = MIN_CLUSTER_SIZE } = {},
+  { minimumSize = MIN_CLUSTER_SIZE, includeDemonstrationReports = false } = {},
 ) {
   const size = Number.isInteger(minimumSize) && minimumSize >= MIN_CLUSTER_SIZE ? minimumSize : MIN_CLUSTER_SIZE;
-  return groupSignalsByRegionAndCategory(Array.isArray(signals) ? signals : [])
+  return groupSignalsByRegionAndCategory(Array.isArray(signals) ? signals : [], { includeDemonstrationReports })
     .filter((cluster) => cluster.signals.length >= size)
     .flatMap((group) => {
       const recommendationGroupId = `${group.region.id}:${group.category}`;
       const clusters = supportedLocations(group, size);
-      return clusters.map((cluster) => ({
-        id: clusters.length === 1 ? recommendationGroupId : `${recommendationGroupId}:location-${locationId(cluster)}`,
+      const candidates = clusters.map((cluster) => ({
+        id: clusters.length === 1 && cluster.signals.length === group.signals.length
+          ? recommendationGroupId : `${recommendationGroupId}:location-${locationId(cluster)}`,
         recommendationGroupId,
         category: cluster.category,
         region: cluster.region,
         signals: [...cluster.signals].sort((first, second) => compareText(reportKey(first), reportKey(second))),
         position: clusterPosition(cluster),
-        urgencyScore: cluster.signals.reduce((sum, signal) => sum + signalWeight(signal), 0),
-        locationCount: clusters.length,
-        placementMethod: "report-cluster-weighted-median",
-      }))
-        .sort(compareRecommendations)
-        .map((candidate, index) => {
-          const ranked = { ...candidate, locationRank: index + 1 };
-          return { ...ranked, analysis: inferServiceNeed(ranked) };
-        });
+        urgencyScore: Math.round(cluster.signals.reduce((sum, signal) => sum + signalWeight(signal), 0) * 100) / 100,
+        maxSupportingDistanceKm: maxSupportingDistance(cluster),
+        placementMethod: "report-cluster-weighted-center",
+      })).sort(compareRecommendations);
+      const selected = [];
+      for (const candidate of candidates) {
+        if (selected.some((other) => geographicDistance(candidate.position, other.position) < MIN_LOCATION_SEPARATION_KM)) continue;
+        selected.push(candidate);
+        if (selected.length === MAX_SERVICE_LOCATIONS) break;
+      }
+      return selected.map((candidate, index) => {
+        const demonstrationReportCount = candidate.signals.filter((signal) => signal.isSynthetic === true).length;
+        const ranked = { ...candidate, locationRank: index + 1, locationCount: selected.length,
+          demonstrationReportCount,
+          nonDemonstrationReportCount: candidate.signals.length - demonstrationReportCount,
+          evidenceMode: demonstrationReportCount ? "demonstration" : "community",
+        };
+        return { ...ranked, analysis: inferServiceNeed(ranked) };
+      });
     })
     .sort(compareRecommendations);
 }

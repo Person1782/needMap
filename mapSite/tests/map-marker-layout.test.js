@@ -6,7 +6,7 @@ import {
   separatedCandidateIconOptions,
 } from "../map-marker-layout.js";
 
-test("a recommendation sharing a report coordinate is visibly separated and stays below the report", () => {
+test("a recommendation sharing a report coordinate stays separated and cannot be concealed by nearby reports", () => {
   const icon = separatedCandidateIconOptions("<span>Recommendation</span>");
   const reportTop = -13;
   const recommendationBubbleBottom = -18;
@@ -15,8 +15,8 @@ test("a recommendation sharing a report coordinate is visibly separated and stay
   assert.deepEqual(icon.iconAnchor, [18, 54]);
   assert.ok(recommendationBubbleBottom < reportTop,
     "the recommendation bubble ends above the 26px report marker");
-  assert.ok(REPORT_MARKER_Z_INDEX > CANDIDATE_MARKER_Z_INDEX,
-    "reports win the stacking order if nearby marker shapes still touch");
+  assert.ok(CANDIDATE_MARKER_Z_INDEX > REPORT_MARKER_Z_INDEX,
+    "proposal groups remain accessible above nearby report markers");
 });
 
 test("Plans recommendations use the same separation with their larger marker", () => {

@@ -8,7 +8,7 @@ The Analysis overview estimates residential population near the reports selected
 - Buffers are unioned before querying population. Duplicate report IDs and coincident coordinates do not multiply the area. All Problems unions all selected reports rather than adding category estimates.
 - The union is clipped to the selected region's polygon when provided. Longitude bands split neighborhoods across the antimeridian; polar buffers stay within their caps.
 - WorldPop v2 sums its `worldpop_R2025A_2025_100m` population-count dataset over that geometry. These are modeled residential counts, not live headcounts or population uniformly spread over the entire region. WorldPop's boundary-cell handling is not specified in the API documentation; NeedMap does not claim exact building-level counts.
-- The card rounds the returned estimate to two significant digits, displays the data year, and explains that overlapping areas count once. Demonstration reports remain included and identified by the existing demonstration-data notice.
+- The card rounds the returned estimate to two significant digits, displays the data year, and explains that overlapping areas count once. Report inclusion and stored provenance flags are unchanged by presentation labels.
 
 ## Requests and reliability
 

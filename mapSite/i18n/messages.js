@@ -26,7 +26,9 @@ export const MESSAGE_KEYS = Object.freeze([
   "analysis.rationale.water", "analysis.rationale.healthcare", "analysis.rationale.emergency_response", "analysis.rationale.food", "analysis.rationale.roads",
   "analysis.rationale.transportation", "analysis.rationale.education", "analysis.rationale.fuel", "analysis.rationale.broadband", "analysis.rationale.other",
   "analysis.rankReasonReportsLoadingLead", "analysis.rankReasonReportsUnavailableLead", "analysis.rankReasonPopulationLoading",
-  "analysis.aiFallback", "analysis.aiReviewFallbackRank"
+  "analysis.aiFallback", "analysis.aiReviewFallbackRank",
+  "candidate.worldLoading", "candidate.worldPartial", "candidate.group",
+  "candidate.demonstrationTitle", "candidate.demonstrationNotice", "candidate.includeDemonstrations"
 ]);
 
 export function messagesFrom(values) {

@@ -217,6 +217,27 @@ test("every shipped pack is complete, preserves placeholders and contains real t
   }
 });
 
+test("all form languages use neutral reporting copy while retaining public visibility and privacy instructions", () => {
+  const demoFraming = /demonstration|demonstrations|demostraci[oó]n|démonstration|demonstração|demonstrasi|демонстрац|تجريب|প্রদর্শনী|প্রদর্শনীর|प्रदर्शन|デモ|시연|maonyesho|onyesho|gösterim|نمائشی|minh họa|演示/iu;
+  for (const code of codes) {
+    const messages = code === "en" ? english
+      : JSON.parse(readFileSync(new URL("locales/" + code + ".json", import.meta.url), "utf8")).messages;
+    for (const key of ["demoBanner", "formRequired", "publicNotice"]) {
+      assert.doesNotMatch(messages[keys.indexOf(key)], demoFraming, `${code}: ${key}`);
+    }
+    assert.match(messages[keys.indexOf("publicNotice")], /NeedMap/, code);
+    for (const key of ["privacyRest", "locationHelp", "placeHelp", "summaryHelp", "draftInitial", "emergencyRest"]) {
+      assert.ok(messages[keys.indexOf(key)].trim(), `${code}: ${key}`);
+    }
+  }
+  assert.equal(english[keys.indexOf("formRequired")], "All three sections are required.");
+  assert.match(english[keys.indexOf("publicNotice")], /publicly visible on NeedMap\. It does not request a direct response\./);
+  const html = read("index.html");
+  assert.doesNotMatch(html, /demonstration|demo-banner/iu);
+  assert.ok(html.includes(english[keys.indexOf("publicNotice")]));
+  assert.ok(html.includes(english[keys.indexOf("privacyRest")]));
+});
+
 test("localized metadata does not reveal automatic connection handling", () => {
   const slowConnectionTerms = {
     ar: /البطيئة/, bn: /ধীর/, de: /langsam/i, es: /lent[ao]s?/i, fr: /lent(?:e|es)?/i,

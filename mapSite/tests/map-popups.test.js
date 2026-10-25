@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { parseHTML } from 'linkedom';
 import { createMapPopups } from '../map-popups.js';
 import { createAnalysisOverviewMap } from '../analysis-overview-map.js';
+import { serviceIconSvg } from '../service-icons.js';
 
 function events(target = {}) {
   const handlers = new Map();
@@ -49,6 +50,7 @@ function fixture({ width = 800, height = 440 } = {}) {
         setLatLng(value) { this.point = value; return this; },
         setContent(value) { this.content = value; return this; },
         openOn(map) { map.closePopup(); calls.active = this; container.append(this.element); return this; },
+        update() { calls.popupUpdates = (calls.popupUpdates || 0) + 1; calls.updatedAutoPan = this.options.autoPan; return this; },
         getElement() { return this.element; },
       };
     },
@@ -92,6 +94,107 @@ test('click pins until another location is clicked; hovering does not replace th
   controller.destroy();
 });
 
+test('opted-in proposal hover stays stationary, then pinning enables padded auto-pan exactly once', () => {
+  const f = fixture(); const controller = createMapPopups(f.L, f.map, { document: f.document });
+  const first = f.L.marker([1, 2]), second = f.L.marker([3, 4]);
+  controller.register(first, () => 'Group with several services', { autoPanOnPin: true });
+  controller.register(second, () => 'Second location', { autoPanOnPin: true });
+  first.fire('mouseover');
+  const preview = f.calls.active;
+  assert.equal(preview.options.autoPan, false, 'Hovering must not shift the map');
+  assert.deepEqual(preview.options.autoPanPadding, [16, 16]);
+  first.fire('click');
+  assert.equal(f.calls.active, preview, 'Pinning preserves the current content and scroll position');
+  assert.equal(f.calls.updatedAutoPan, true, 'The public update call must see auto-pan already enabled');
+  assert.equal(f.calls.popupUpdates, 1);
+  first.fire('click');
+  assert.equal(f.calls.popupUpdates, 1, 'Repeated selection must not restart map movement');
+  second.fire('click');
+  assert.equal(f.calls.active.options.autoPan, true, 'Direct clicks also bring clipped details into view');
+  assert.deepEqual(f.calls.active.options.autoPanPadding, [16, 16]);
+  controller.openAt([5, 6], 'Explicit proposal', { autoPanOnPin: true });
+  assert.equal(f.calls.active.options.autoPan, true);
+  controller.destroy();
+});
+
+test('default report previews, pinned markers and report cards never trigger auto-pan', () => {
+  const f = fixture(); const controller = createMapPopups(f.L, f.map, { document: f.document });
+  const marker = f.L.marker([1, 2]);
+  controller.register(marker, () => 'Community report');
+  marker.fire('mouseover');
+  assert.equal(f.calls.active.options.autoPan, false);
+  marker.fire('click');
+  assert.equal(f.calls.active.options.autoPan, false);
+  assert.equal(f.calls.popupUpdates, undefined, 'Pinning a report must not initiate a map update');
+  f.map.closePopup(); marker.fire('click');
+  assert.equal(f.calls.active.options.autoPan, false, 'A direct report-marker click preserves the viewport');
+  controller.openAt([5, 6], 'Report card');
+  assert.equal(f.calls.active.options.autoPan, false, 'Report cards retain their explicit selected view');
+  controller.destroy();
+});
+
+test('a pinned proposal blocked by world bounds is constrained without moving its geographic anchor', () => {
+  const f = fixture(); const controller = createMapPopups(f.L, f.map, { document: f.document });
+  const marker = f.L.marker([16, 147]);
+  controller.register(marker, () => 'Grouped proposals', { autoPanOnPin: true });
+  const rectangle = (left, top, width, height) => ({ left, top, right: left + width, bottom: top + height, width, height });
+  f.container.getBoundingClientRect = () => rectangle(355, 200, 1085, 700);
+  const oldComputedStyle = f.window.getComputedStyle;
+  f.window.getComputedStyle = (element) => ({ marginLeft: element.style.marginLeft, marginBottom: element.style.marginBottom });
+  try {
+    marker.fire('mouseover');
+    const popup = f.calls.active;
+    popup.element.style.marginLeft = '3px'; popup.element.style.marginBottom = '20px';
+    const content = f.document.createElement('div'); content.className = 'leaflet-popup-content'; popup.element.append(content);
+    let anchorLeft = 1153, anchorTop = 100;
+    popup.element.getBoundingClientRect = () => rectangle(
+      anchorLeft + (parseFloat(popup.element.style.marginLeft) || 0),
+      anchorTop + 20 - (parseFloat(popup.element.style.marginBottom) || 0), 347, 350);
+    f.map.fire('moveend');
+    assert.equal(popup.element.style.marginLeft, '3px', 'A hover preview is never visually displaced');
+    marker.fire('click');
+    const constrained = popup.element.getBoundingClientRect();
+    assert.equal(constrained.right, 1428, 'The close button and content stay12px inside the right map edge');
+    assert.equal(constrained.top, 212);
+    assert.equal(popup.element.classList.contains('needmap-popup-constrained'), true);
+    assert.deepEqual(popup.point, [16, 147]); assert.deepEqual(marker.point, [16, 147]);
+    assert.equal(f.calls.view, undefined); assert.equal(f.calls.fits.length, 0, 'Fallback adjusts only the popup box');
+    f.map.fire('moveend').fire('zoomend');
+    assert.deepEqual(popup.element.getBoundingClientRect(), constrained, 'Repeated world-bound events cannot accumulate offsets');
+    anchorLeft = 600; anchorTop = 400; f.map.fire('resize');
+    assert.equal(popup.element.style.marginLeft, '3px'); assert.equal(popup.element.style.marginBottom, '20px');
+    assert.equal(popup.element.classList.contains('needmap-popup-constrained'), false, 'The original tip returns when the anchor fits');
+    f.container.getBoundingClientRect = () => rectangle(355, 200, 500, 220);
+    f.map.fire('resize');
+    assert.equal(content.style.maxWidth, '420px'); assert.equal(content.style.maxHeight, '148px');
+    controller.close();
+    assert.equal(content.style.maxWidth, ''); assert.equal(content.style.maxHeight, '');
+    assert.equal(popup.element.style.marginLeft, '3px'); assert.equal(popup.element.style.marginBottom, '20px');
+  } finally {
+    f.window.getComputedStyle = oldComputedStyle; controller.destroy();
+  }
+});
+
+test('proposal size observers and map fallback handlers are released on close and destroy', () => {
+  const f = fixture(); const oldObserver = f.window.ResizeObserver; const observers = [];
+  f.window.ResizeObserver = class {
+    constructor(callback) { this.callback = callback; this.disconnected = false; observers.push(this); }
+    observe(element) { this.element = element; }
+    disconnect() { this.disconnected = true; }
+  };
+  const controller = createMapPopups(f.L, f.map, { document: f.document });
+  try {
+    const report = f.L.marker([1, 2]), proposal = f.L.marker([3, 4]);
+    controller.register(report, () => 'Report'); controller.register(proposal, () => 'Proposal', { autoPanOnPin: true });
+    report.fire('click'); assert.equal(observers.length, 0, 'Report popups retain their existing behavior'); controller.close();
+    proposal.fire('mouseover'); assert.equal(observers.length, 1);
+    controller.close(); assert.equal(observers[0].disconnected, true);
+    proposal.fire('click'); assert.equal(observers.length, 2);
+    controller.destroy(); assert.equal(observers[1].disconnected, true); assert.equal(f.map.handlerCount(), 0);
+    observers[1].callback(); assert.equal(f.calls.active, null);
+  } finally { controller.destroy(); f.window.ResizeObserver = oldObserver; }
+});
+
 test('outside click, removed markers, close button and teardown release popup state and handlers', () => {
   const f = fixture(); const controller = createMapPopups(f.L, f.map, { document: f.document });
   const marker = f.L.marker([1, 2]); controller.register(marker, () => 'First'); marker.fire('click');
@@ -115,12 +218,14 @@ test('overview shows reports, proposed locations and selected boundary, then ref
     { category: 'healthcare', latitude: 3, longitude: 4, summary: 'Clinic issue' },
     { category: 'water', latitude: null, longitude: null },
   ];
-  const recommendations = [{ category: 'water', position: { latitude: 5, longitude: 6 }, analysis: { facilityType: 'Water station' }, locationRank: 2 }];
+  const recommendations = [{ category: 'water', position: { latitude: 5, longitude: 6 }, analysis: { facilityType: 'Water station' }, locationRank: 2,
+    evidenceMode: 'demonstration', demonstrationReportCount: 2 }];
   handle.update({ region, reports, recommendations });
   assert.deepEqual(f.calls.fits.at(-1).points, [[1, 2], [3, 4], [5, 6]]);
   assert.equal(f.calls.geometry, region.geometry);
   f.calls.markers[0].fire('mouseover'); assert.equal(f.calls.active.content, 'Water issue');
   f.calls.markers[2].fire('click'); assert.equal(f.calls.active.content, 'Water station');
+  assert.equal(f.calls.markers[2].options.title, 'water · suggested location 2', 'Underlying provenance does not add a marker title label');
   handle.update({ region, reports, recommendations, category: 'healthcare' });
   assert.equal(f.calls.active, null); assert.deepEqual(f.calls.fits.at(-1).points, [[3, 4]]);
   assert.equal(f.calls.layers[0].members.length, 1); assert.equal(f.calls.layers[1].members.length, 0);
@@ -136,10 +241,70 @@ test('overview keeps a report visible when a recommendation has the same coordin
     recommendations: [{ category: 'water', position: { latitude: 1, longitude: 2 }, locationRank: 1 }],
   });
   const [report, recommendation] = f.calls.markers;
-  assert.ok(report.options.zIndexOffset > recommendation.options.zIndexOffset);
+  assert.ok(recommendation.options.zIndexOffset > report.options.zIndexOffset);
   assert.deepEqual(recommendation.options.icon.iconAnchor, [18, 54]);
   assert.match(recommendation.options.icon.className, /separated-candidate-icon/);
   handle.destroy();
+});
+
+test('either overlapping report opens all reports at its exact point and category filtering removes hidden content', () => {
+  const f = fixture();
+  const handle = createAnalysisOverviewMap(f.L, f.container, { reportPopup: (report) => report.summary });
+  const reports = [
+    { category: 'water', latitude: 15.9255, longitude: 80.1855, summary: 'Local water issue' },
+    { category: 'food', latitude: 15.9255, longitude: 80.1855, summary: 'Local food issue' },
+    { category: 'water', latitude: 16.404333, longitude: 81.806039, summary: 'Remote water issue' },
+  ];
+  handle.update({ reports });
+  assert.deepEqual(f.calls.markers.map((marker) => marker.point), reports.map((report) => [report.latitude, report.longitude]));
+  for (const marker of f.calls.markers.slice(0, 2)) {
+    f.map.closePopup();
+    marker.fire('mouseover');
+    assert.match(f.calls.active.content.textContent, /Local water issue/);
+    assert.match(f.calls.active.content.textContent, /Local food issue/);
+    assert.doesNotMatch(f.calls.active.content.textContent, /Remote/);
+    marker.fire('click');
+    assert.deepEqual(f.calls.active.point, [15.9255, 80.1855]);
+  }
+  handle.update({ reports, category: 'water' });
+  assert.equal(f.calls.active, null);
+  f.calls.layers[0].members[0].fire('click');
+  assert.equal(f.calls.active.content, 'Local water issue');
+  handle.destroy();
+});
+
+test('Analysis candidate icons use the same facility-specific symbol as the main map', () => {
+  const f = fixture();
+  const handle = createAnalysisOverviewMap(f.L, f.container);
+  handle.update({ recommendations: [{ category: 'healthcare', position: { latitude: 1, longitude: 2 }, analysis: { facilityType: 'Pharmacy' } }] });
+  assert.ok(f.calls.markers[0].options.icon.html.includes(serviceIconSvg('healthcare', 'Pharmacy')));
+  handle.destroy();
+});
+
+test('Analysis groups colliding proposals, splits them on zoom, and removes filtered services from group popups', () => {
+  const f = fixture();
+  let scale = 1;
+  f.map.latLngToContainerPoint = ([latitude, longitude]) => ({ x: longitude * scale, y: latitude * scale });
+  const handle = createAnalysisOverviewMap(f.L, f.container, { candidatePopup: (candidate) => candidate.id });
+  const recommendations = [
+    { id: 'food', category: 'food', position: { latitude: 37.8, longitude: -122.4 } },
+    { id: 'pharmacy', category: 'healthcare', position: { latitude: 37.9, longitude: -122.2 } },
+  ];
+  handle.update({ recommendations });
+  assert.deepEqual(f.calls.fits.at(-1).points, [[37.8, -122.4], [37.9, -122.2]], 'Fitting still uses every precise calculated point');
+  assert.equal(f.calls.layers[1].members.length, 1);
+  const group = f.calls.layers[1].members[0];
+  group.fire('click');
+  assert.match(f.calls.active.content.textContent, /food/);
+  assert.match(f.calls.active.content.textContent, /pharmacy/);
+  scale = 1000; f.map.fire('zoomend');
+  assert.equal(f.calls.layers[1].members.length, 2);
+  assert.equal(group.handlerCount(), 0);
+  handle.update({ recommendations, category: 'healthcare' });
+  assert.equal(f.calls.layers[1].members.length, 1);
+  f.calls.layers[1].members[0].fire('click');
+  assert.equal(f.calls.active.content, 'pharmacy');
+  handle.destroy(); assert.equal(f.map.handlerCount(), 0);
 });
 
 test('empty overview falls back to selected region then worldwide without inventing report locations', () => {

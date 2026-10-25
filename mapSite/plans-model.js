@@ -314,7 +314,7 @@ export function buildPlanModel({
   const matched = reportsForPlanType(source, type);
   const world = isWorldRegion(region);
   const boundaryAvailable = Boolean(world || region?.geometry);
-  const excluded = { invalidReport: 0, missingReportId: 0, outsideRegion: 0, missingBoundary: 0 };
+  const excluded = { invalidReport: 0, missingReportId: 0, outsideRegion: 0, missingBoundary: 0, demonstrationReports: 0 };
   const prepared = [];
 
   for (const original of matched) {
@@ -323,6 +323,7 @@ export function buildPlanModel({
     const candidateRegion = world ? original.region : region;
     if (!candidateRegion?.geometry) { excluded.missingBoundary += 1; continue; }
     if (!insideRegion(candidateRegion, original)) { excluded.outsideRegion += 1; continue; }
+    if (original.isSynthetic === true) { excluded.demonstrationReports += 1; continue; }
     prepared.push({
       ...original,
       id: original.id.trim(),
@@ -376,8 +377,8 @@ export function buildPlanModel({
         highUrgencyReports: urgency.high,
         mediumUrgencyReports: urgency.medium,
         lowUrgencyReports: urgency.low,
-        placement: "Urgency-weighted geographic median of this candidate's contributing reports, constrained to the verified region boundary.",
-        ranking: "Candidates are ordered by urgency weight, then contributing report count, then a stable identifier.",
+        placement: "Geographic average of this candidate's contributing reports with modest urgency weights: low 1, medium 1.17, high 2. Reports are scoped to the selected region without a distance cutoff. The center is constrained to the verified region boundary and its exclusions; it is not verified service coverage.",
+        ranking: "Candidates are ordered by lightly weighted report count (low 1, medium 1.17, high 2), then contributing report count, then a stable identifier.",
       },
       serviceArea: area,
       estimates: applyEstimateEvidence({ evidence: estimateEvidence, type, region: candidate.region, currentYear }),
@@ -404,8 +405,8 @@ export function buildPlanModel({
     notices: [
       "Recommendations use submitted report locations and urgency, not parcel, ownership, engineering, permitting, or construction-feasibility data.",
       "Service radii are planning visualizations, not verified coverage boundaries.",
-      ...(candidates.some((candidate) => candidate.supportingReports.some((report) => report.isSynthetic === true))
-        ? ["One or more contributing reports are marked as demonstration data."] : []),
+      ...(excluded.demonstrationReports
+        ? [`${excluded.demonstrationReports} matching reports are marked as demonstration data and were excluded from plan support.`] : []),
     ],
   };
 }

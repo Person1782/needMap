@@ -393,8 +393,10 @@ export function createPlansWorkspace({
     dynamicTemplate(byId("plans-scope"), tr("plans.scope", { region: regionMarker, type: typeName(type) }, `${regionMarker} · ${typeName(type)}`), regionMarker, region?.name || "Worldwide");
     byId("plans-status").textContent = statusText();
     results.replaceChildren();
-    if (!model.candidates.length) results.append(node("div", statusText(), "plans-empty"));
-    else {
+    if (!model.candidates.length) {
+      const empty = node("div", statusText(), "plans-empty");
+      results.append(empty);
+    } else {
       const cards = model.candidates.map(candidateCard);
       results.append(...cards.map(({ card }) => card));
       for (const card of cards) mountCandidateMap(card);
@@ -445,8 +447,8 @@ export function createPlansWorkspace({
     update(next) {
       const nextRegion = next.region;
       const nextReports = Array.isArray(next.reports) ? next.reports : [];
-      const changed = nextRegion?.id !== region?.id || JSON.stringify(nextReports.map((report) => [report.id, report.summary, report.category, report.severity, report.latitude, report.longitude])) !==
-        JSON.stringify(reports.map((report) => [report.id, report.summary, report.category, report.severity, report.latitude, report.longitude]));
+      const changed = nextRegion?.id !== region?.id || JSON.stringify(nextReports.map((report) => [report.id, report.summary, report.category, report.severity, report.latitude, report.longitude, report.isSynthetic])) !==
+        JSON.stringify(reports.map((report) => [report.id, report.summary, report.category, report.severity, report.latitude, report.longitude, report.isSynthetic]));
       region = nextRegion; reports = nextReports; reportsReady = !!next.reportsReady; connectionFailed = !!next.connectionFailed;
       rebuild({ resetPopulation: changed });
     },

@@ -108,7 +108,6 @@ export function createPopulationDetails({ document, createMap, i18n, dynamicTran
         shell.append(bars);
       }
       shell.append(node("p", tr("population.limitations", {}, "The 500-meter distance is NeedMap’s assumption, not a measured impact boundary. Fractional counts come from the population model, not a literal headcount. Population estimates can be uncertain or out of date. WorldPop’s API does not specify how partial cells at the boundary are counted."), "population-limits"));
-      if (reports.some((report) => report.isSynthetic === true)) shell.append(node("p", tr("population.demoLimit", {}, "This selection includes demonstration reports. The estimate describes the area around those demonstration locations."), "population-limits"));
       shell.append(node("h3", tr("population.sourcesTitle", {}, "Sources for this calculation")));
       const sources = node("div", undefined, "population-sources");
       const date = new Date(population.retrievedAt);

@@ -44,6 +44,18 @@ share a request queue; successful fallback boundaries are cached for 30 days.
 provider capacity must cover total application traffic; a browser-local queue
 is not a global quota. See [Nominatim's usage policy](https://operations.osmfoundation.org/policies/nominatim/).
 
+Report enrichment first uses the same bundled boundaries as navigation. The
+generated `report-region-bounds.js` index shortlists parent files from a report's
+coordinates; bounds alone never establish membership. Each candidate file is
+validated against the catalog, then exact parent and child containment checks
+honor holes and shared-boundary exclusions. Ambiguous cross-country overlaps
+fall back to the verified external lookup. A city response that only contains a
+point is followed by broader administrative lookups; a fallback must contain
+the report and match the response's country. Reports without any verified match
+remain visible with approximate locations and are counted as unmatched reports.
+Regenerate the index after changing bundled boundaries with
+`node mapSite/scripts/build-report-region-index.mjs` from the repository root.
+
 ## Automatic selection
 
 Opening the map uses approximate IP location without a device-location prompt.

@@ -87,7 +87,8 @@ test("keeps unavailable and true zero distinct, handles map failure and does not
   assert.match(document.querySelector("dialog").textContent, /About 0 residents/);
   assert.ok(document.querySelector("[data-population-area-fallback] path"), "The real calculation area remains visible if Leaflet fails");
   assert.doesNotMatch(document.querySelector("dialog").textContent, /area map is unavailable/);
-  assert.match(document.querySelector("dialog").textContent, /demonstration reports/);
+  assert.doesNotMatch(document.querySelector("dialog").textContent, /demonstration reports/);
+  assert.match(document.querySelector("dialog").textContent, /not a measured impact boundary/);
   assert.equal(document.querySelector("a[href='https://evil.example/']"), null);
   assert.equal(document.querySelector(".population-pockets"), null);
   controller.destroy();

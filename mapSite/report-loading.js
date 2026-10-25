@@ -7,6 +7,16 @@
  */
 export const INITIAL_REPORT_LOAD_WATCHDOG_MS = 45_000;
 
+/** The count describes report assignments, not unavailable catalog regions. */
+export function loadedReportConnectionMessage(reports) {
+  if (!reports.length) return { key: "connection.noReports", values: {} };
+  const missing = reports.filter((report) => !report.region).length;
+  return {
+    key: missing ? "connection.regionsUnavailable" : "connection.live",
+    values: { count: missing || reports.length },
+  };
+}
+
 export function createInitialReportLoadGate({
   isOnline = () => globalThis.navigator?.onLine !== false,
   eventTarget = globalThis.window,

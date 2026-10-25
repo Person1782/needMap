@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { attachMapZoom } from '../map-zoom.js';
+import { parseHTML } from 'linkedom';
+import { createReportLocationPopups } from '../report-location-popups.js';
 
 class Point {
   constructor(x, y) { this.x = x; this.y = y; }
@@ -87,6 +89,33 @@ test('every wheel gesture uses the immediate continuous map path', () => {
   assert.equal(callsOf(f, 'move').length, 2);
   assert.equal(callsOf(f, 'move')[1].zoom, 11.125);
   assert.deepEqual(callsOf(f, 'move')[1].data, { pinch: true, round: false });
+  f.cleanup();
+});
+
+test('capture-phase zoom yields to shared report scrolling but retains pinch and ordinary popup zoom', () => {
+  const f = fixture();
+  const { document } = parseHTML('<html><body></body></html>');
+  const first = { latitude: 1, longitude: 2 }, second = { ...first };
+  const popup = createReportLocationPopups([first, second], () => 'Report detail', { document })(first);
+  const target = popup.querySelector('p');
+  assert.equal(f.listeners.get('wheel')[0].options.capture, true);
+  const scroll = f.dispatch('wheel', { target, deltaY: 30 });
+  f.flush();
+  assert.equal(scroll.prevented, false);
+  assert.equal(scroll.stopped, false);
+  assert.equal(f.calls.length, 0);
+  assert.equal(f.frames.size, 0);
+  assert.equal(f.timers.size, 0);
+  const pinch = f.dispatch('wheel', { target, ctrlKey: true, deltaY: -20 });
+  f.flush();
+  assert.equal(pinch.prevented, true);
+  assert.equal(pinch.stopped, true);
+  assert.equal(callsOf(f, 'move').length, 1);
+  f.advance(81);
+  const ordinary = document.createElement('div'); ordinary.className = 'report-popup';
+  assert.equal(f.dispatch('wheel', { target: ordinary, deltaY: -20 }).prevented, true);
+  f.flush();
+  assert.equal(callsOf(f, 'move').length, 2);
   f.cleanup();
 });
 
