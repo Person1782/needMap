@@ -63,6 +63,14 @@
                 <option value="other" data-i18n="categoryOther">Other essential service</option>
               </select>
               <p class="field-error" id="category-error"></p>
+            </section>
+            <section class="form-section" aria-labelledby="description-heading">
+              <h3 id="description-heading"><span>02</span><b data-i18n="descriptionHeading">Describe the concern</b></h3>
+              <label for="summary" data-i18n="summaryLabel">What makes the service hard to reach?</label>
+              <p class="field-help" id="summary-help" data-i18n="summaryHelp">Use general details, without personal information. Maximum 280 characters.</p>
+              <textarea id="summary" name="summary" rows="4" maxlength="280" dir="auto" aria-describedby="summary-help summary-error" required placeholder="The nearest pharmacy is hard to reach by bus in the evening." data-i18n-placeholder="summaryPlaceholder"></textarea>
+              <p class="field-error" id="summary-error"></p>
+              <p class="character-count" id="summary-count">0 / 280</p>
               <label for="severity" data-i18n="severityLabel">How much does this affect access?</label>
               <select id="severity" name="severity" aria-describedby="severity-help severity-error" required>
                 <option value="" data-i18n="severityChoose">Select an urgency level</option>
@@ -74,7 +82,7 @@
               <p class="field-error" id="severity-error"></p>
             </section>
             <section class="form-section" aria-labelledby="location-heading">
-              <h3 id="location-heading"><span>02</span><b data-i18n="locationHeading">Approximate location</b></h3>
+              <h3 id="location-heading"><span>03</span><b data-i18n="locationHeading">Approximate location</b></h3>
               <p class="field-help" id="location-help" data-i18n="locationHelp">Near the concern? Let your phone find the area. Your precise location stays on your device. Device accuracy may vary.</p>
               <button id="location-button" class="secondary-button" type="button" aria-describedby="location-help location-error" data-i18n="useLocation">Use my location</button>
               <button id="clear-location" class="text-button" type="button" data-i18n="clearLocation">Clear location</button>
@@ -99,14 +107,6 @@
                 <ul id="place-results" class="place-results" aria-label="Matching places" data-i18n-aria-label="matchingPlaces"></ul>
                 <p class="attribution"><span data-i18n="placeAttribution">Place search:</span> <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</a>.</p>
               </div>
-            </section>
-            <section class="form-section" aria-labelledby="description-heading">
-              <h3 id="description-heading"><span>03</span><b data-i18n="descriptionHeading">Describe the concern</b></h3>
-              <label for="summary" data-i18n="summaryLabel">What makes the service hard to reach?</label>
-              <p class="field-help" id="summary-help" data-i18n="summaryHelp">Use general details, without personal information. Maximum 280 characters.</p>
-              <textarea id="summary" name="summary" rows="4" maxlength="280" dir="auto" aria-describedby="summary-help summary-error" required placeholder="The nearest pharmacy is hard to reach by bus in the evening." data-i18n-placeholder="summaryPlaceholder"></textarea>
-              <p class="field-error" id="summary-error"></p>
-              <p class="character-count" id="summary-count">0 / 280</p>
             </section>
             <p id="draft-status" class="field-help" role="status" data-i18n="draftInitial">Your draft is saved on this phone for 7 days. Clear form removes it. Nothing is sent until you submit.</p>
             <div class="submit-actions"><button id="submit-button" type="submit" disabled data-i18n="submitReport">Submit report</button><button class="text-button" type="reset" data-i18n="clearForm">Clear form</button></div>

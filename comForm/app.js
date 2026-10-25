@@ -25,7 +25,7 @@
   var draftStatusState = { key: "draftInitial", parameters: null };
   var searchStatusState = { key: "", parameters: null };
   var activeErrors = false;
-  var fieldNames = ["category", "severity", "summary"];
+  var fieldNames = ["category", "summary", "severity"];
   var model = root.NeedMapForm;
   if (!root.JSON || !root.XMLHttpRequest || !root.addEventListener || !model || !root.NeedMapNetwork || !root.NeedMapAdaptive) {
     statusMessage.textContent = tr("browserUnsupported");
@@ -116,14 +116,15 @@
     activeErrors = false;
     errorSummary.hidden = true;
     while (errorList.firstChild) errorList.removeChild(errorList.firstChild);
-    ["category", "severity", "summary", "location"].forEach(function (name) {
+    fieldNames.concat(["location"]).forEach(function (name) {
       fieldTarget(name).removeAttribute("aria-invalid");
       byId(name + "-error").textContent = "";
     });
   }
   function showErrors(errors, focusSummary) {
     clearErrors();
-    Object.keys(errors).forEach(function (name) {
+    fieldNames.concat(["location"]).forEach(function (name) {
+      if (!errors[name]) return;
       var target = fieldTarget(name);
       target.setAttribute("aria-invalid", "true");
       byId(name + "-error").textContent = errors[name];
