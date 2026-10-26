@@ -13,7 +13,9 @@
     errorCategory: "Choose a service category.", errorSeverity: "Choose an urgency level.",
     errorSummaryRequired: "Describe the service-access concern.", errorSummaryLength: "Use 280 characters or fewer.",
     errorPhone: "Remove the phone number before submitting.", errorEmail: "Remove the email address before submitting.",
-    errorAddress: "Remove the street address before submitting.", errorLocation: "Add your approximate location or choose a nearby place."
+    errorAddress: "Remove the street address before submitting.", errorLocation: "Add your approximate location or choose a nearby place.",
+    errorLatitude: "Enter a latitude between -90 and 90 using decimal numbers.",
+    errorLongitude: "Enter a longitude between -180 and 180 using decimal numbers."
   };
   function isValidLocation(latitude, longitude) {
     return typeof latitude === "number" && isFinite(latitude) && typeof longitude === "number" && isFinite(longitude)
@@ -27,6 +29,21 @@
     return { latitude: lat, longitude: lon, locationGridId: "grid-" + lat.toFixed(4) + "-" + lon.toFixed(4), locationPrecision: "approximate_grid_500m" };
   }
   function text(value) { return value === null || value === undefined ? "" : String(value); }
+  function validateCoordinates(latitudeText, longitudeText, translate) {
+    function parse(value) {
+      if (typeof value !== "string") return NaN;
+      var trimmed = value.replace(/^\s+|\s+$/g, "");
+      return /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(trimmed) ? Number(trimmed) : NaN;
+    }
+    function message(key) { return translate ? translate(key) : defaultMessages[key]; }
+    var latitude = parse(latitudeText);
+    var longitude = parse(longitudeText);
+    var errors = {};
+    if (!isFinite(latitude) || latitude < -90 || latitude > 90) errors.latitude = message("errorLatitude");
+    if (!isFinite(longitude) || longitude < -180 || longitude > 180) errors.longitude = message("errorLongitude");
+    if (Object.keys(errors).length) return { errors: errors };
+    return { errors: errors, location: createGridLocation(latitude, longitude) };
+  }
   function validateReport(values, translate) {
     function message(key) { return translate ? translate(key) : defaultMessages[key]; }
     var errors = {};
@@ -91,5 +108,5 @@
       reset: function () { if (!pending) attempt = null; }
     };
   }
-  root.NeedMapForm = { createGridLocation: createGridLocation, isValidLocation: isValidLocation, validateReport: validateReport, createSubmissionManager: createSubmissionManager, createId: createId, SUMMARY_LIMIT: SUMMARY_LIMIT };
+  root.NeedMapForm = { createGridLocation: createGridLocation, isValidLocation: isValidLocation, validateCoordinates: validateCoordinates, validateReport: validateReport, createSubmissionManager: createSubmissionManager, createId: createId, SUMMARY_LIMIT: SUMMARY_LIMIT };
 }(window));

@@ -50,7 +50,9 @@
     "submissionUnconfirmed", "savedLocation", "errorCategory", "errorSeverity", "errorSummaryRequired",
     "errorSummaryLength", "errorPhone", "errorEmail", "errorAddress", "errorLocation", "placeInputError",
     "placeWait", "placeUnavailable", "placeInvalid", "modeLabelFull",
-    "languageDetecting", "languageLoading"
+    "languageDetecting", "languageLoading",
+    "coordinatesLabel", "coordinatesHelp", "latitudeLabel", "longitudeLabel",
+    "useCoordinates", "coordinatesReady", "errorLatitude", "errorLongitude"
   ];
   var ENGLISH = [
     "Share an anonymous service-access concern with NeedMap using a small, accessible form.",
@@ -108,7 +110,15 @@
     "Add your approximate location or choose a nearby place.", "Enter a town or neighbourhood, with at least 3 characters.",
     "Please wait a moment before searching again.", "Place search is unavailable. Check your connection or use your device location.",
     "Place search returned an invalid response. Try again later.", "Complete community form",
-    "Detecting your language\u2026", "Loading selected language\u2026"
+    "Detecting your language\u2026", "Loading selected language\u2026",
+    "Or enter latitude and longitude",
+    "Paste decimal coordinates. Latitude: -90 to 90. Longitude: -180 to 180. The location will be rounded to an approximate map area.",
+    "Latitude",
+    "Longitude",
+    "Use coordinates",
+    "Your coordinates are ready as an approximate map area.",
+    "Enter a latitude between -90 and 90 using decimal numbers.",
+    "Enter a longitude between -180 and 180 using decimal numbers."
   ];
   var COUNTRY_GROUPS = {
     es: "AR BO CL CO CR CU DO EC ES GQ GT HN MX NI PA PE PR PY SV UY VE",

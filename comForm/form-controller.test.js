@@ -28,8 +28,8 @@ function mount({ write = (_id, _report, done) => done(null), online = true, save
   const elements = Object.fromEntries([...html.matchAll(/id="([^"]+)"/g)].map(([, id]) => [id, new Element(id)]));
   const form = elements['signal-form'];
   form.setAttribute('data-map-url', mapUrl);
-  form.reset = () => { if (!form.dispatch('reset').prevented) ['category', 'severity', 'summary', 'place-query'].forEach(name => { elements[name].value = ''; }); };
-  elements['form-fields'].querySelectorAll = () => ['category', 'severity', 'summary', 'location-button', 'clear-location', 'place-query', 'place-search-button', 'submit-button'].map(name => elements[name]);
+  form.reset = () => { if (!form.dispatch('reset').prevented) ['category', 'severity', 'summary', 'place-query', 'latitude', 'longitude'].forEach(name => { elements[name].value = ''; }); };
+  elements['form-fields'].querySelectorAll = () => ['category', 'severity', 'summary', 'location-button', 'clear-location', 'place-query', 'place-search-button', 'latitude', 'longitude', 'coordinates-button', 'submit-button'].map(name => elements[name]);
   const rootEvents = new Element('window');
   const connection = new Element('connection');
   const navigator = { onLine: online, ...hints };
@@ -54,8 +54,12 @@ function mount({ write = (_id, _report, done) => done(null), online = true, save
     fill({ addLocation = true } = {}) { for (const name of ['category', 'severity', 'summary']) elements[name].value = valid[name]; if (addLocation) { elements['location-button'].dispatch('click'); locationSuccess({ coords: valid.location }); } } };
 }
 
-test('no manual coordinate fields or remote scripts; submit requires successful initialization', () => {
-  assert.doesNotMatch(html, /id="(?:latitude|longitude)"|type="module"|https:[^"']+\.js/);
+test('coordinate fields are labelled and scripts stay local; submit requires successful initialization', () => {
+  assert.doesNotMatch(html, /type="module"|https:[^"']+\.js/);
+  for (const name of ['latitude', 'longitude']) {
+    assert.match(html, new RegExp('<label for="' + name + '"'));
+    assert.match(html, new RegExp('id="' + name + '"[^>]*aria-describedby="[^"]*' + name + '-error'));
+  }
   assert.doesNotMatch(html, /id="(?:connection-mode|mode-status|mode-preference-note|mode-label)"/);
   assert.doesNotMatch(html, /class="demo-banner"|data-i18n="demoBanner"|Connection mode|Slow connection mode/);
   assert.match(html, /id="language-button"[^>]+aria-controls="language-panel"[^>]*>[\s\S]*?<span id="language-button-label">English<\/span>[\s\S]*?class="language-chevron"/);
@@ -171,6 +175,171 @@ test('place search requires selection and omits query and precise coordinates fr
   page.elements['place-results'].children[0].children[0].dispatch('click'); page.locate();
   assert.doesNotMatch(page.saved, /Example town|40\.123456/); page.form.dispatch('submit'); assert.equal(payload.latitude, 40.122);
 });
+
+function enterCoordinates(page, latitude, longitude) {
+  for (const [name, value] of Object.entries({ latitude, longitude })) {
+    page.elements[name].value = value;
+    page.elements[name].dispatch('input');
+  }
+}
+
+test('pasted coordinates work without device location and store only the rounded area', () => {
+  let payload;
+  const page = mount({ geolocation: false, write: (_id, report, done) => { payload = report; done(null); } });
+  page.fill({ addLocation: false });
+  enterCoordinates(page, ' 40.1234567 ', '-70.2345678');
+  assert.equal(JSON.parse(page.saved).location, null);
+  assert.doesNotMatch(page.saved, /40\.1234567|70\.2345678/);
+  page.elements['coordinates-button'].dispatch('click');
+  const draft = JSON.parse(page.saved);
+  assert.equal(draft.location.latitude, 40.122);
+  assert.equal(draft.location.longitude, -70.236);
+  assert.equal(draft.location.locationPrecision, 'approximate_grid_500m');
+  assert.doesNotMatch(page.saved, /40\.1234567|70\.2345678/);
+  assert.match(page.elements['location-status'].textContent, /coordinates.*approximate/);
+  const restored = mount({ saved: page.saved });
+  assert.equal(restored.elements.latitude.value, '');
+  assert.equal(restored.elements.longitude.value, '');
+  page.form.dispatch('submit');
+  assert.equal(payload.latitude, 40.122);
+  assert.equal(payload.longitude, -70.236);
+  assert.doesNotMatch(JSON.stringify(payload), /40\.1234567|70\.2345678/);
+  assert.equal(page.saved, null);
+});
+
+test('invalid coordinate replacements cannot silently submit an older selected location', () => {
+  for (const [latitude, longitude, invalid] of [['', '0', 'latitude'], ['91', '0', 'latitude'], ['0', '-181', 'longitude'], ['12north', '0', 'latitude']]) {
+    const page = mount();
+    page.fill();
+    enterCoordinates(page, latitude, longitude);
+    assert.equal(JSON.parse(page.saved).location, null);
+    page.elements['coordinates-button'].dispatch('click');
+    assert.equal(page.elements[invalid].attributes['aria-invalid'], 'true');
+    assert.ok(page.elements[invalid + '-error'].textContent);
+    page.form.dispatch('submit');
+    assert.equal(page.writes, 0);
+    assert.equal(page.elements['error-summary'].hidden, false);
+    assert.equal(JSON.parse(page.saved).location, null);
+  }
+});
+
+test('submitting applies newly entered or edited coordinates without a separate confirmation click', () => {
+  for (const previouslySelected of [false, true]) {
+    let payload;
+    const page = mount({ write: (_id, report, done) => { payload = report; done(null); } });
+    page.fill({ addLocation: previouslySelected });
+    enterCoordinates(page, '0', '0');
+    page.form.dispatch('submit');
+    assert.equal(page.writes, 1);
+    assert.equal(payload.latitude, 0);
+    assert.equal(payload.longitude, 0);
+  }
+});
+
+test('manual coordinate selection supersedes pending device and place-search callbacks', () => {
+  let searchDone;
+  const page = mount({ search: (_method, _url, _body, _token, done) => { searchDone = done; } });
+  page.elements['location-button'].dispatch('click');
+  enterCoordinates(page, '0', '0');
+  page.elements['coordinates-button'].dispatch('click');
+  page.locate();
+  assert.equal(JSON.parse(page.saved).location.latitude, 0);
+  assert.equal(page.loading.isActive('location'), false);
+  page.elements['place-query'].value = 'Example town';
+  page.elements['place-search-button'].dispatch('click');
+  enterCoordinates(page, '10', '20');
+  page.elements['coordinates-button'].dispatch('click');
+  const selected = JSON.parse(page.saved).location;
+  searchDone(null, [{ lat: '40', lon: '-70', display_name: 'Example town' }]);
+  assert.deepEqual(JSON.parse(page.saved).location, selected);
+  assert.equal(page.elements['place-results'].children.length, 0);
+  assert.equal(page.loading.isActive('place-search'), false);
+});
+
+test('clear location and form reset remove manual entries and validation errors', () => {
+  for (const resetForm of [false, true]) {
+    const page = mount();
+    enterCoordinates(page, '91', '-181');
+    page.elements['coordinates-button'].dispatch('click');
+    if (resetForm) page.form.reset();
+    else page.elements['clear-location'].dispatch('click');
+    for (const name of ['latitude', 'longitude']) {
+      assert.equal(page.elements[name].value, '');
+      assert.equal(page.elements[name].attributes['aria-invalid'], undefined);
+      assert.equal(page.elements[name + '-error'].textContent, '');
+    }
+    assert.equal(page.elements['error-summary'].hidden, true);
+    assert.equal(page.elements['error-list'].children.length, 0);
+    assert.equal(resetForm ? page.saved : JSON.parse(page.saved).location, null);
+  }
+});
+
+test('clearing coordinate errors preserves unrelated form errors and their summary links', () => {
+  const page = mount();
+  enterCoordinates(page, '91', '-181');
+  page.form.dispatch('submit');
+  assert.equal(page.elements['error-list'].children.length, 5);
+  page.elements['clear-location'].dispatch('click');
+  assert.equal(page.elements['error-summary'].hidden, false);
+  assert.deepEqual(page.elements['error-list'].children.map(item => item.children[0].href), ['#category', '#summary', '#severity']);
+  for (const name of ['category', 'summary', 'severity']) {
+    assert.equal(page.elements[name].attributes['aria-invalid'], 'true');
+    assert.ok(page.elements[name + '-error'].textContent);
+  }
+  for (const name of ['latitude', 'longitude']) {
+    assert.equal(page.elements[name].attributes['aria-invalid'], undefined);
+    assert.equal(page.elements[name + '-error'].textContent, '');
+  }
+});
+
+test('switching to device or selected place location discards pending coordinate edits', () => {
+  const page = mount({ search: (_m, _u, _b, _t, done) => done(null, [{ lat: '40.123456', lon: '-70.234567', display_name: 'Example town' }]) });
+  enterCoordinates(page, '91', '0');
+  page.elements['location-button'].dispatch('click');
+  assert.equal(page.elements.latitude.value, '');
+  assert.equal(page.elements.longitude.value, '');
+  page.locate();
+  assert.equal(JSON.parse(page.saved).location.latitude, 37.773);
+  enterCoordinates(page, '91', '0');
+  page.elements['place-query'].value = 'Example town';
+  page.elements['place-search-button'].dispatch('click');
+  page.elements['place-results'].children[0].children[0].dispatch('click');
+  assert.equal(page.elements.latitude.value, '');
+  assert.equal(page.elements.longitude.value, '');
+  page.fill({ addLocation: false });
+  page.form.dispatch('submit');
+  assert.equal(page.writes, 1);
+});
+
+test('Enter selects coordinates and pending submissions lock the new controls', () => {
+  let finish;
+  const page = mount({ write: (_id, _report, done) => { finish = done; } });
+  page.fill({ addLocation: false });
+  enterCoordinates(page, '0', '0');
+  assert.equal(page.elements.longitude.dispatch('keydown', { key: 'Enter' }).prevented, true);
+  assert.equal(page.writes, 0);
+  assert.equal(JSON.parse(page.saved).location.longitude, 0);
+  page.form.dispatch('submit');
+  for (const name of ['latitude', 'longitude', 'coordinates-button']) assert.equal(page.elements[name].disabled, true);
+  page.elements['coordinates-button'].dispatch('click');
+  assert.equal(page.writes, 1);
+  finish(new Error('unconfirmed'));
+  for (const name of ['latitude', 'longitude', 'coordinates-button']) assert.equal(page.elements[name].disabled, false);
+});
+
+test('coordinate errors and selected-location status update with the chosen language', () => {
+  const page = mount();
+  enterCoordinates(page, '91', '-181');
+  page.elements['coordinates-button'].dispatch('click');
+  page.changeLanguage('fr', { errorLatitude: 'Latitude invalide.', errorLongitude: 'Longitude invalide.' });
+  assert.equal(page.elements['latitude-error'].textContent, 'Latitude invalide.');
+  assert.equal(page.elements['longitude-error'].textContent, 'Longitude invalide.');
+  enterCoordinates(page, '0', '0');
+  page.elements['coordinates-button'].dispatch('click');
+  page.changeLanguage('fr', { coordinatesReady: 'Zone approximative prête.', locationSharedSuffix: 'Zone partagée uniquement.' });
+  assert.equal(page.elements['location-status'].textContent, 'Zone approximative prête. Zone partagée uniquement.');
+});
+
 test('pending submissions block resets and duplicate sends; confirmation clears draft', () => {
   let finish; const page = mount({ write: (_id, _report, cb) => { finish = cb; } });
   page.fill(); page.form.dispatch('submit'); page.form.dispatch('submit'); page.form.reset();

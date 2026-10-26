@@ -93,6 +93,23 @@
                 </div>
               </div>
               <p id="location-error" class="field-error"></p>
+              <div class="coordinate-entry" role="group" aria-labelledby="coordinates-label" aria-describedby="coordinates-help">
+                <p id="coordinates-label" class="coordinate-heading" data-i18n="coordinatesLabel">Or enter latitude and longitude</p>
+                <p class="field-help" id="coordinates-help" data-i18n="coordinatesHelp">Paste decimal coordinates. Latitude: -90 to 90. Longitude: -180 to 180. The location will be rounded to an approximate map area.</p>
+                <div class="coordinate-fields">
+                  <div class="coordinate-field">
+                    <label for="latitude" data-i18n="latitudeLabel">Latitude</label>
+                    <input id="latitude" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" dir="ltr" placeholder="37.7749" aria-describedby="coordinates-help latitude-error" />
+                    <p id="latitude-error" class="field-error"></p>
+                  </div>
+                  <div class="coordinate-field">
+                    <label for="longitude" data-i18n="longitudeLabel">Longitude</label>
+                    <input id="longitude" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" dir="ltr" placeholder="-122.4194" aria-describedby="coordinates-help longitude-error" />
+                    <p id="longitude-error" class="field-error"></p>
+                  </div>
+                </div>
+                <button id="coordinates-button" class="secondary-button" type="button" data-i18n="useCoordinates">Use coordinates</button>
+              </div>
               <div class="place-search">
                 <label for="place-query" data-i18n="placeLabel">Or find a nearby town or neighbourhood</label>
                 <p class="field-help" id="place-help" data-i18n="placeHelp">Include the region or country. Search selects the approximate centre of a place. Search text goes to OpenStreetMap; it is not included in your report. Avoid home addresses.</p>

@@ -19,6 +19,41 @@ test("requires a confirmed location and rejects blank, nonfinite and out-of-rang
   for (const [latitude, longitude] of [[0, 0], [90, 180], [-90, -180]]) assert.ok(model.validateReport({ ...valid, location: { latitude, longitude } }).report);
 });
 
+test("manual coordinates accept signed decimal text, zeros and geographic boundaries", () => {
+  for (const [latitude, longitude] of [["0", "-0"], ["90", "+180"], ["-90", "-180"], [" +.5 ", " -.5\n"], ["37.", "-122.4"]]) {
+    const result = model.validateCoordinates(latitude, longitude);
+    assert.deepEqual(plain(result.errors), {});
+    assert.deepEqual(plain(result.location), plain(model.createGridLocation(Number(latitude), Number(longitude))));
+  }
+});
+
+test("manual coordinates reject blank, malformed, nonfinite and out-of-range values without a location", () => {
+  const invalidText = ["", "   ", "0x20", "1e1", "12north", "12,5", "37.7, -122.4", "--12", ".", "NaN", "Infinity", "9".repeat(400), null, undefined];
+  for (const latitude of [...invalidText, "90.0001", "-90.0001"]) {
+    const result = model.validateCoordinates(latitude, "0");
+    assert.equal(result.location, undefined);
+    assert.deepEqual(plain(result.errors), { latitude: "Enter a latitude between -90 and 90 using decimal numbers." });
+  }
+  for (const longitude of [...invalidText, "180.0001", "-180.0001"]) {
+    const result = model.validateCoordinates("0", longitude);
+    assert.equal(result.location, undefined);
+    assert.deepEqual(plain(result.errors), { longitude: "Enter a longitude between -180 and 180 using decimal numbers." });
+  }
+  assert.deepEqual(plain(model.validateCoordinates("", "", key => `translated:${key}`).errors), {
+    latitude: "translated:errorLatitude", longitude: "translated:errorLongitude"
+  });
+});
+
+test("manual coordinates are rounded immediately and remain valid in report validation", () => {
+  const result = model.validateCoordinates("37.77491234", "-122.41945678");
+  assert.equal(result.location.latitude, 37.773);
+  assert.equal(result.location.longitude, -122.418);
+  assert.doesNotMatch(JSON.stringify(result), /37\.77491234|122\.41945678/);
+  const { report } = model.validateReport({ ...valid, location: result.location });
+  assert.equal(report.locationGridId, result.location.locationGridId);
+  assert.equal(report.locationPrecision, "approximate_grid_500m");
+});
+
 test("rounds automatic locations and retains the anonymous demonstration schema", () => {
   const { report } = model.validateReport(valid);
   assert.equal(report.latitude, 37.773);

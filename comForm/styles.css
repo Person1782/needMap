@@ -80,7 +80,13 @@ button:disabled { opacity: .6; cursor: default; }
 .field-error { margin: 6px 0 0; font-size: 13px; font-weight: bold; }
 .field-error:empty, .form-status:empty, .place-results:empty { display: none; }
 [aria-invalid="true"] { border: 2px solid #ac2929; }
-.place-search { margin-top: 20px; padding-top: 4px; border-top: 1px dashed #cbd3da; }
+.place-search, .coordinate-entry { margin-top: 20px; padding-top: 4px; border-top: 1px dashed #cbd3da; }
+.coordinate-heading { margin: 16px 0 7px; font-size: 14px; font-weight: bold; }
+.coordinate-fields { margin-bottom: 14px; }
+.coordinate-field { display: inline-block; width: 48%; margin-right: 1%; vertical-align: top; }
+.coordinate-field label { margin-top: 0; }
+[dir="rtl"] .coordinate-field { margin-right: 0; margin-left: 1%; }
+@media (max-width: 420px) { .coordinate-field { display: block; width: 100%; margin: 0 0 12px; } }
 .place-search input { margin-bottom: 10px; }
 .place-results { padding: 0; list-style: none; }
 .place-result { display: block; width: 100%; color: #005ea8; background: #f3f7fa; text-align: left; font-size: 13px; }

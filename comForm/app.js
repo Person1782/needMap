@@ -13,6 +13,8 @@
   var errorList = byId("error-list");
   var locationButton = byId("location-button");
   var locationStatus = byId("location-status");
+  var coordinateNames = ["latitude", "longitude"];
+  var coordinatesDirty = false;
   var summary = byId("summary");
   var draftStatus = byId("draft-status");
   var searchButton = byId("place-search-button");
@@ -25,6 +27,7 @@
   var draftStatusState = { key: "draftInitial", parameters: null };
   var searchStatusState = { key: "", parameters: null };
   var activeErrors = false;
+  var activeErrorMessages = {};
   var fieldNames = ["category", "summary", "severity"];
   var model = root.NeedMapForm;
   if (!root.JSON || !root.XMLHttpRequest || !root.addEventListener || !model || !root.NeedMapNetwork || !root.NeedMapAdaptive) {
@@ -98,6 +101,17 @@
   }
   function updateCount() { byId("summary-count").textContent = summary.value.length + " / 280"; }
   function values() { return { category: byId("category").value, severity: byId("severity").value, summary: summary.value, location: location }; }
+  function validateForm() {
+    var current = values();
+    var coordinates = coordinatesDirty ? model.validateCoordinates(byId("latitude").value, byId("longitude").value, tr) : null;
+    if (coordinates) current.location = coordinates.location || null;
+    var result = model.validateReport(current, tr);
+    if (coordinates && !coordinates.location) {
+      delete result.errors.location;
+      coordinateNames.forEach(function (name) { if (coordinates.errors[name]) result.errors[name] = coordinates.errors[name]; });
+    }
+    return result;
+  }
   function saveDraft() {
     if (!storage) { setDraftStatus("draftNoStorage"); return; }
     var data = values();
@@ -114,16 +128,17 @@
   function fieldTarget(name) { return byId(name === "location" ? "location-button" : name); }
   function clearErrors() {
     activeErrors = false;
+    activeErrorMessages = {};
     errorSummary.hidden = true;
     while (errorList.firstChild) errorList.removeChild(errorList.firstChild);
-    fieldNames.concat(["location"]).forEach(function (name) {
+    fieldNames.concat(["location"], coordinateNames).forEach(function (name) {
       fieldTarget(name).removeAttribute("aria-invalid");
       byId(name + "-error").textContent = "";
     });
   }
   function showErrors(errors, focusSummary) {
     clearErrors();
-    fieldNames.concat(["location"]).forEach(function (name) {
+    fieldNames.concat(["location"], coordinateNames).forEach(function (name) {
       if (!errors[name]) return;
       var target = fieldTarget(name);
       target.setAttribute("aria-invalid", "true");
@@ -136,9 +151,10 @@
       item.appendChild(link);
       errorList.appendChild(item);
     });
-    activeErrors = true;
-    errorSummary.hidden = false;
-    if (focusSummary !== false) errorSummary.focus();
+    activeErrorMessages = errors;
+    activeErrors = !!errorList.firstChild;
+    errorSummary.hidden = !activeErrors;
+    if (activeErrors && focusSummary !== false) errorSummary.focus();
   }
   function cancelLocationRequest() {
     locationRequest++;
@@ -160,6 +176,9 @@
   function selectLocation(grid, messageKey, parameters) {
     cancelLocationRequest();
     clearSearch();
+    clearCoordinateErrors();
+    if (messageKey !== "coordinatesReady") resetCoordinates();
+    coordinatesDirty = false;
     location = grid;
     locationButton.removeAttribute("aria-invalid");
     byId("location-error").textContent = "";
@@ -168,9 +187,42 @@
     locationStatus.className = "location-status success";
     saveDraft();
   }
+  function clearCoordinateErrors() {
+    var hadErrors = activeErrorMessages.latitude || activeErrorMessages.longitude;
+    coordinateNames.forEach(function (name) {
+      byId(name).removeAttribute("aria-invalid");
+      byId(name + "-error").textContent = "";
+      delete activeErrorMessages[name];
+    });
+    if (hadErrors) showErrors(activeErrorMessages, false);
+  }
+  function resetCoordinates() {
+    coordinatesDirty = false;
+    coordinateNames.forEach(function (name) { byId(name).value = ""; });
+    clearCoordinateErrors();
+  }
+  function editCoordinates() {
+    if (submitting) return;
+    cancelLocationRequest();
+    clearSearch();
+    clearCoordinateErrors();
+    coordinatesDirty = true;
+    location = null;
+    setLocationStatus("noLocation");
+    saveDraft();
+  }
+  function useCoordinates() {
+    if (submitting) return;
+    editCoordinates();
+    var result = model.validateCoordinates(byId("latitude").value, byId("longitude").value, tr);
+    if (!result.location) { showErrors(result.errors); return; }
+    clearErrors();
+    selectLocation(result.location, "coordinatesReady");
+  }
   function clearLocation() {
     cancelLocationRequest();
     clearSearch();
+    resetCoordinates();
     location = null;
     setLocationStatus("noLocation");
     saveDraft();
@@ -178,6 +230,7 @@
   function requestLocation() {
     if (submitting || locating) return;
     clearSearch();
+    resetCoordinates();
     // An explicit replacement must never silently submit an older area.
     location = null;
     saveDraft();
@@ -257,6 +310,13 @@
   }
   locationButton.addEventListener("click", requestLocation);
   byId("clear-location").addEventListener("click", clearLocation);
+  byId("coordinates-button").addEventListener("click", useCoordinates);
+  coordinateNames.forEach(function (name) {
+    byId(name).addEventListener("input", editCoordinates);
+    byId(name).addEventListener("keydown", function (event) {
+      if (event.keyCode === 13 || event.key === "Enter") { event.preventDefault(); useCoordinates(); }
+    });
+  });
   searchButton.addEventListener("click", searchPlace);
   placeInput.addEventListener("input", function () { clearSearch(); });
   placeInput.addEventListener("keydown", function (event) { if (event.keyCode === 13 || event.key === "Enter") { event.preventDefault(); searchPlace(); } });
@@ -269,6 +329,7 @@
     cancelLocationRequest();
     clearSearch();
     clearErrors();
+    resetCoordinates();
     location = null;
     submissions.reset();
     mapLinkContainer.hidden = true;
@@ -283,8 +344,9 @@
     if (submitting) return;
     mapLinkContainer.hidden = true;
     clearErrors();
-    var result = model.validateReport(values(), tr);
+    var result = validateForm();
     if (!result.report) { setStatus(""); showErrors(result.errors); return; }
+    if (coordinatesDirty) selectLocation(model.createGridLocation(result.report.latitude, result.report.longitude), "coordinatesReady");
     if (navigator.onLine === false) {
       saveDraft();
       setStatus("offlineSubmit", null, "error");
@@ -349,7 +411,7 @@
     locationButton.textContent = tr(locating ? "locationFinding" : "useLocation");
     searchButton.textContent = tr(searchingNow ? "searching" : "findPlace");
     submitButton.textContent = tr(submitting ? "submitting" : "submitReport");
-    if (activeErrors) showErrors(model.validateReport(values(), tr).errors, false);
+    if (activeErrors) showErrors(validateForm().errors, false);
   });
   if (draft) {
     fieldNames.forEach(function (name) { if (typeof draft[name] === "string") byId(name).value = draft[name].slice(0, name === "summary" ? 280 : 40); });
