@@ -28,7 +28,8 @@ export const MESSAGE_KEYS = Object.freeze([
   "analysis.rankReasonReportsLoadingLead", "analysis.rankReasonReportsUnavailableLead", "analysis.rankReasonPopulationLoading",
   "analysis.aiFallback", "analysis.aiReviewFallbackRank",
   "candidate.worldLoading", "candidate.worldPartial", "candidate.group",
-  "candidate.demonstrationTitle", "candidate.demonstrationNotice", "candidate.includeDemonstrations"
+  "candidate.demonstrationTitle", "candidate.demonstrationNotice", "candidate.includeDemonstrations",
+  "plans.matchingReports"
 ]);
 
 export function messagesFrom(values) {

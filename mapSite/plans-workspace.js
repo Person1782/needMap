@@ -54,6 +54,7 @@ export function createPlansWorkspace({
   loadPopulation = loadReportPopulation,
   buildArea = buildReportPopulationArea,
   evidenceFor = () => [],
+  includeDemonstrationReports = false,
   onLoading,
 } = {}) {
   const byId = (id) => document.getElementById(id);
@@ -371,7 +372,10 @@ export function createPlansWorkspace({
     if (model.reason === "reports-loading") return tr("plans.statusLoading", {}, "Loading community reports…");
     if (model.reason === "reports-unavailable") return tr("plans.statusUnavailable", {}, "Community reports are unavailable, so locations cannot be recommended.");
     if (model.reason === "no-matching-reports") return tr("plans.noMatchingReports", { type: typeName(model.type), region: dynamicValue(region?.name) }, `No ${typeName(model.type)} reports have been submitted in ${dynamicValue(region?.name)}.`);
-    if (model.reason === "insufficient-reports") return tr("plans.needTwoReports", {}, "At least two usable reports are needed for a report-supported location.");
+    if (model.reason === "insufficient-reports") {
+      const matching = tr("plans.matchingReports", { count: number(model.usableReportCount) }, `Matching reports: ${number(model.usableReportCount)}.`);
+      return `${matching} ${tr("plans.needTwoReports", {}, "At least two usable reports are needed for a report-supported location.")}`;
+    }
     if (model.reason === "region-boundary-unavailable") return tr("plans.boundaryLoading", {}, "The region boundary is still loading. NeedMap will update the plan when it is ready.");
     return tr("plans.noCluster", {}, "The reports do not yet support a distinct recommended location.");
   }
@@ -387,6 +391,7 @@ export function createPlansWorkspace({
       connectionFailed,
       region,
       type,
+      includeDemonstrationReports,
       estimateEvidence: evidenceFor(type, region),
     });
     const regionMarker = "\u0000REGION\u0000";

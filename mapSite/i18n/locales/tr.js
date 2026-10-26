@@ -119,7 +119,8 @@ const base = messagesFrom([
   "{count} önerilen hizmet konumu",
   "Tanıtım önerisi",
   "{count} öneri tanıtım bildirimlerini kullanıyor. Bunlar gerçek yerel talebi kanıtlamaz.",
-  "Önerilen tüm hizmetleri göster"
+  "Önerilen tüm hizmetleri göster",
+  "Eşleşen bildirimler: {count}."
 ]);
 
 export default Object.freeze({

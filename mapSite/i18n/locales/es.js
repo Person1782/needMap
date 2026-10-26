@@ -119,5 +119,6 @@ export default messagesFrom([
   "{count} ubicaciones de servicios propuestas",
   "Propuesta de demostración",
   "{count} propuestas utilizan informes de demostración. No demuestran una demanda local real.",
-  "Mostrar todos los servicios propuestos"
+  "Mostrar todos los servicios propuestos",
+  "Reportes coincidentes: {count}."
 ]);

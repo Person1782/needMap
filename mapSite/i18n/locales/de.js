@@ -119,5 +119,6 @@ export default messagesFrom([
   "{count} vorgeschlagene Servicestandorte",
   "Demonstrationsvorschlag",
   "{count} Vorschläge verwenden Demonstrationsmeldungen. Sie belegen keinen tatsächlichen örtlichen Bedarf.",
-  "Alle vorgeschlagenen Angebote anzeigen"
+  "Alle vorgeschlagenen Angebote anzeigen",
+  "Passende Meldungen: {count}."
 ]);

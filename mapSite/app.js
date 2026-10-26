@@ -193,6 +193,8 @@ function updateAnalysis() {
 const plansWorkspace = createPlansWorkspace({
   i18n,
   dynamicTranslator,
+  // Use the same submitted-report set as Map, including legacy demo flags.
+  includeDemonstrationReports: true,
   onLoading,
   createLocationMap: (container) => createPlansLocationMap(L, container, { i18n, onLoading }),
   evidenceFor(type, region) {

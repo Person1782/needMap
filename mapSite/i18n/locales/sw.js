@@ -119,5 +119,6 @@ export default messagesFrom([
   "Maeneo {count} yanayopendekezwa kwa huduma",
   "Pendekezo la mfano",
   "Mapendekezo {count} yanatumia ripoti za mfano. Hayathibitishi mahitaji halisi ya eneo.",
-  "Onyesha huduma zote zinazopendekezwa"
+  "Onyesha huduma zote zinazopendekezwa",
+  "Ripoti zinazolingana: {count}."
 ]);

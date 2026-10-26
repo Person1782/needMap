@@ -119,5 +119,6 @@ export default messagesFrom([
   "{count} usulan lokasi layanan",
   "Usulan demonstrasi",
   "{count} usulan menggunakan laporan demonstrasi. Usulan tersebut tidak membuktikan adanya kebutuhan setempat yang nyata.",
-  "Tampilkan semua layanan yang diusulkan"
+  "Tampilkan semua layanan yang diusulkan",
+  "Laporan yang cocok: {count}."
 ]);

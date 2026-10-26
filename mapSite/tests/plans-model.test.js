@@ -10,6 +10,7 @@ import {
 } from "../plans-model.js";
 import { haversineDistance } from "../decision-tools.js";
 import { pointInGeometry } from "../regions.js";
+import { buildRecommendationsForRegion } from "../analysis.js";
 
 const square = (west, south, east, north) => ({ type: "Polygon", coordinates: [
   [[west, south], [east, south], [east, north], [west, north], [west, south]],
@@ -362,4 +363,61 @@ test("Plans only counts excluded demonstration reports inside the selected plann
   assert.equal(model.excluded.demonstrationReports, 1);
   assert.equal(model.excluded.outsideRegion, 1);
   assert.equal(model.usableReportCount, 0);
+});
+
+test("explicit inclusion gives Plans the same support as Map without rewriting report provenance", () => {
+  const demo = pair("demo", 0, { isSynthetic: true, severity: "high" });
+  for (const reports of [demo, [...demo, report("real", 0.02)]]) {
+    const original = structuredClone(reports);
+    const options = { includeDemonstrationReports: true };
+    const model = buildPlanModel({ reports, region, type: "hospital", ...options });
+    const mapped = buildRecommendationsForRegion(reports, region, options);
+    assert.equal(model.status, "ready");
+    assert.equal(model.candidates.length, 1);
+    assert.equal(model.usableReportCount, reports.length);
+    assert.equal(model.excluded.demonstrationReports, 0);
+    const candidate = model.candidates[0];
+    assert.deepEqual(candidate.position, mapped[0].position);
+    assert.equal(candidate.urgencyScore, mapped[0].urgencyScore);
+    assert.deepEqual(candidate.supportingReports.map(({ id }) => id), mapped[0].signals.map(({ id }) => id));
+    assert.equal(candidate.evidenceMode, "demonstration");
+    assert.equal(candidate.demonstrationReportCount, 2);
+    assert.equal(candidate.nonDemonstrationReportCount, reports.length - 2);
+    assert.ok(candidate.supportingReports.every((item) => reports.includes(item)));
+    assert.deepEqual(reports, original);
+  }
+});
+
+test("demonstration inclusion requires boolean true and community plans retain their provenance", () => {
+  const reports = pair("demo", 0, { isSynthetic: true });
+  for (const includeDemonstrationReports of [undefined, false, "true", 1]) {
+    const model = buildPlanModel({ reports, region, type: "hospital", includeDemonstrationReports });
+    assert.equal(model.candidates.length, 0);
+    assert.equal(model.excluded.demonstrationReports, 2);
+    assert.equal(model.usableReportCount, 0);
+  }
+  const model = buildPlanModel({ reports: pair("real", 0), region, type: "hospital", includeDemonstrationReports: true });
+  assert.equal(model.candidates[0].evidenceMode, "community");
+  assert.equal(model.candidates[0].demonstrationReportCount, 0);
+  assert.equal(model.candidates[0].nonDemonstrationReportCount, 2);
+});
+
+test("including flagged reports preserves the two-unique-report minimum and location validation", () => {
+  const valid = report("one", 0, { isSynthetic: true });
+  const options = { region, type: "hospital", includeDemonstrationReports: true };
+  for (const reports of [[valid], [valid, { ...valid, longitude: 0.01 }]]) {
+    assert.equal(buildPlanModel({ reports, ...options }).candidates.length, 0);
+  }
+  const model = buildPlanModel({ reports: [
+    valid,
+    report("outside", 30, { isSynthetic: true }),
+    report("invalid", 0, { latitude: 100, isSynthetic: true }),
+    report("", 0, { isSynthetic: true }),
+  ], ...options });
+  assert.equal(model.candidates.length, 0);
+  assert.equal(model.reason, "insufficient-reports");
+  assert.equal(model.usableReportCount, 1);
+  assert.equal(model.excluded.outsideRegion, 1);
+  assert.equal(model.excluded.invalidReport, 1);
+  assert.equal(model.excluded.missingReportId, 1);
 });

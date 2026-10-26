@@ -119,7 +119,8 @@ const base = messagesFrom([
   "제안된 서비스 위치 {count}곳",
   "시연용 제안",
   "{count}개 제안에 시연용 신고가 사용되었습니다. 실제 지역 수요를 입증하지 않습니다.",
-  "제안된 모든 서비스 표시"
+  "제안된 모든 서비스 표시",
+  "일치하는 신고: {count}건."
 ]);
 
 export default Object.freeze({

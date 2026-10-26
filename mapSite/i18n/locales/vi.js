@@ -119,5 +119,6 @@ export default messagesFrom([
   "{count} địa điểm dịch vụ được đề xuất",
   "Đề xuất minh họa",
   "{count} đề xuất sử dụng báo cáo minh họa. Chúng không chứng minh nhu cầu thực tế tại địa phương.",
-  "Hiển thị tất cả dịch vụ được đề xuất"
+  "Hiển thị tất cả dịch vụ được đề xuất",
+  "Báo cáo phù hợp: {count}."
 ]);

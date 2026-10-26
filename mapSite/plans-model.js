@@ -307,6 +307,7 @@ function statusWithoutCandidates({ reportsAvailable, connectionFailed, matchedRe
 export function buildPlanModel({
   reports = [], reportsAvailable = true, connectionFailed = false,
   region = null, type, estimateEvidence = [], currentYear = new Date().getUTCFullYear(),
+  includeDemonstrationReports = false,
 } = {}) {
   if (!Object.hasOwn(PLAN_TYPES, type)) throw new RangeError("Choose one supported infrastructure type; All is not supported.");
   const definition = PLAN_TYPES[type];
@@ -314,6 +315,7 @@ export function buildPlanModel({
   const matched = reportsForPlanType(source, type);
   const world = isWorldRegion(region);
   const boundaryAvailable = Boolean(world || region?.geometry);
+  const evidenceOptions = { includeDemonstrationReports: includeDemonstrationReports === true };
   const excluded = { invalidReport: 0, missingReportId: 0, outsideRegion: 0, missingBoundary: 0, demonstrationReports: 0 };
   const prepared = [];
 
@@ -323,7 +325,10 @@ export function buildPlanModel({
     const candidateRegion = world ? original.region : region;
     if (!candidateRegion?.geometry) { excluded.missingBoundary += 1; continue; }
     if (!insideRegion(candidateRegion, original)) { excluded.outsideRegion += 1; continue; }
-    if (original.isSynthetic === true) { excluded.demonstrationReports += 1; continue; }
+    if (original.isSynthetic === true && !evidenceOptions.includeDemonstrationReports) {
+      excluded.demonstrationReports += 1;
+      continue;
+    }
     prepared.push({
       ...original,
       id: original.id.trim(),
@@ -334,7 +339,7 @@ export function buildPlanModel({
   }
 
   const rawCandidates = reportsAvailable && boundaryAvailable
-    ? buildRecommendations(prepared).filter((candidate) => candidate.category === definition.baseCategory)
+    ? buildRecommendations(prepared, evidenceOptions).filter((candidate) => candidate.category === definition.baseCategory)
     : [];
   const ordered = rawCandidates.sort((first, second) =>
     second.urgencyScore - first.urgencyScore || second.signals.length - first.signals.length ||
@@ -369,6 +374,9 @@ export function buildPlanModel({
       supportingReports: reportsInCandidate,
       reportCitations: citations,
       reportCount: reportsInCandidate.length,
+      evidenceMode: candidate.evidenceMode,
+      demonstrationReportCount: candidate.demonstrationReportCount,
+      nonDemonstrationReportCount: candidate.nonDemonstrationReportCount,
       urgencyScore: candidate.urgencyScore,
       urgencyBreakdown: urgency,
       placementMethod: candidate.placementMethod,

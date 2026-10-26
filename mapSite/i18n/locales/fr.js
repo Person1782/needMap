@@ -119,5 +119,6 @@ export default messagesFrom([
   "{count} emplacements de services proposés",
   "Proposition de démonstration",
   "{count} propositions utilisent des signalements de démonstration. Elles ne prouvent pas l’existence d’une demande locale réelle.",
-  "Afficher tous les services proposés"
+  "Afficher tous les services proposés",
+  "Signalements correspondants : {count}."
 ]);

@@ -177,16 +177,102 @@ test("Plans keeps insufficient-support states localized without demo labels or u
       assert.equal(document.getElementById("plans-results").textContent.includes(
         i18n.t("analysis.demoWarning", { count: i18n.number(2) })), false, code);
       assert.ok(document.getElementById("plans-results").textContent.includes(i18n.t("plans.needTwoReports")), code);
+      assert.ok(document.getElementById("plans-results").textContent.includes(i18n.t("plans.matchingReports", { count: i18n.number(0) })), code);
 
       workspace.update({ region, reports: [{ ...reports[0], isSynthetic: false }, reports[1]], reportsReady: true });
       assert.equal(document.querySelectorAll(".plan-card").length, 0, "One real report plus a demo does not support a plan");
       assert.equal(document.getElementById("plans-results").textContent.includes(
         i18n.t("analysis.demoWarning", { count: i18n.number(1) })), false, code);
       assert.ok(document.getElementById("plans-results").textContent.includes(i18n.t("plans.needTwoReports")), code);
+      assert.ok(document.getElementById("plans-results").textContent.includes(i18n.t("plans.matchingReports", { count: i18n.number(1) })), code);
       assert.equal(mapsCreated, 0);
       assert.equal(populationCalls, 0);
     } finally { workspace.destroy(); }
   }
+});
+
+test("Plans includes flagged and mixed report support when enabled and preserves its provenance", async () => {
+  const { document, window } = parseHTML(html);
+  const mapUpdates = [];
+  const pending = [];
+  const workspace = createPlansWorkspace({
+    document,
+    includeDemonstrationReports: true,
+    createLocationMap: () => ({ update(context) { mapUpdates.push(context); }, destroy() {} }),
+    loadPopulation(context, { signal }) {
+      return new Promise((resolve) => pending.push({ context, signal, resolve }));
+    },
+  });
+  try {
+    select(window, document.getElementById("plans-type"), "water_facility");
+    const reports = [report("a", 37, -122.1), report("b", 37.02, -122)]
+      .map((item) => ({ ...item, isSynthetic: true }));
+    workspace.update({ region, reports, reportsReady: true });
+    workspace.setVisible(true);
+    assert.equal(document.querySelectorAll(".plan-card").length, 1);
+    assert.equal(document.querySelectorAll(".plan-report").length, 2);
+    assert.equal(mapUpdates.at(-1).candidate.reportCount, 2);
+    assert.equal(mapUpdates.at(-1).candidate.supportingReports.every((item) => item.isSynthetic === true), true);
+    assert.equal(pending.length, 1);
+
+    workspace.update({ region, reports: [{ ...reports[0], isSynthetic: false }, reports[1]], reportsReady: true });
+    assert.equal(pending[0].signal.aborted, true, "changed provenance cancels the previous population request");
+    assert.equal(document.querySelectorAll(".plan-card").length, 1);
+    assert.deepEqual(mapUpdates.at(-1).candidate.supportingReports.map((item) => item.isSynthetic).sort(), [false, true]);
+    assert.equal(pending.length, 2);
+    pending[0].resolve({ status: "ready", value: 999999, year: 2025 });
+    await tick();
+    assert.doesNotMatch(document.querySelector(".plan-benefit").textContent, /999/);
+    pending[1].resolve({ status: "ready", value: 1234, year: 2025 });
+    await tick();
+    assert.match(document.querySelector(".plan-benefit").textContent, /About 1,200/);
+  } finally { workspace.destroy(); }
+});
+
+test("Plans counts the selected infrastructure separately and keeps one-report selections unsupported", async () => {
+  const { document, window } = parseHTML(html);
+  let mapsCreated = 0, populationCalls = 0;
+  const workspace = createPlansWorkspace({
+    document,
+    includeDemonstrationReports: true,
+    createLocationMap() { mapsCreated += 1; return { update() {}, destroy() {} }; },
+    async loadPopulation() { populationCalls += 1; return { status: "unavailable" }; },
+  });
+  const scopedReports = [
+    { ...report("hospital", 37, -122, "The nearest hospital is too far away"), category: "healthcare" },
+    ...Array.from({ length: 4 }, (_, index) => ({ ...report(`pharmacy-${index}`, 37, -122, "The pharmacy is difficult to reach"), category: "healthcare" })),
+    ...Array.from({ length: 7 }, (_, index) => ({ ...report(`internet-${index}`, 37, -122, "Broadband service is unavailable"), category: "broadband" })),
+    { ...report("food", 37, -122, "The grocery store is too far away"), category: "food" },
+  ].map((item) => ({ ...item, isSynthetic: true }));
+  try {
+    workspace.update({ region, reports: scopedReports, reportsReady: true });
+    workspace.setVisible(true);
+    assert.match(document.getElementById("plans-scope").textContent, /Hospitals/);
+    assert.match(document.getElementById("plans-status").textContent, /Matching reports: 1\./);
+    assert.match(document.getElementById("plans-results").textContent, /At least two usable reports/);
+    assert.equal(document.querySelectorAll(".plan-card").length, 0);
+    assert.equal(mapsCreated, 0);
+    assert.equal(populationCalls, 0);
+
+    const type = document.getElementById("plans-type");
+    select(window, type, "pharmacy");
+    await tick();
+    assert.equal(document.querySelectorAll(".plan-card").length, 1);
+    assert.equal(document.querySelectorAll(".plan-report").length, 4);
+    assert.equal(populationCalls, 1);
+    select(window, type, "internet");
+    await tick();
+    assert.equal(document.querySelectorAll(".plan-card").length, 1);
+    assert.equal(document.querySelectorAll(".plan-report").length, 7);
+    assert.equal(populationCalls, 2);
+
+    const previousMapsCreated = mapsCreated;
+    select(window, type, "food");
+    assert.equal(document.querySelectorAll(".plan-card").length, 0);
+    assert.match(document.getElementById("plans-status").textContent, /Matching reports: 1\./);
+    assert.equal(mapsCreated, previousMapsCreated);
+    assert.equal(populationCalls, 2);
+  } finally { workspace.destroy(); }
 });
 
 test("a provenance-only update removes an unsupported plan and cancels its pending population estimate", async () => {

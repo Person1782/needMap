@@ -119,7 +119,8 @@ const base = messagesFrom([
   "{count} 個建議服務地點",
   "演示方案",
   "{count} 個方案使用了演示報告。這些方案不能證明存在真實的當地需求。",
-  "顯示所有建議服務"
+  "顯示所有建議服務",
+  "符合條件的回報：{count}。"
 ]);
 
 export default Object.freeze({
