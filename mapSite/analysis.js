@@ -18,7 +18,6 @@ function toRadians(value) {
   return value * Math.PI / 180;
 }
 
-/** Demo evidence is opt-in; community analysis excludes it by default. */
 export function isRecommendationEvidence(signal, { includeDemonstrationReports = false } = {}) {
   return Boolean(signal && (signal.isSynthetic !== true || includeDemonstrationReports === true) &&
     Number.isFinite(signal.latitude) && Number.isFinite(signal.longitude) &&
