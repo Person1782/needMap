@@ -1,6 +1,6 @@
 # NeedMap community form
 
-A small, text-first form for limited bandwidth and older browsers. The production build has one classic ES5 script, system fonts, and no map, Firebase SDK, web fonts or third-party script downloads. External requests happen only for a user-triggered place search or report submission.
+A small, text-first form for limited bandwidth and older browsers. The production build has one classic ES5 script, system fonts, and no map, Firebase SDK, web fonts or third-party script downloads. External requests support automatic country-based language selection when no language preference is saved, user-triggered place search, and report submission. Additional local language packs load on demand. See the [complete NeedMap feature guide](../README.md) for the full reporting, language, map, Analysis, and Plans walkthrough.
 
 ```sh
 npm install
@@ -10,7 +10,7 @@ npm run build     # comForm/dist
 npm run preview   # http://127.0.0.1:4173
 ```
 
-`build.mjs` verifies all browser source and the minified bundle parse as ES5. The HTML, JavaScript and CSS total about 30 KB uncompressed, or about 11 KB with gzip (plus the small favicon). Hosting must enable compression to achieve the compressed transfer size. Development serves separate source scripts; production combines them. No modern JavaScript polyfill bundle is required.
+`build.mjs` verifies all browser source and the minified bundle parse as ES5 and checks language-pack structure/placeholders. The build measured for this documentation contains 62,373 bytes (about 62.4 kB) of HTML, JavaScript and CSS, or 20,465 bytes (about 20.5 kB) when each file is gzip-compressed. This excludes the favicon, optional language pack, and service requests. A requested language pack adds approximately 2.5–3.5 kB with gzip. Hosting must enable compression to achieve these transfer sizes. Development serves separate source scripts; production combines them. No modern JavaScript polyfill bundle is required.
 
 ## Automatic connection handling and the Map page
 
